@@ -26,10 +26,10 @@ if build_cuda_extension:
         CUDAExtension(
             name="awq_inference_engine",
             sources=[
-                "awq/kernels/csrc/pybind.cpp",
-                "awq/kernels/csrc/quantization/gemm_cuda_gen.cu",
-                "awq/kernels/csrc/layernorm/layernorm.cu",
-                "awq/kernels/csrc/position_embedding/pos_encoding_kernels.cu"
+                "awq_cuda/pybind.cpp",
+                "awq_cuda/quantization/gemm_cuda_gen.cu",
+                "awq_cuda/layernorm/layernorm.cu",
+                "awq_cuda/position_embedding/pos_encoding_kernels.cu"
             ],
             extra_compile_args={
                 "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17"],
