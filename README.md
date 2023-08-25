@@ -11,6 +11,9 @@ Roadmap:
 
 ## Install
 
+Requirements: 
+- Compute Capability 8.0 (sm80). Ampere and later architectures are supported.
+
 Clone this repository and install with pip.
 
 ```
