@@ -1,126 +1,118 @@
-# AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration [[Paper](https://arxiv.org/abs/2306.00978)]
+# AutoAWQ
 
-**Efficient and accurate** low-bit weight quantization (INT3/4) for LLMs, supporting **instruction-tuned** models and **multi-modal** LMs.
+AutoAWQ is a package that implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs. AutoAWQ will speed up your LLM by at least 2x compared to FP16. AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
-![overview](figures/overview.png)
+Roadmap:
 
-The current release supports: 
-
-- AWQ search for accurate quantization. 
-- Pre-computed AWQ model zoo for LLMs (LLaMA-1&2, OPT, Vicuna, LLaVA; load to generate quantized weights).
-- Memory-efficient 4-bit Linear in PyTorch.
-- Efficient CUDA kernel implementation for fast inference (support context and decoding stage).
-- Examples on 4-bit inference of an instruction-tuned model (Vicuna) and multi-modal LM (LLaVA).
-
-![TinyChat on RTX 4090: W4A16 is 2.3x faster than FP16](./tinychat/figures/4090_example.gif)
-
-Check out [TinyChat](tinychat), which delievers 2.3x faster inference performance for the **LLaMA-2** chatbot on RTX 4090! 
-
-It also offers a turn-key solution for **on-device inferecne** of LLMs on **resource-constrained edge platforms**. With TinyChat, it is now possible to run **large** models on **small** and **low-power** devices even without Internet connection.
-
-
-## News
-- [2023/07] 🔥 We released **TinyChat**, an efficient and lightweight chatbot interface based on AWQ. TinyChat enables efficient LLM inference on both cloud and edge GPUs. LLama-2-chat models are supported! Check out our implementation [here](tinychat).
-- [2023/07] 🔥 We added AWQ support and pre-computed search results for Llama-2 models (7B & 13B). Checkout our model zoo [here](https://huggingface.co/datasets/mit-han-lab/awq-model-zoo)!
-- [2023/07] We extended the support for more LLM models including MPT, Falcon, and BLOOM. 
-
-## Contents
-
-- [Install](#install)
-- [AWQ Model Zoo](#awq-model-zoo)
-- [Examples](#examples)
-- [Usage](#usage)
-- [Reference](#reference)
+- [ ] Publish pip package
+- [ ] Refactor quantization code
+- [ ] Support more models
+- [ ] Optimize the speed of models
 
 ## Install
 
 Clone this repository and install with pip.
 
 ```
-git clone https://github.com/mit-han-lab/llm-awq
+git clone https://github.com/casper-hansen/AutoAWQ
 cd llm-awq
 pip install -e .
 ```
 
-### CPU only
-
-If you want to avoid installing CUDA kernels, pass the BUILD_CUDA_EXT environment variable:
-
-```
-BUILD_CUDA_EXT=0 pip install -e .
-```
-
-### Edge device
-
-For **edge devices** like Jetson Orin:
-
-1. Manually install precompiled PyTorch binaries (>=2.0.0) from [NVIDIA](https://forums.developer.nvidia.com/t/pytorch-for-jetson/72048).
-2. Set the appropriate Python version for conda environment (e.g., `conda create -n awq python=3.8 -y` for JetPack 5).
-3. Install AWQ: `TORCH_IS_PREBUILT=1 pip install -e .`
-
-## AWQ Model Zoo
-
-We provide pre-computed AWQ search results for multiple model families, including LLaMA, OPT, Vicuna, and LLaVA. To get the pre-computed AWQ search results, run:
-
-```bash
-# git lfs install  # install git lfs if not already
-git clone https://huggingface.co/datasets/mit-han-lab/awq-model-zoo awq_cache
-```
+## Supported models
 
 The detailed support list:
 
-| Models   | Sizes                       | INT4-g128  | INT3-g128 |
-| ---------| ----------------------------| -----------| --------- |
-| LLaMA-2  | 7B/13B/70B                  | ✅         | ✅        |
-| LLaMA    | 7B/13B/30B/65B              | ✅         | ✅        |
-| Vicuna   | 7B/13B                      | ✅         |           |
-| MPT      | 7B/30B                      | ✅         |           |
-| Falcon   | 7B/40B                      | ✅         |           |
-| OPT      | 125m/1.3B/2.7B/6.7B/13B/30B | ✅         | ✅        |
-| Bloom    | 560m/3B/7B/                 | ✅         | ✅        |
-| LLaVA-v0 | 13B                         | ✅         |           |
-
-## Examples
-
-AWQ can be easily applied to various LMs thanks to its good generalization, including instruction-tuned models and multi-modal LMs. It provides an easy-to-use tool to reduce the serving cost of LLMs.
-
-Here we provide two examples of AWQ application: Vicuna-7B (chatbot) and LLaVA-13B (visual reasoning) under `./examples` directory. AWQ can easily reduce the GPU memory of model serving and speed up token generation. It provides accurate quantization, providing reasoning outputs. You should be able to observe **memory savings** when running the models with 4-bit weights. 
-
-Note that we perform AWQ using only textual calibration data, depsite we are running on multi-modal input. Please refer to `./examples` for details.
-
-![overview](figures/example_vis.jpg)
+| Models   | Sizes                       |
+| ---------| ----------------------------|
+| LLaMA-2  | 7B/13B/70B                  |
+| LLaMA    | 7B/13B/30B/65B              |
+| Vicuna   | 7B/13B                      |
+| MPT      | 7B/30B                      |
+| Falcon   | 7B/40B                      |
+| OPT      | 125m/1.3B/2.7B/6.7B/13B/30B |
+| Bloom    | 560m/3B/7B/                 |
+| LLaVA-v0 | 13B                         |
 
 ## Usage
 
-We provide several sample script to run AWQ (please refer to `./scripts`). We use Vicuna 7B v1.5 as an example.
+Below, you will find examples for how to easily quantize a model and run inference.
 
-1. Perform AWQ search and save search results
-```bash
-python -m awq.entry --entry_type search \
-    --model_path lmsys/vicuna-7b-v1.5 \
-    --search_path vicuna-7b-v1.5-awq
+### Quantization
+
+```python
+from transformers import AutoTokenizer
+from awq.models.auto import AutoAWQForCausalLM
+
+model_path = 'lmsys/vicuna-7b-v1.5'
+quant_path = 'vicuna-7b-v1.5-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4 }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(model_path)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+# Quantize
+model.quantize(tokenizer, quant_config=quant_config)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
 ```
 
-Note: if you use Falcon 7B, please pass `--q_group_size 64` in order for it to work.
+### Inference
 
-2. Generate quantized weights and save them (INT4)
-```bash
-python -m awq.entry --entry_type quant \
-    --model_path lmsys/vicuna-7b-v1.5 \
-    --search_path vicuna-7b-v1.5-awq/awq_model_search_result.pt \
-    --quant_path vicuna-7b-v1.5-awq
+Run inference on a quantized model from Huggingface:
+
+```python
+from transformers import AutoTokenizer
+from awq.models.auto import AutoAWQForCausalLM
+
+quant_path = "casperhansen/vicuna-7b-v1.5-awq"
+quant_file = "awq_model_w4_g128.pt"
+
+model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file)
+tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
+
+model.generate(...)
 ```
 
-3. Load and evaluate the perplexity of the real quantized model weights (faster and uses less memory)
-```bash
-python -m awq.entry --entry_type perplexity \
-    --quant_path vicuna-7b-v1.5-awq \
-    --quant_file awq_model_w4_g128.pt
-```
+## Benchmarks
+
+Benchmark speeds may vary from server to server and that it also depends on your CPU. If you want to minimize latency, you should rent a GPU/CPU combination that has high memory bandwidth for both and high single-core speed for CPU.
+
+| Model       | GPU   | FP16 latency (ms) | INT4 latency (ms) | Speedup |
+| ----------- |:-----:|:-----------------:|:-----------------:|:-------:|
+| LLaMA-2-7B  | 4090  | 19.97             | 8.66              | 2.31x   |
+| LLaMA-2-13B | 4090  | OOM               | 13.54             | --      |
+| Vicuna-7B   | 4090  | 19.09             | 8.61              | 2.22x   |
+| Vicuna-13B  | 4090  | OOM               | 12.17             | --      |
+| MPT-7B      | 4090  | 17.09             | 12.58             | 1.36x   |
+| MPT-30B     | 4090  | OOM               | 23.54             | --      |
+| Falcon-7B   | 4090  | 29.91             | 19.84             | 1.51x   |
+| LLaMA-2-7B  | A6000 | 27.14             | 12.44             | 2.18x   |
+| LLaMA-2-13B | A6000 | 47.28             | 20.28             | 2.33x   |
+| Vicuna-7B   | A6000 | 26.06             | 12.43             | 2.10x   |
+| Vicuna-13B  | A6000 | 44.91             | 17.30             | 2.60x   |
+| MPT-7B      | A6000 | 22.79             | 16.87             | 1.35x   |
+| MPT-30B     | A6000 | OOM               | 31.57             | --      |
+| Falcon-7B   | A6000 | 39.44             | 27.34             | 1.44x   |
+
+
+For example, here is the difference between a fast and slow CPU on MPT-7B:
+
+RTX 4090 + Intel i9 13900K (2 different VMs):
+- CUDA 12.0, Driver 525.125.06: 134 tokens/s (7.46 ms/token)
+- CUDA 12.0, Driver 525.125.06: 117 tokens/s (8.52 ms/token)
+
+RTX 4090 + AMD EPYC 7-Series (3 different VMs):
+- CUDA 12.2, Driver 535.54.03: 53 tokens/s (18.6 ms/token)
+- CUDA 12.2, Driver 535.54.03: 56 tokens/s (17.71 ms/token)
+- CUDA 12.0, Driver 525.125.06: 55 tokens/ (18.15 ms/token)
 
 ## Reference
 
-If you find AWQ useful or relevant to your research, please kindly cite our paper:
+If you find AWQ useful or relevant to your research, you can cite their [paper](https://arxiv.org/abs/2306.00978):
 
 ```
 @article{lin2023awq,
@@ -130,14 +122,3 @@ If you find AWQ useful or relevant to your research, please kindly cite our pape
   year={2023}
 }
 ```
-
-## Related Projects
-
-[SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models](https://github.com/mit-han-lab/smoothquant)
-
-[GPTQ: Accurate Post-training Compression for Generative Pretrained Transformers](https://arxiv.org/abs/2210.17323)
-
-[Vicuna and FastChat](https://github.com/lm-sys/FastChat#readme)
-
-[LLaVA: Large Language and Vision Assistant](https://github.com/haotian-liu/LLaVA)
-
