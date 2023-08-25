@@ -8,7 +8,8 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "opt": OptAWQForCausalLM,
     "RefinedWeb": FalconAWQForCausalLM,
     "RefinedWebModel": FalconAWQForCausalLM,
-    "bloom": BloomAWQForCausalLM
+    "bloom": BloomAWQForCausalLM,
+    "gptj": GPTJAWQForCausalLM
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
