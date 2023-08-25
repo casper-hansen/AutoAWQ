@@ -30,6 +30,22 @@ def prepare_logits_processor(
         processor_list.append(TopKLogitsWarper(top_k))
     return processor_list
 
+def sanitize_tensor(tensor: torch.Tensor):
+    if tensor.dtype == torch.float16:
+        replacement_value = 65504
+    elif tensor.dtype == torch.float32:
+        replacement_value = 1e20
+    else:
+        return tensor
+    
+    # Replace positive infinity with a large finite number
+    tensor[tensor == float('inf')] = replacement_value
+    # Replace negative infinity with a small finite number
+    tensor[tensor == float('-inf')] = -replacement_value
+    # Replace NaNs with zero
+    tensor[torch.isnan(tensor)] = 0.0
+
+    return tensor
 
 @torch.inference_mode()
 def StreamGenerator(model,
@@ -82,6 +98,7 @@ def StreamGenerator(model,
             else:
                 tmp_output_ids = None
             last_token_logits = logits_processor(tmp_output_ids, logits[:, -1, :])[0]
+            last_token_logits = sanitize_tensor(last_token_logits)
         else:
             last_token_logits = logits[0, -1, :]
         if gen_params.temp < 1e-5 or gen_params.top_p < 1e-8:  # greedy

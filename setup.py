@@ -9,7 +9,7 @@ torch_is_prebuilt = os.environ.get('TORCH_IS_PREBUILT', '0') == '1'
 # Define dependencies
 dependencies = [
     "accelerate", "sentencepiece", "tokenizers>=0.12.1",
-    "transformers>=4.31.0", 
+    "transformers>=4.32.0", 
     "lm_eval", "texttable",
     "toml", "attributedict",
     "protobuf"
