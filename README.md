@@ -15,7 +15,7 @@ Clone this repository and install with pip.
 
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
-cd llm-awq
+cd AutoAWQ
 pip install -e .
 ```
 
