@@ -41,7 +41,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-20.04]
-        python-version: [3.8, 3.9, 3.10, 3.11]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
         cuda: ["11.8"]
     defaults:
       run:
