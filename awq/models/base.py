@@ -113,8 +113,8 @@ class BaseAWQForCausalLM(nn.Module):
                 super().__init__()
                 self.module = module
 
-            def forward(self, hidden_states, **kwargs):
-                inps.append(hidden_states)
+            def forward(self, hijacked_inputs, **kwargs):
+                inps.append(hijacked_inputs)
                 layer_kwargs.update(kwargs)
                 raise ValueError  # early exit to break later inference
 
