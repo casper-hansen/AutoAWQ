@@ -1,10 +1,10 @@
 name: Build
 
-# run jobs on new release starting with "AutoAWQ v"
+# run jobs on new release starting with "v"
 on:
   push:
     tags:
-      - AutoAWQ v*
+      - v*
 
 jobs:
   # create a github release
