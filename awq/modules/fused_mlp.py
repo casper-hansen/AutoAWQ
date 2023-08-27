@@ -71,7 +71,6 @@ class QuantLlamaMLP(nn.Module):
 
 def make_fused_mlp(m, parent_name=''):
     if not hasattr(make_fused_mlp, "called"):
-        # print("[Warning] Calling a fake MLP fusion. But still faster than Huggingface Implimentation.")
         make_fused_mlp.called = True
     """
     Replace all LlamaMLP modules with QuantLlamaMLP modules, which fuses many of the operations.
