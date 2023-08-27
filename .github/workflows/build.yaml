@@ -1,0 +1,99 @@
+name: Build
+
+# run jobs on new release starting with "AutoAWQ v"
+on:
+  push:
+    tags:
+      - AutoAWQ v*
+
+jobs:
+  # create a github release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Extract branch info
+        shell: bash
+        run: |
+          echo "release_tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: "actions/github-script@v6"
+        env:
+          RELEASE_TAG: ${{ env.release_tag }}
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            const script = require('.github/workflows/scripts/github_create_release.js')
+            await script(github, context, core)
+
+  # build AWQ
+  build:
+    name: Build AWQ
+    runs-on: ${{ matrix.os }}
+    needs: release
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-20.04]
+        python-version: [3.8, 3.9, 3.10, 3.11]
+        cuda: ["11.8"]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+        CUDA_VERSION: ${{ matrix.cuda }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v2.2.0
+      with:
+        activate-environment: "build"
+        python-version: ${{ matrix.python-version }}
+        mamba-version: "*"
+        use-mamba: false
+        channels: conda-forge,defaults
+        channel-priority: true
+        add-pip-as-python-dependency: true
+        auto-activate-base: false
+    
+    - name: Install Dependencies
+      run: |
+        conda install cuda-toolkit -c "nvidia/label/cuda-${env:CUDA_VERSION}.0"
+        conda install pytorch "pytorch-cuda=${env:CUDA_VERSION}" -c pytorch -c nvidia
+        python -m pip install --upgrade build setuptools wheel ninja
+    
+    - name: Build Wheel
+      run: |
+        $env:TORCH_CUDA_ARCH_LIST = '8.0 8.6 8.9 9.0+PTX'
+        $env:PYPI_RELEASE = "1"
+        $env:CUDA_PATH = $env:CONDA_PREFIX
+        $env:CUDA_HOME = $env:CONDA_PREFIX
+        if ($IsLinux) { $env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH }
+
+        python setup.py sdist bdist_wheel
+
+        $wheel_path = Get-ChildItem dist\*.whl | ForEach-Object { $_.Name }
+        echo "wheel_path=$wheel_path" >> $env:GITHUB_ENV
+    
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./dist/${{ env.wheel_path }}
+        asset_content_type: application/*
