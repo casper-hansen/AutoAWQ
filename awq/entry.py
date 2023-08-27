@@ -4,7 +4,7 @@ import torch
 import argparse
 from lm_eval import evaluator
 from transformers import AutoTokenizer
-from awq.models.auto import AutoAWQForCausalLM
+from awq import AutoAWQForCausalLM
 from awq.quantize.auto_clip import apply_clip
 from awq.quantize.auto_scale import apply_scale
 from awq.utils.lm_eval_adaptor import LMEvalAdaptor
