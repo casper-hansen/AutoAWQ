@@ -35,10 +35,19 @@ if not torch_is_prebuilt:
 ext_modules = []
 
 if build_cuda_extension:
-    n_threads = min(os.cpu_count(), 8)
+    # figure out compute capability
+    compute_capabilities = {80, 86, 89, 90}
+    if torch_is_prebuilt:
+        compute_capabilities.update({87})
+    
+    capability_flags = ["-gencode", f"arch=compute_{cap},code=sm_{cap}" for cap in compute_capabilities]
 
+    # num threads
+    n_threads = str(min(os.cpu_count(), 8))
+
+    # final args
     cxx_args = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17"]
-    nvcc_args = ["-O3", "-std=c++17", "--threads", n_threads]
+    nvcc_args = ["-O3", "-std=c++17", "--threads", n_threads] + capability_flags
 
     ext_modules.append(
         CUDAExtension(
