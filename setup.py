@@ -40,7 +40,9 @@ if build_cuda_extension:
     if torch_is_prebuilt:
         compute_capabilities.update({87})
     
-    capability_flags = ["-gencode", f"arch=compute_{cap},code=sm_{cap}" for cap in compute_capabilities]
+    capability_flags = []
+    for cap in compute_capabilities:
+        capability_flags += ["-gencode", f"arch=compute_{cap},code=sm_{cap}"]
 
     # num threads
     n_threads = str(min(os.cpu_count(), 8))
