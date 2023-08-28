@@ -16,7 +16,7 @@ https://github.com/NVIDIA/FasterTransformer/blob/main/src/fastertransformer/kern
 #include <float.h>
 #include <type_traits>
 
-static const float HALF_FLT_MAX = 65504.F;
+#define HALF_FLT_MAX 65504.F
 #define FINAL_MASK 0xffffffff
 
 
