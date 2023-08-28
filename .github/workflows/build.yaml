@@ -3,8 +3,8 @@ name: Build
 # run jobs on new release starting with "v"
 on:
   push:
-    tags:
-      - v*
+    branches:
+      - release_package
 
 jobs:
   # create a github release
@@ -22,16 +22,16 @@ jobs:
         run: |
           echo "release_tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Create Release
-        id: create_release
-        uses: "actions/github-script@v6"
-        env:
-          RELEASE_TAG: ${{ env.release_tag }}
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-          script: |
-            const script = require('.github/workflows/scripts/github_create_release.js')
-            await script(github, context, core)
+  #     - name: Create Release
+  #       id: create_release
+  #       uses: "actions/github-script@v6"
+  #       env:
+  #         RELEASE_TAG: ${{ env.release_tag }}
+  #       with:
+  #         github-token: "${{ secrets.GITHUB_TOKEN }}"
+  #         script: |
+  #           const script = require('.github/workflows/scripts/github_create_release.js')
+  #           await script(github, context, core)
 
   # build AWQ
   build:
@@ -42,21 +42,19 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         python-version: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["11.8"]
+        cuda-version: ["11.8"]
     defaults:
       run:
         shell: pwsh
-    env:
-        CUDA_VERSION: ${{ matrix.cuda }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
     
     - name: Setup Python
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.pyver }}
+        python-version: ${{ matrix.python-version }}
     
     - name: Setup Miniconda
       uses: conda-incubator/setup-miniconda@v2.2.0
@@ -70,19 +68,34 @@ jobs:
         add-pip-as-python-dependency: true
         auto-activate-base: false
     
-    - name: Install Dependencies
+    - name: Install CUDA
       run: |
-        conda install cuda-toolkit -c "nvidia/label/cuda-${env:CUDA_VERSION}.0"
-        conda install pytorch "pytorch-cuda=${env:CUDA_VERSION}" -c pytorch -c nvidia
+        conda install cuda-toolkit -c "nvidia/label/cuda-${{ matrix.cuda-version }}.0"
+        $env:CUDA_PATH = $env:CONDA_PREFIX
+        $env:CUDA_HOME = $env:CONDA_PREFIX
+        
+        echo "$env:CUDA_PATH"
+        echo "$env:CUDA_HOME"
+    
+    - name: Install PyTorch-cu${{ matrix.cuda-version }}
+      run: |
+        $env:TORCH_CUDA_ARCH_LIST = '8.0 8.6 8.9 9.0+PTX'
+        if ($IsLinux) { $env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH }
+        
+        # Install torch
+        $env:CUDA_VERSION = ${{ matrix.cuda-version }} -replace '\.', ''
+        pip install --upgrade --no-cache-dir torch==2.0.1+cu$env:CUDA_VERSION --index-url https://download.pytorch.org/whl/cu$env:CUDA_VERSION
         python -m pip install --upgrade build setuptools wheel ninja
+
+        # Print version information
+        python --version
+        python -c "import torch; print('PyTorch:', torch.__version__)"
+        python -c "import torch; print('CUDA:', torch.version.cuda)"
+        python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
     
     - name: Build Wheel
       run: |
-        $env:TORCH_CUDA_ARCH_LIST = '8.0 8.6 8.9 9.0+PTX'
         $env:PYPI_RELEASE = "1"
-        $env:CUDA_PATH = $env:CONDA_PREFIX
-        $env:CUDA_HOME = $env:CONDA_PREFIX
-        if ($IsLinux) { $env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH }
 
         python setup.py sdist bdist_wheel
 
