@@ -2,8 +2,8 @@ name: Build AutoAWQ Wheels with CUDA
 
 on:
   push:
-    branches:
-      - release_package
+    tags:
+      - "v*"
 
 jobs:
   build_wheels:
@@ -62,15 +62,13 @@ jobs:
 
           $wheel_path = Get-ChildItem dist\*.whl | ForEach-Object { $_.Name }
           echo "wheel_path=$wheel_path" >> $env:GITHUB_ENV
-
-      - uses: actions/upload-artifact@v3
-        if: runner.os == 'Linux'
+      
+      - name: Create a Release
+        id: create_release
+        uses: shogo82148/actions-create-release@v1
+      
+      - name: Upload Assets
+        uses: shogo82148/actions-upload-release-asset@v1
         with:
-          name: 'linux-cuda-wheels'
-          path: ./dist/*.whl
-
-      - uses: actions/upload-artifact@v3
-        if: runner.os == 'Windows'
-        with:
-          name: 'windows-cuda-wheels'
-          path: ./dist/*.whl
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/*.whl
