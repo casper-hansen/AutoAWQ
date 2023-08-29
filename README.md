@@ -13,6 +13,7 @@ Roadmap:
 
 Requirements: 
 - Compute Capability 8.0 (sm80). Ampere and later architectures are supported.
+- CUDA Toolkit 11.8 and later.
 
 Install:
 - Use pip to install awq
