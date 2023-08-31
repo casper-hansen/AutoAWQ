@@ -6,14 +6,41 @@ on:
       - "v*"
 
 jobs:
+  release:
+    # Retrieve tag and create release
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Extract branch info
+        shell: bash
+        run: |
+          echo "release_tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      # - name: Create Release
+      #   id: create_release
+      #   uses: "actions/github-script@v6"
+      #   env:
+      #     RELEASE_TAG: ${{ env.release_tag }}
+      #   with:
+      #     github-token: "${{ secrets.GITHUB_TOKEN }}"
+      #     script: |
+      #       const script = require('.github/workflows/scripts/github_create_release.js')
+      #       await script(github, context, core)
+
   build_wheels:
     name: Build AWQ
     runs-on: ${{ matrix.os }}
+    needs: release
     
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        pyver: ["3.8", "3.9", "3.10", "3.11"]
+        pyver: ["3.8", "3.9", "3.10"]
         cuda: ["11.8"]
     defaults:
       run:
@@ -61,24 +88,8 @@ jobs:
 
           python setup.py sdist bdist_wheel
       
-      - name: Extract branch info
-        shell: bash
-        run: |
-          echo "release_tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-
-      - name: Create Release
-        id: create_release
-        uses: "actions/github-script@v6"
-        env:
-          RELEASE_TAG: ${{ env.release_tag }}
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-          script: |
-            const script = require('.github/workflows/scripts/github_create_release.js')
-            await script(github, context, core)
-      
       - name: Upload Assets
         uses: shogo82148/actions-upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: ./dist/*.whl
