@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from setuptools import setup, find_packages
 from distutils.sysconfig import get_python_lib
-from torch.utils import cpp_extension, CUDA_HOME
+from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDA_HOME
 
 os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
@@ -80,7 +80,7 @@ check_dependencies()
 arch_flags = get_compute_capabilities()
 
 extensions = [
-    cpp_extension.CppExtension(
+    CppExtension(
         "awq_inference_engine",
         [
             "awq_cuda/pybind.cpp",
@@ -96,7 +96,7 @@ extensions = [
 
 additional_setup_kwargs = {
     "ext_modules": extensions,
-    "cmdclass": {'build_ext': cpp_extension.BuildExtension}
+    "cmdclass": {'build_ext': BuildExtension}
 }
 
 common_setup_kwargs.update(additional_setup_kwargs)
