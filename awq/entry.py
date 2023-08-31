@@ -152,7 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('--tasks', type=str, default='wikitext', help='Tasks to evaluate. '
                         'Separate tasks by comma for multiple tasks.'
                         'https://github.com/EleutherAI/lm-evaluation-harness/blob/master/docs/task_table.md')
-    parser.add_argument("--task_use_pretrained", default=False, action=argparse.BooleanOptionalAction,
+    parser.add_argument("--task_use_pretrained", default=False, action='store_true',
                         help="Pass '--task_use_pretrained' to use a pretrained model running FP16")
     parser.add_argument('--task_batch_size', type=int, default=1)
     parser.add_argument('--task_n_shot', type=int, default=0)
