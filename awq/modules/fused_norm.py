@@ -38,6 +38,4 @@ def make_quant_norm(model):
             parent = model
             child_name = name
 
-        #print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
-
         setattr(parent, child_name, norm)

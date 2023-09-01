@@ -4,7 +4,7 @@ AutoAWQ is a package that implements the Activation-aware Weight Quantization (A
 
 Roadmap:
 
-- [ ] Publish pip package
+- [x] Publish pip package
 - [ ] Refactor quantization code
 - [ ] Support more models
 - [ ] Optimize the speed of models
@@ -13,14 +13,28 @@ Roadmap:
 
 Requirements: 
 - Compute Capability 8.0 (sm80). Ampere and later architectures are supported.
+- CUDA Toolkit 11.8 and later.
 
-Clone this repository and install with pip.
+Install:
+- Use pip to install awq
+
+```
+pip install awq
+```
+
+### Build source
+
+<details>
+
+<summary>Build AutoAWQ from scratch</summary>
 
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
 cd AutoAWQ
 pip install -e .
 ```
+
+</details>
 
 ## Supported models
 
@@ -36,6 +50,7 @@ The detailed support list:
 | OPT      | 125m/1.3B/2.7B/6.7B/13B/30B |
 | Bloom    | 560m/3B/7B/                 |
 | LLaVA-v0 | 13B                         |
+| GPTJ     | 6.7B                        |
 
 ## Usage
 
@@ -44,8 +59,8 @@ Below, you will find examples for how to easily quantize a model and run inferen
 ### Quantization
 
 ```python
+from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.models.auto import AutoAWQForCausalLM
 
 model_path = 'lmsys/vicuna-7b-v1.5'
 quant_path = 'vicuna-7b-v1.5-awq'
@@ -68,8 +83,8 @@ tokenizer.save_pretrained(quant_path)
 Run inference on a quantized model from Huggingface:
 
 ```python
+from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.models.auto import AutoAWQForCausalLM
 
 quant_path = "casperhansen/vicuna-7b-v1.5-awq"
 quant_file = "awq_model_w4_g128.pt"
@@ -101,8 +116,11 @@ Benchmark speeds may vary from server to server and that it also depends on your
 | MPT-30B     | A6000 | OOM               | 31.57             | --      |
 | Falcon-7B   | A6000 | 39.44             | 27.34             | 1.44x   |
 
+<details>
 
-For example, here is the difference between a fast and slow CPU on MPT-7B:
+<summary>Detailed benchmark (CPU vs. GPU)</summary>
+
+Here is the difference between a fast and slow CPU on MPT-7B:
 
 RTX 4090 + Intel i9 13900K (2 different VMs):
 - CUDA 12.0, Driver 525.125.06: 134 tokens/s (7.46 ms/token)
@@ -112,6 +130,8 @@ RTX 4090 + AMD EPYC 7-Series (3 different VMs):
 - CUDA 12.2, Driver 535.54.03: 53 tokens/s (18.6 ms/token)
 - CUDA 12.2, Driver 535.54.03: 56 tokens/s (17.71 ms/token)
 - CUDA 12.0, Driver 525.125.06: 55 tokens/ (18.15 ms/token)
+
+</details>
 
 ## Reference
 

@@ -34,8 +34,6 @@ class QuantLlamaRotaryEmbedding(nn.Module):
         sin = freqs.sin()
         cache = torch.cat((cos, sin), dim=-1)
         
-        # self.register_buffer("cos_cached", emb.cos()[None, None, :, :].to(dtype), persistent=False)
-        # self.register_buffer("sin_cached", emb.sin()[None, None, :, :].to(dtype), persistent=False)
         self.register_buffer("cos_sin_cache", cache.half(), persistent=False)
     
     def forward(
@@ -46,7 +44,6 @@ class QuantLlamaRotaryEmbedding(nn.Module):
     ):
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
-        # print(positions.shape, query.shape, key.shape, self.cos_sin_cache.shape)
         query = query.contiguous()
         key = key.contiguous()
         awq_inference_engine.rotary_embedding_neox(
@@ -146,7 +143,7 @@ def make_quant_attn(model, dev):
         qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
         qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
         scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
-        # g_idx = torch.cat([q_proj.g_idx, k_proj.g_idx, v_proj.g_idx], dim=0)
+        
         g_idx = None
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
@@ -156,8 +153,6 @@ def make_quant_attn(model, dev):
         qkv_layer.scales = scales
 
         qkv_layer.bias = bias
-        # We're dropping the rotary embedding layer m.rotary_emb here. We don't need it in the triton branch.
-
         attn = QuantLlamaAttention(m.hidden_size, m.num_heads, qkv_layer, m.o_proj, dev)
 
         if '.' in name:
@@ -168,7 +163,5 @@ def make_quant_attn(model, dev):
             parent_name = ''
             parent = model
             child_name = name
-
-        #print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
 
         setattr(parent, child_name, attn)

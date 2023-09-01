@@ -2,7 +2,7 @@ import transformers
 import torch
 from lm_eval.base import BaseLM
 import fnmatch
-
+import logging
 
 class LMEvalAdaptor(BaseLM):
 
@@ -52,7 +52,7 @@ class LMEvalAdaptor(BaseLM):
         elif 'falcon' in self.model_name:
             return 2048
         else:
-            print(self.model.config)
+            logging.debug(self.model.config)
             raise NotImplementedError
 
     @property

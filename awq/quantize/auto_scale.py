@@ -1,6 +1,7 @@
 import gc
 import torch
 import torch.nn as nn
+import logging
 
 from transformers.models.bloom.modeling_bloom import BloomBlock, BloomGelu
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
@@ -154,9 +155,8 @@ def auto_scale_block(awq_model,
                 best_scales = scales
             block.load_state_dict(org_sd)
         if best_ratio == -1:
-            print(history)
+            logging.debug(history)
             raise Exception
-        # print(best_ratio)
         best_scales = best_scales.view(-1)
 
         assert torch.isnan(best_scales).sum() == 0, best_scales
