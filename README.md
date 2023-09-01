@@ -19,7 +19,7 @@ Install:
 - Use pip to install awq
 
 ```
-pip install awq
+pip install autoawq
 ```
 
 ### Build source
