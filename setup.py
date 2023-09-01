@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from setuptools import setup, find_packages
 from distutils.sysconfig import get_python_lib
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDA_HOME
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CUDA_HOME
 
 os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
@@ -19,7 +19,7 @@ common_setup_kwargs = {
     "long_description_content_type": "text/markdown",
     "url": "https://github.com/casper-hansen/AutoAWQ",
     "keywords": ["awq", "autoawq", "quantization", "transformers"],
-    "platforms": ["linux"],
+    "platforms": ["windows", "linux"],
     "classifiers": [
         "Environment :: GPU :: NVIDIA CUDA :: 11.8",
         "Environment :: GPU :: NVIDIA CUDA :: 12",
@@ -80,17 +80,14 @@ check_dependencies()
 arch_flags = get_compute_capabilities()
 
 extensions = [
-    CppExtension(
+    CUDAExtension(
         "awq_inference_engine",
         [
             "awq_cuda/pybind.cpp",
             "awq_cuda/quantization/gemm_cuda_gen.cu",
             "awq_cuda/layernorm/layernorm.cu",
             "awq_cuda/position_embedding/pos_encoding_kernels.cu"
-        ], extra_compile_args={
-            "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17"],
-            "nvcc": ["-O3", "-std=c++17"] + arch_flags
-        }
+        ]
     )
 ]
 
