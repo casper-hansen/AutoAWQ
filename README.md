@@ -15,10 +15,23 @@ Requirements:
 - Compute Capability 8.0 (sm80). Ampere and later architectures are supported.
 - CUDA Toolkit 11.8 and later.
 
+---
+
 Install:
 - Use pip to install awq
 
 ```
+pip install autoawq
+```
+
+### Using conda
+
+CUDA dependencies can be hard to manage sometimes. It is recommended to use conda with AutoAWQ:
+
+```
+conda create --name autoawq python=3.10 -y
+conda activate autoawq
+conda install pytorch=2.0.1 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia
 pip install autoawq
 ```
 
