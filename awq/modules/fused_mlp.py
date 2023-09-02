@@ -1,11 +1,7 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.cuda.amp import custom_bwd, custom_fwd
-from transformers.models.llama.modeling_llama import LlamaMLP
-
 import awq_inference_engine
+import torch.nn.functional as F
 
 class QuantMPTMLP(nn.Module):
     def __init__(
@@ -67,25 +63,3 @@ class QuantLlamaMLP(nn.Module):
         c = gate_output * up_output
         c = c.reshape(out_shape)
         return c
-
-
-def make_fused_mlp(m, parent_name=''):
-    if not hasattr(make_fused_mlp, "called"):
-        make_fused_mlp.called = True
-    """
-    Replace all LlamaMLP modules with QuantLlamaMLP modules, which fuses many of the operations.
-    """
-    if isinstance(m, LlamaMLP):
-        return QuantLlamaMLP(m.gate_proj, m.down_proj, m.up_proj)
-    elif "mptmlp" in str(m.__class__).lower():
-        return QuantMPTMLP(m.up_proj, m.act, m.down_proj)
-
-    for name, child in m.named_children():
-        child = make_fused_mlp(child, parent_name=f"{parent_name}.{name}")
-
-        if isinstance(child, QuantLlamaMLP):
-            setattr(m, name, child)
-        elif isinstance(child, QuantMPTMLP):
-            setattr(m, name, child)
-
-    return m

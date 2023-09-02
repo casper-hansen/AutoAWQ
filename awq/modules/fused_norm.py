@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from transformers.models.llama.modeling_llama import LlamaRMSNorm
 import awq_inference_engine
 
 class FTLlamaRMSNorm(nn.Module):
@@ -16,26 +15,3 @@ class FTLlamaRMSNorm(nn.Module):
         output = torch.empty_like(x)
         awq_inference_engine.layernorm_forward_cuda(x, self.weight, output, self.variance_epsilon)
         return output 
-        
-        
-def make_quant_norm(model):
-    """
-    Replace all LlamaRMSNorm modules with FTLlamaRMSNorm modules
-    """
-
-    for name, m in model.named_modules():
-        if not isinstance(m, LlamaRMSNorm):
-            continue
-
-        norm = FTLlamaRMSNorm(m.weight, m.variance_epsilon)
-
-        if '.' in name:
-            parent_name = name.rsplit('.', 1)[0]
-            child_name = name[len(parent_name) + 1:]
-            parent = model.get_submodule(parent_name)
-        else:
-            parent_name = ''
-            parent = model
-            child_name = name
-
-        setattr(parent, child_name, norm)

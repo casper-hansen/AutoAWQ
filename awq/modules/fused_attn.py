@@ -1,12 +1,7 @@
-import math
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
-from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRotaryEmbedding, apply_rotary_pos_emb 
-
-from awq.quantize.qmodule import WQLinear
 import awq_inference_engine
-
+from torch.nn import functional as F
 
 class QuantLlamaRotaryEmbedding(nn.Module):
     def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
@@ -64,7 +59,8 @@ class QuantLlamaAttention(nn.Module):
         num_heads,
         qkv_proj,
         o_proj,
-        dev
+        dev,
+        max_new_tokens
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -76,7 +72,7 @@ class QuantLlamaAttention(nn.Module):
                              f" and `num_heads`: {num_heads}).")
         self.qkv_proj = qkv_proj
         self.o_proj = o_proj
-        self.rotary_emb = QuantLlamaRotaryEmbedding(self.head_dim, max_position_embeddings=2048, device = dev)
+        self.rotary_emb = QuantLlamaRotaryEmbedding(self.head_dim, max_position_embeddings=max_new_tokens, device = dev)
 
     def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
         """Input shape: Batch x Time x Channel"""
@@ -101,7 +97,7 @@ class QuantLlamaAttention(nn.Module):
         if past_key_value is not None:
             kv_seq_len += past_key_value[0].shape[-2]
         
-        value_states = value_states.to("cuda:0")
+        value_states = value_states.to(key_states.device)
 
         if past_key_value is not None:
             # reuse k, v, self_attention
@@ -125,43 +121,3 @@ class QuantLlamaAttention(nn.Module):
         attn_output = self.o_proj(attn_output)
 
         return attn_output, None, past_key_value
-
-
-def make_quant_attn(model, dev):
-    """
-    Replace all LlamaAttention modules with QuantLlamaAttention modules, fusing the q, k, v projections.
-    """
-
-    for name, m in model.named_modules():
-        if not isinstance(m, LlamaAttention):
-            continue
-
-        q_proj = m.q_proj
-        k_proj = m.k_proj
-        v_proj = m.v_proj
-
-        qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
-        qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
-        scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
-        
-        g_idx = None
-        bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
-
-        qkv_layer = WQLinear(q_proj.w_bit, q_proj.group_size, q_proj.in_features, q_proj.out_features + k_proj.out_features + v_proj.out_features, q_proj.bias is not None, q_proj.qweight.device)
-        qkv_layer.qweight = qweights
-        qkv_layer.qzeros = qzeros
-        qkv_layer.scales = scales
-
-        qkv_layer.bias = bias
-        attn = QuantLlamaAttention(m.hidden_size, m.num_heads, qkv_layer, m.o_proj, dev)
-
-        if '.' in name:
-            parent_name = name.rsplit('.', 1)[0]
-            child_name = name[len(parent_name) + 1:]
-            parent = model.get_submodule(parent_name)
-        else:
-            parent_name = ''
-            parent = model
-            child_name = name
-
-        setattr(parent, child_name, attn)

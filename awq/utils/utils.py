@@ -41,3 +41,15 @@ def simple_dispatch_model(model, device_map):
     model.hf_device_map = device_map
 
     return model
+
+def set_module_name(model, name, value):
+    if '.' in name:
+        parent_name = name.rsplit('.', 1)[0]
+        child_name = name[len(parent_name) + 1:]
+        parent = model.get_submodule(parent_name)
+    else:
+        parent_name = ''
+        parent = model
+        child_name = name
+
+    setattr(parent, child_name, value)
