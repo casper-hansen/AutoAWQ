@@ -75,9 +75,7 @@ def make_fused_mlp(m, parent_name=''):
     """
     Replace all LlamaMLP modules with QuantLlamaMLP modules, which fuses many of the operations.
     """
-    if isinstance(m, LlamaMLP):
-        return QuantLlamaMLP(m.gate_proj, m.down_proj, m.up_proj)
-    elif "mptmlp" in str(m.__class__).lower():
+    if "mptmlp" in str(m.__class__).lower():
         return QuantMPTMLP(m.up_proj, m.act, m.down_proj)
 
     for name, child in m.named_children():

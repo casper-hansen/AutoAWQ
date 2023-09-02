@@ -1,5 +1,4 @@
 from .base import BaseAWQForCausalLM
-from awq.modules import make_fused_mlp
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
@@ -11,7 +10,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         fuser = LlamaFuser(awq_model)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
-        make_fused_mlp(awq_model)#fuser.fuse_mlp()
+        fuser.fuse_mlp()
 
     @staticmethod
     def get_model_layers(model: LlamaForCausalLM):
@@ -70,9 +69,10 @@ import torch
 from typing import List, Tuple
 from awq.quantize.qmodule import WQLinear
 from awq.utils.utils import set_module_name
+from awq.modules.fused_mlp import QuantLlamaMLP
 from awq.modules.fused_norm import FTLlamaRMSNorm
 from awq.modules.fused_attn import QuantLlamaAttention
-from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm
+from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
     def __init__(self, awq_model: BaseAWQForCausalLM):
@@ -87,6 +87,11 @@ class LlamaFuser:
         self.rmsnorm_modules: List[Tuple[str, LlamaRMSNorm]] = [
             (name, module) for name, module in self.model.named_modules()
             if isinstance(module, LlamaRMSNorm)
+        ]
+        
+        self.mlp_modules: List[Tuple[str, LlamaMLP]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, LlamaMLP)
         ]
     
     def fuse_attention(self):
@@ -131,4 +136,6 @@ class LlamaFuser:
             set_module_name(self.model, name, norm)
 
     def fuse_mlp(self):
-        pass
+        for name, module in self.mlp_modules:
+            mlp = QuantLlamaMLP(module.gate_proj, module.down_proj, module.up_proj)
+            set_module_name(self.model, name, mlp)
