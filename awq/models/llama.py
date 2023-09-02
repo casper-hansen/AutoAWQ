@@ -1,5 +1,5 @@
 from .base import BaseAWQForCausalLM
-from awq.modules import make_quant_norm, make_fused_mlp
+from awq.modules import make_fused_mlp
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
@@ -10,7 +10,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     def fuse_layers(awq_model: BaseAWQForCausalLM):
         fuser = LlamaFuser(awq_model)
         fuser.fuse_attention()
-        make_quant_norm(awq_model)#fuser.fuse_rmsnorm()
+        fuser.fuse_rmsnorm()
         make_fused_mlp(awq_model)#fuser.fuse_mlp()
 
     @staticmethod
@@ -70,6 +70,7 @@ import torch
 from typing import List, Tuple
 from awq.quantize.qmodule import WQLinear
 from awq.utils.utils import set_module_name
+from awq.modules.fused_norm import FTLlamaRMSNorm
 from awq.modules.fused_attn import QuantLlamaAttention
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm
 
@@ -125,7 +126,9 @@ class LlamaFuser:
         return qkv_layer
 
     def fuse_rmsnorm(self):
-        pass
+        for name, module in self.rmsnorm_modules:
+            norm = FTLlamaRMSNorm(module.weight, module.variance_epsilon)
+            set_module_name(self.model, name, norm)
 
     def fuse_mlp(self):
         pass
