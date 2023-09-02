@@ -6,8 +6,8 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(awq_model: BaseAWQForCausalLM):
-        fuser = LlamaFuser(awq_model)
+    def fuse_layers(model: LlamaForCausalLM):
+        fuser = LlamaFuser(model)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -75,9 +75,8 @@ from awq.modules.fused_attn import QuantLlamaAttention
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
-    def __init__(self, awq_model: BaseAWQForCausalLM):
-        self.awq_model = awq_model
-        self.model = awq_model.model
+    def __init__(self, model):
+        self.model = model
 
         self.attention_modules: List[Tuple[str, LlamaAttention]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -103,7 +102,7 @@ class LlamaFuser:
                 qkv_layer,
                 module.o_proj,
                 qkv_layer.qweight.device,
-                self.awq_model.model.config.max_new_tokens
+                self.model.config.max_new_tokens
             )
             set_module_name(self.model, name, attn)
     
