@@ -1,5 +1,5 @@
 from .base import BaseAWQForCausalLM
-from awq.modules import make_quant_norm, make_quant_attn, make_fused_mlp
+from awq.modules import make_quant_norm, make_fused_mlp
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
@@ -7,10 +7,11 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(awq_model):
-        make_quant_attn(awq_model, awq_model.device)
-        make_quant_norm(awq_model)
-        make_fused_mlp(awq_model)
+    def fuse_layers(awq_model: BaseAWQForCausalLM):
+        fuser = LlamaFuser(awq_model)
+        fuser.fuse_attention()
+        make_quant_norm(awq_model)#fuser.fuse_rmsnorm()
+        make_fused_mlp(awq_model)#fuser.fuse_mlp()
 
     @staticmethod
     def get_model_layers(model: LlamaForCausalLM):
@@ -64,3 +65,67 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         ))
 
         return layers
+
+import torch
+from typing import List, Tuple
+from awq.quantize.qmodule import WQLinear
+from awq.utils.utils import set_module_name
+from awq.modules.fused_attn import QuantLlamaAttention
+from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm
+
+class LlamaFuser:
+    def __init__(self, awq_model: BaseAWQForCausalLM):
+        self.awq_model = awq_model
+        self.model = awq_model.model
+
+        self.attention_modules: List[Tuple[str, LlamaAttention]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, LlamaAttention)
+        ]
+
+        self.rmsnorm_modules: List[Tuple[str, LlamaRMSNorm]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, LlamaRMSNorm)
+        ]
+    
+    def fuse_attention(self):
+        for name, module in self.attention_modules:
+            qkv_layer: WQLinear = self._fuse_qkv(module)
+            attn = QuantLlamaAttention(
+                module.hidden_size,
+                module.num_heads,
+                qkv_layer,
+                module.o_proj,
+                qkv_layer.qweight.device,
+                self.awq_model.model.config.max_new_tokens
+            )
+            set_module_name(self.model, name, attn)
+    
+    def _fuse_qkv(self, module: LlamaAttention):
+        # get qkv and bias
+        q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
+        bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
+        
+        # create module
+        qkv_layer = WQLinear(
+            q_proj.w_bit, 
+            q_proj.group_size, 
+            q_proj.in_features, 
+            q_proj.out_features + k_proj.out_features + v_proj.out_features, 
+            q_proj.bias is not None,
+            q_proj.qweight.device
+        )
+
+        # replace buffers with real weights
+        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        qkv_layer.bias = bias
+
+        return qkv_layer
+
+    def fuse_rmsnorm(self):
+        pass
+
+    def fuse_mlp(self):
+        pass
