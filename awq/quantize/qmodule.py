@@ -30,13 +30,10 @@ def ext_q4_matmul(x, q4, q4_width):
     return output.view(outshape)
 
 class ExllamaLinear(nn.Module):
-    def __init__(self, in_features:int, out_features:int, qweight:torch.Tensor, qzeros:torch.Tensor, 
-                       scales:torch.Tensor, bias:torch.Tensor, q_config:dict):
+    def __init__(self, in_features:int, out_features:int, q_config:dict, bias=None):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.bias = bias
-        self.width = qweight.shape[0]
         self.w_bit = q_config["w_bit"]
         self.group_size = q_config["q_group_size"]
 
@@ -53,16 +50,21 @@ class ExllamaLinear(nn.Module):
             torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features), dtype=torch.float16)
         )
 
+        if bias:
+            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
+        else:
+            self.bias = None
+
         self.q4 = ext_make_q4(
-            qweight.transpose(0,1),
-            qzeros,
-            scales,
+            self.qweight.transpose(0,1),
+            self.qzeros,
+            self.scales,
             None,
             0 # device index
         )
 
     def forward(self, x):
-        out = ext_q4_matmul(x.half(), self.q4, self.width)
+        out = ext_q4_matmul(x.half(), self.q4, self.out_features)
 
         if self.bias is not None:
             out.add_(self.bias)

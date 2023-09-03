@@ -2,6 +2,12 @@ from transformers import AutoConfig
 from awq.models import *
 from awq.models.base import BaseAWQForCausalLM
 
+# TODO: figure out how to avoid
+import torch
+torch.cuda.empty_cache()
+device = torch.device('cuda')
+torch.zeros(1).to(device)
+
 AWQ_CAUSAL_LM_MODEL_MAP = {
     "mpt": MptAWQForCausalLM,
     "llama": LlamaAWQForCausalLM,

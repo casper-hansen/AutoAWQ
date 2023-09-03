@@ -250,7 +250,7 @@ class BaseAWQForCausalLM(nn.Module):
     @classmethod
     def from_quantized(self, model_path, model_type, model_filename, max_new_tokens=None,
                        device='balanced', torch_dtype=torch.float16, trust_remote_code=True, 
-                       safetensors=False, is_quantized=True, fuse_layers=False):
+                       safetensors=False, is_quantized=True, fuse_layers=False, use_exllama=True):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*"]
@@ -290,7 +290,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Only need to replace layers if a model is AWQ quantized
         if is_quantized:
             # Prepare WQLinear layers, replace nn.Linear
-            self._load_quantized_modules(self, model, quant_config)
+            self._load_quantized_modules(self, model, quant_config, use_exllama)
         
         model.tie_weights()
 
@@ -319,7 +319,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 
-    def _load_quantized_modules(self, model, quant_config):
+    def _load_quantized_modules(self, model, quant_config, use_exllama):
         # Real quantization of weights
         assert quant_config["zero_point"], "We only support zero_point quantization now."
         
@@ -337,18 +337,15 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                q_linear = WQLinear.from_linear(
-                    module, quant_config['w_bit'], quant_config['q_group_size'], True)
-                
-                if q_linear.qweight.transpose(0,1).shape[1] == q_linear.qzeros.shape[1] * 8:
+                if use_exllama and module.in_features == module.out_features:
                     q_linear = ExllamaLinear(
-                        q_linear.in_features,
-                        q_linear.out_features,
-                        q_linear.qweight, 
-                        q_linear.qzeros, 
-                        q_linear.scales, 
-                        q_linear.bias, 
+                        module.in_features,
+                        module.out_features,
                         quant_config
+                    )
+                else:
+                    q_linear = WQLinear.from_linear(
+                        module, quant_config['w_bit'], quant_config['q_group_size'], True
                     )
 
                 q_linear.to(next(layer.parameters()).device)
