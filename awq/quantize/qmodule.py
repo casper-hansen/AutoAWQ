@@ -36,7 +36,7 @@ class ExllamaLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.bias = bias
-        self.width = qweight.shape[1]
+        self.width = qweight.shape[0]
         self.w_bit = q_config["w_bit"]
         self.group_size = q_config["q_group_size"]
 
@@ -66,7 +66,6 @@ class ExllamaLinear(nn.Module):
 
         if self.bias is not None:
             out.add_(self.bias)
-        
         return out
 
 class ScaledActivation(nn.Module):
