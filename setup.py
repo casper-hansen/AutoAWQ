@@ -99,6 +99,16 @@ extensions = [
             "awq_cuda/layernorm/layernorm.cu",
             "awq_cuda/position_embedding/pos_encoding_kernels.cu"
         ], extra_compile_args=extra_compile_args
+    ),
+    CUDAExtension(
+        "exllama_kernels",
+        [
+            "awq_cuda/exllama/exllama_ext.cpp",
+            "awq_cuda/exllama/cuda_buffers.cu",
+            "awq_cuda/exllama/cuda_func/column_remap.cu",
+            "awq_cuda/exllama/cuda_func/q4_matmul.cu",
+            "awq_cuda/exllama/cuda_func/q4_matrix.cu"
+        ], extra_compile_args=extra_compile_args
     )
 ]
 

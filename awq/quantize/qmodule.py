@@ -1,8 +1,73 @@
 import math
 import torch
 import torch.nn as nn
-import awq_inference_engine  # with CUDA kernels
+import awq_inference_engine
+from exllama_kernels import make_q4, q4_matmul
 
+# Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
+none_tensor = torch.empty((1, 1), device="meta")
+
+def ext_make_q4(qweight, qzeros, scales, g_idx, device):
+    """Construct Q4Matrix, return handle"""
+    if not qweight.shape[1] == qzeros.shape[1] * 8:
+        raise Exception(f"qweight.shape[1] ({qweight.shape[1]}) "
+                        "must have the same shape as qzeros.shape[1]*8 ({qzeros.shape[1]*8})")
+
+    return make_q4(qweight,
+                   qzeros,
+                   scales,
+                   g_idx if g_idx is not None else none_tensor,
+                   device)
+
+def ext_q4_matmul(x, q4, q4_width):
+    """Matrix multiplication, returns x @ q4"""
+    outshape = x.shape[:-1] + (q4_width,)
+    x = x.view(-1, x.shape[-1])
+    output = torch.empty((x.shape[0], q4_width), dtype=torch.float16, device=x.device)
+
+    q4_matmul(x, q4, output)
+
+    return output.view(outshape)
+
+class ExllamaLinear(nn.Module):
+    def __init__(self, in_features:int, out_features:int, qweight:torch.Tensor, qzeros:torch.Tensor, 
+                       scales:torch.Tensor, bias:torch.Tensor, q_config:dict):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bias = bias
+        self.width = qweight.shape[1]
+        self.w_bit = q_config["w_bit"]
+        self.group_size = q_config["q_group_size"]
+
+        self.register_buffer(
+            'qweight',
+            torch.zeros((out_features, in_features // 32 * q_config["w_bit"]), dtype=torch.int32)
+        )
+        self.register_buffer(
+            'qzeros',
+            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features // 32 * q_config["w_bit"]), dtype=torch.int32)
+        )
+        self.register_buffer(
+            'scales',
+            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features), dtype=torch.float16)
+        )
+
+        self.q4 = ext_make_q4(
+            qweight.transpose(0,1),
+            qzeros,
+            scales,
+            None,
+            0 # device index
+        )
+
+    def forward(self, x):
+        out = ext_q4_matmul(x.half(), self.q4, self.width)
+
+        if self.bias is not None:
+            out.add_(self.bias)
+        
+        return out
 
 class ScaledActivation(nn.Module):
     def __init__(self, module, scales):

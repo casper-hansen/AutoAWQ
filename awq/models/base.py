@@ -10,7 +10,7 @@ from collections import defaultdict
 from huggingface_hub import snapshot_download
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.quantizer import pseudo_quantize_tensor
-from awq.quantize.qmodule import WQLinear, ScaledActivation
+from awq.quantize.qmodule import WQLinear, ScaledActivation, ExllamaLinear
 from awq.quantize.auto_clip import auto_clip_block, apply_clip
 from awq.quantize.auto_scale import auto_scale_block, apply_scale
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
@@ -339,6 +339,18 @@ class BaseAWQForCausalLM(nn.Module):
             for name, module in named_linears.items():
                 q_linear = WQLinear.from_linear(
                     module, quant_config['w_bit'], quant_config['q_group_size'], True)
+                
+                if q_linear.qweight.transpose(0,1).shape[1] == q_linear.qzeros.shape[1] * 8:
+                    q_linear = ExllamaLinear(
+                        q_linear.in_features,
+                        q_linear.out_features,
+                        q_linear.qweight, 
+                        q_linear.qzeros, 
+                        q_linear.scales, 
+                        q_linear.bias, 
+                        quant_config
+                    )
+
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
             
