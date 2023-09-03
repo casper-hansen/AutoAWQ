@@ -37,6 +37,7 @@ requirements = [
     "torch>=2.0.0",
     "transformers>=4.32.0",
     "tokenizers>=0.12.1",
+    "xformers>=0.0.21",
     "accelerate",
     "sentencepiece",
     "lm_eval",
