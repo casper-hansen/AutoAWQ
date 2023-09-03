@@ -9,6 +9,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     def fuse_layers(model: MptForCausalLM):
         fuser = MptFuser(model)
         fuser.fuse_mlp()
+        fuser.fuse_layernorm()
 
     @staticmethod
     def get_model_layers(model: MptForCausalLM):
@@ -65,13 +66,22 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
         return layers
 
+import torch
+import xformers
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
 from awq.modules.fused_mlp import QuantMPTMLP
+from xformers.triton.layer_norm import FusedLayerNorm
+from transformers.models.mpt.modeling_mpt import LayerNorm
 
 class MptFuser:
     def __init__(self, model):
         self.model = model
+
+        self.layernorm_modules: List[Tuple[str, LayerNorm]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, LayerNorm)
+        ]
 
         self.mlp_modules: List[Tuple[str, MptMLP]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -82,7 +92,16 @@ class MptFuser:
         pass
 
     def fuse_layernorm(self):
-        pass
+        xformers.triton.k_layer_norm._triton_layernorm_fp16_enabled = True
+        for name, module in self.layernorm_modules:
+            norm = FusedLayerNorm(module.weight.shape, eps=module.eps).to(module.weight.device)
+            
+            # copy weights and bias
+            with torch.no_grad():
+                norm.weight = module.weight
+                norm.bias = module.bias
+            
+            set_module_name(self.model, name, norm)
 
     def fuse_mlp(self):
         for name, module in self.mlp_modules:
