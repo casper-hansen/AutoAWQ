@@ -50,7 +50,10 @@ class BaseAWQForCausalLM(nn.Module):
             self._awq_quant()
             self.is_quantized = True
     
-    
+    @staticmethod
+    def fuse_layers(model):
+        pass
+        
     def _awq_quant(self):
         assert self.quant_config["zero_point"], "We only support zero_point quantization now."
         layers = self.get_model_layers(self.model)
