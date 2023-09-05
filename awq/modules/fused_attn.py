@@ -2,22 +2,23 @@ import torch
 import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
+from transformers.models.llama.modeling_llama import LlamaLinearScalingRotaryEmbedding
 
-class QuantLlamaRotaryEmbedding(nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
+class RotaryEmbeddingNeox(nn.Module):
+    def __init__(self, head_dim, seq_len, device):
         super().__init__()
+        self.head_dim = head_dim
+        self.seq_len = seq_len
+        self.base = 10000
 
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
+        # create inv_frequency
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.head_dim, 2).float().to(device) / self.head_dim))
         self.register_buffer("inv_freq", inv_freq)
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=max_position_embeddings, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
+        # set cache
+        self._set_cos_sin_cache(seq_len=self.seq_len, device=self.inv_freq.device)
+    
+    def _set_cos_sin_cache(self, seq_len, device):
         self.max_seq_len_cached = seq_len
         t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
 
@@ -31,122 +32,89 @@ class QuantLlamaRotaryEmbedding(nn.Module):
         
         self.register_buffer("cos_sin_cache", cache.half(), persistent=False)
     
-    def forward(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        positions: torch.Tensor,
-    ):
-        # Apply rotary embedding to the query and key before passing them
-        # to the attention op.
+    def forward(self, positions, query, key):
+        batch_size, seq_len, _ = query.shape
+        query = query.view(batch_size * seq_len, -1)
+        key = key.view(batch_size * seq_len, -1)
+        positions = positions.view(-1).to(query.device)
+
         query = query.contiguous()
         key = key.contiguous()
+
         awq_inference_engine.rotary_embedding_neox(
             positions,
             query,
             key,
-            self.dim,
+            self.head_dim,
             self.cos_sin_cache,
         )
+        query = query.view(batch_size, seq_len, -1)
+        key = key.view(batch_size, seq_len, -1)
+
         return query, key
-
+    
 class QuantLlamaAttention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
-
     def __init__(
         self,
         hidden_size,
         num_heads,
         qkv_proj,
         o_proj,
-        dev,
+        device,
         max_new_tokens
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
+        self.seq_len = max_new_tokens
+        self.qkv_proj = qkv_proj
+        self.o_proj = o_proj
+        self.rotary_embedding_neox = RotaryEmbeddingNeox(self.head_dim, self.seq_len, device)
 
         if (self.head_dim * num_heads) != self.hidden_size:
             raise ValueError(f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
                              f" and `num_heads`: {num_heads}).")
-        self.qkv_proj = qkv_proj
-        self.o_proj = o_proj
-        self.rotary_emb = QuantLlamaRotaryEmbedding(self.head_dim, max_position_embeddings=max_new_tokens, device = dev)
 
-    def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
-        """Input shape: Batch x Time x Channel"""
+    def attn(self, query, key, value, past_key_value, use_cache, attention_mask):
+        batch_size, seq_len, _ = query.shape
 
-        bsz, q_len, _ = hidden_states.size()
-
-        qkv_states = self.qkv_proj(hidden_states)
-        qkv_states = qkv_states.view(bsz, q_len, 3, self.num_heads, self.head_dim)
-
-        # This updates the query and key states in-place, saving VRAM.
-        query_states, key_states, value_states = torch.split(qkv_states, 1, dim=2)
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
+        query = query.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key = key.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         
-        del qkv_states
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.to(key.device)
 
+        # cache ops
         is_causal = past_key_value is None
-
-        kv_seq_len = q_len
-        if past_key_value is not None:
-            kv_seq_len += past_key_value[0].shape[-2]
-        
-        value_states = value_states.to(key_states.device)
-
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            value_states = torch.cat([past_key_value[1], value_states], dim=2)
+            key = torch.cat([past_key_value[0], key], dim=2)
+            value = torch.cat([past_key_value[1], value], dim=2)
 
         if use_cache:
-            # Since qkv_proj is fused, query_states etc will hold a reference to the original qkv_states tensor
+            # Since qkv_proj is fused, query_states etc will hold a reference to the original qkv tensor
             # which can cause excessive memory usage by the cache. `contiguous` is a convenient way to workaround this.
-            key_states = key_states.contiguous()
-            value_states = value_states.contiguous()
-            query_states = query_states.contiguous()
+            query = query.contiguous()
+            key = key.contiguous()
+            value = value.contiguous()
 
-        past_key_value = (key_states, value_states) if use_cache else None
+        past_key_value = (key, value) if use_cache else None
 
-        # with torch.backends.cuda.sdp_kernel(enable_math=False):
-        attn_output = F.scaled_dot_product_attention(query_states, key_states, value_states, is_causal=is_causal)
-        del query_states, key_states, value_states
+        # multi-head masked attention
+        attn_output = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=None if is_causal else attention_mask,
+            is_causal=is_causal
+        )
 
-        attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
-        attn_output = self.o_proj(attn_output)
+        # reshape output
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        attn_output = attn_output.reshape(batch_size, seq_len, self.hidden_size)
 
-        return attn_output, None, past_key_value
-
-
-class CustomQuantLlamaAttention(nn.Module):
-    def __init__(
-        self,
-        hidden_size,
-        num_heads,
-        qkv_proj,
-        o_proj,
-        dev,
-        max_new_tokens
-    ):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.num_heads = num_heads
-        self.head_dim = hidden_size // num_heads
-
-        if (self.head_dim * num_heads) != self.hidden_size:
-            raise ValueError(f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                             f" and `num_heads`: {num_heads}).")
-        self.qkv_proj = qkv_proj
-        self.o_proj = o_proj
-        self.rotary_emb = QuantLlamaRotaryEmbedding(self.head_dim, max_position_embeddings=max_new_tokens, device = dev)
-
-    def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
-        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+        return attn_output, past_key_value
 
     def forward(
         self,
@@ -158,46 +126,13 @@ class CustomQuantLlamaAttention(nn.Module):
         use_cache: bool = False,
     ):
         # qkv proj
-        qkv_states = self.qkv_proj(hidden_states)
+        query, key, value = self.qkv_proj(hidden_states).chunk(chunks=3, dim=-1)
 
-        # extract q,k,v
-        bsz, q_len, _ = hidden_states.size()
-        query_states, key_states, value_states = torch.split(qkv_states, self.hidden_size, dim=2)
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # rotary embeddings
+        query, key = self.rotary_embedding_neox(position_ids, query, key)
 
-        # rotary embedding
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
-
-        # cache ops
-        is_causal = past_key_value is None
-        if past_key_value is not None:
-            # reuse k, v, self_attention
-            key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            value_states = torch.cat([past_key_value[1], value_states], dim=2)
-
-        if use_cache:
-            # Since qkv_proj is fused, query_states etc will hold a reference to the original qkv_states tensor
-            # which can cause excessive memory usage by the cache. `contiguous` is a convenient way to workaround this.
-            query_states = query_states.contiguous()
-            key_states = key_states.contiguous()
-            value_states = value_states.contiguous()
-
-        past_key_value = (key_states, value_states) if use_cache else None
-
-        # multi-head masked attention
-        attn_output = F.scaled_dot_product_attention(
-            query_states,
-            key_states,
-            value_states,
-            attn_mask=None if is_causal else attention_mask,
-            is_causal=is_causal
-        )
-
-        # reshape output
-        attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+        # attention
+        attn_output, past_key_value = self.attn(query, key, value, past_key_value, use_cache, attention_mask)
 
         # out projection
         attn_output = self.o_proj(attn_output)
