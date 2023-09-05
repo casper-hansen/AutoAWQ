@@ -185,8 +185,8 @@ if __name__ == '__main__':
         run_eval(args.model_path, args.quant_file, args.device,
                        args.tasks, args.task_batch_size, args.task_n_shot, args.task_use_pretrained)
     elif args.entry_type == 'speed':
-        # if args.batch_size > 1 and not args.disable_fused_layers:
-        #     raise Exception('Fused layers only support batch_size=1. Pass --disable_fused_layers to run batch_size>1 (much slower).')
+        if args.batch_size > 1 and not args.disable_fused_layers:
+            raise Exception('Fused layers only support batch_size=1. Pass --disable_fused_layers to run batch_size>1 (much slower).')
         
         run_speed(args.model_path, args.quant_file, args.device, args.n_generate, args.n_context, args.batch_size, args.disable_fused_layers)
     else:
