@@ -74,7 +74,7 @@ def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot
     print(evaluator.make_table(results))
 
 @torch.inference_mode()
-def run_speed(model_path, quant_file, device, n_generate=128, max_seq_len=256):
+def run_speed(model_path, quant_file, device, n_generate=128, n_context=256):
     def _timer(func):
         start = time.time()
         out = func()
@@ -95,18 +95,16 @@ def run_speed(model_path, quant_file, device, n_generate=128, max_seq_len=256):
         warm_up = torch.randn((4096,4096)).to(device)
         torch.mm(warm_up,warm_up)
 
-    # Load model
     if quant_file:
         model, load_time = _timer(lambda: AutoAWQForCausalLM.from_quantized(model_path, quant_file, fuse_layers=True))
     else:
-        # fp16 model
         model, load_time = _timer(lambda: AutoAWQForCausalLM.from_pretrained(model_path))
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     _warmup(device)
 
     # Generate random inputs
-    n_context = max_seq_len - n_generate
+    n_context = n_context - n_generate
     ids = torch.randint(0, tokenizer.vocab_size, (1, n_context)).cuda()
 
     # Context stage
@@ -143,11 +141,10 @@ if __name__ == '__main__':
     python -m awq.entry --entry_type eval --model_path lmsys/vicuna-7b-v1.5 --task_use_pretrained
 
     - Run a speedtest to benchmark the quantized model:
-    python -m awq.entry --entry_type speed --model_path vicuna-7b-v1.5-awq --quant_file awq_model_w4_g128.pt \
-          --n_generate 128 --max_seq_len 256
+    python -m awq.entry --entry_type speed --model_path vicuna-7b-v1.5-awq --quant_file awq_model_w4_g128.pt --n_generate 128 --n_context 256
 
     - Run a speedtest to benchmark the unquantized FP16 model:
-    python -m awq.entry --entry_type speed --model_path lmsys/vicuna-7b-v1.5 --n_generate 128 --max_seq_len 256
+    python -m awq.entry --entry_type speed --model_path lmsys/vicuna-7b-v1.5 --n_generate 128 --n_context 256
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--entry_type', type=str, help='The type of task to run (search|quant|eval|speed)')
@@ -166,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('--task_batch_size', type=int, default=1)
     parser.add_argument('--task_n_shot', type=int, default=0)
     parser.add_argument('--n_generate', type=int, default=128)
-    parser.add_argument('--max_seq_len', type=int, default=256)
+    parser.add_argument('--n_context', type=int, default=256)
     args = parser.parse_args()
 
     quant_config = { "zero_point": True, "q_group_size": args.q_group_size, "w_bit": args.w_bit }
@@ -179,6 +176,6 @@ if __name__ == '__main__':
         run_eval(args.model_path, args.quant_file, args.device,
                        args.tasks, args.task_batch_size, args.task_n_shot, args.task_use_pretrained)
     elif args.entry_type == 'speed':
-        run_speed(args.model_path, args.quant_file, args.device, args.n_generate, args.max_seq_len)
+        run_speed(args.model_path, args.quant_file, args.device, args.n_generate, args.n_context)
     else:
         raise Exception('--entry_type must be one of (search|quant|eval|speed)')
