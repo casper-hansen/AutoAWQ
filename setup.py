@@ -67,9 +67,6 @@ def get_compute_capabilities():
             raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
         compute_capabilities.add(major * 10 + minor)
 
-    # figure out compute capability
-    compute_capabilities = {80, 86, 89, 90}
-
     capability_flags = []
     for cap in compute_capabilities:
         capability_flags += ["-gencode", f"arch=compute_{cap},code=sm_{cap}"]
