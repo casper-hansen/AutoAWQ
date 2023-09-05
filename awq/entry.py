@@ -121,10 +121,10 @@ def run_speed(model_path, quant_file, device, n_generate=128, n_context=256, bat
 
     # Prints
     memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
-    context_tokens_per_second = n_context / context_time
-    context_ms_per_token = (context_time*1000) / n_context
-    inference_tokens_per_second = n_generate / generation_time
-    inference_ms_per_token = (generation_time*1000) / n_generate
+    context_tokens_per_second = n_context / context_time * batch_size
+    context_ms_per_token = (context_time*1000) / n_context * batch_size
+    inference_tokens_per_second = n_generate / generation_time * batch_size
+    inference_ms_per_token = (generation_time*1000) / n_generate * batch_size
 
     print(f"[======] Model summary: {model_path} [======]")
     print(f"[*] Load time: {load_time:.2f} seconds")
