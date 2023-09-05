@@ -71,7 +71,7 @@ from awq.quantize.qmodule import WQLinear
 from awq.utils.utils import set_module_name
 from awq.modules.fused_mlp import QuantLlamaMLP
 from awq.modules.fused_norm import FTLlamaRMSNorm
-from awq.modules.fused_attn import QuantLlamaAttention
+from awq.modules.fused_attn import QuantLlamaAttention, CustomQuantLlamaAttention
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
@@ -96,7 +96,7 @@ class LlamaFuser:
     def fuse_attention(self):
         for name, module in self.attention_modules:
             qkv_layer: WQLinear = self._fuse_qkv(module)
-            attn = QuantLlamaAttention(
+            attn = CustomQuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
                 qkv_layer,
