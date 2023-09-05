@@ -1,6 +1,7 @@
 import os
 import gc
 import json
+from typing import List, Union
 import torch
 import functools
 import torch.nn as nn
@@ -39,7 +40,7 @@ class BaseAWQForCausalLM(nn.Module):
     @torch.no_grad()
     def quantize(self, tokenizer=None, quant_config={}, n_samples=128, seqlen=512,
                        auto_scale=True, mse_range=True, run_search=True, run_quant=True,
-                       calib_data="pileval"):
+                       calib_data: Union[str, List[str]]="pileval"):
         self.quant_config = quant_config
 
         if run_search:
@@ -95,7 +96,7 @@ class BaseAWQForCausalLM(nn.Module):
             gc.collect()
     
     def _awq_search(self, tokenizer, quant_config, n_samples=128, seqlen=512,
-                       auto_scale=True, mse_range=True, calib_data="pileval"):
+                       auto_scale=True, mse_range=True, calib_data:Union[str, List[str]]="pileval"):
         layers = self.get_model_layers(self.model)
 
         samples = get_calib_dataset(

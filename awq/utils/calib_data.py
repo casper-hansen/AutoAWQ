@@ -1,12 +1,19 @@
+from typing import List, Union
 import torch
 import logging
 from datasets import load_dataset
 
-def get_calib_dataset(data="pileval", tokenizer=None, n_samples=512, block_size=512):
-    if data == "pileval":
-        dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
+def get_calib_dataset(data: Union[str, List[str]] = "pileval", tokenizer=None, n_samples=512, block_size=512):
+    if isinstance(data, str):
+        if data == "pileval":
+            dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
+        else:
+            raise NotImplementedError
+    elif isinstance(data, list):
+        dataset = [{"text": text} for text in data]
     else:
         raise NotImplementedError
+
     dataset = dataset.shuffle(seed=42)
     samples = []
     n_run = 0
