@@ -80,20 +80,13 @@ def run_speed(model_path, quant_file, device, n_generate=128, n_context=256, bat
         out = func()
         return out, time.time() - start
 
-    def _generate(model, model_out, n_generate, batch_size):
+    def _generate(model, model_out, n_generate):
         past_key_values = model_out.past_key_values
 
         for i in range(n_generate):
             logits = model_out.logits[:, -1, :]
-            new_tokens = []
-
-            for batch_index in range(batch_size):
-                probs = torch.softmax(logits[batch_index], dim=-1)
-                token = torch.multinomial(probs, num_samples=1)
-                new_tokens.append(token)
-            
-            tokens = torch.as_tensor(new_tokens, device=device).unsqueeze(-1)
-
+            probs = torch.softmax(logits, dim=-1)
+            tokens = torch.multinomial(probs, num_samples=1)
             model_out = model(tokens, use_cache=True, past_key_values=past_key_values)
 
     def _warmup(device:str):
@@ -117,7 +110,7 @@ def run_speed(model_path, quant_file, device, n_generate=128, n_context=256, bat
     model_out, context_time = _timer(lambda: model(ids, use_cache=True))
 
     # Generation stage
-    _, generation_time = _timer(lambda: _generate(model, model_out, n_generate, batch_size))
+    _, generation_time = _timer(lambda: _generate(model, model_out, n_generate))
 
     # Prints
     memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
@@ -185,9 +178,9 @@ if __name__ == '__main__':
         run_eval(args.model_path, args.quant_file, args.device,
                        args.tasks, args.task_batch_size, args.task_n_shot, args.task_use_pretrained)
     elif args.entry_type == 'speed':
-        if args.batch_size > 1 and not args.disable_fused_layers:
+        if args.batch_size > 1 and not args.disable_fused_layers and args.quant_file:
             raise Exception('Fused layers only support batch_size=1. Pass --disable_fused_layers to run batch_size>1 (much slower).')
-        
+
         run_speed(args.model_path, args.quant_file, args.device, args.n_generate, args.n_context, args.batch_size, args.disable_fused_layers)
     else:
         raise Exception('--entry_type must be one of (search|quant|eval|speed)')
