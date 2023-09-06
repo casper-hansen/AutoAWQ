@@ -67,11 +67,11 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
 
 import torch
 from typing import List, Tuple
-from awq.quantize.qmodule import WQLinear
 from awq.utils.utils import set_module_name
 from awq.modules.fused_mlp import QuantLlamaMLP
 from awq.modules.fused_norm import FTLlamaRMSNorm
 from awq.modules.fused_attn import QuantLlamaAttention
+from awq.quantize.qmodule import WQLinear, ExllamaLinear
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
@@ -95,7 +95,7 @@ class LlamaFuser:
     
     def fuse_attention(self):
         for name, module in self.attention_modules:
-            qkv_layer: WQLinear = self._fuse_qkv(module)
+            qkv_layer: ExllamaLinear = self._fuse_qkv(module)
             attn = QuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
@@ -112,14 +112,21 @@ class LlamaFuser:
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
         
         # create module
-        qkv_layer = WQLinear(
-            q_proj.w_bit, 
-            q_proj.group_size, 
-            q_proj.in_features, 
-            q_proj.out_features + k_proj.out_features + v_proj.out_features, 
-            q_proj.bias is not None,
-            q_proj.qweight.device
-        )
+        if isinstance(q_proj, WQLinear):
+            qkv_layer = WQLinear(
+                q_proj.w_bit, 
+                q_proj.group_size, 
+                q_proj.in_features, 
+                q_proj.out_features + k_proj.out_features + v_proj.out_features, 
+                q_proj.bias is not None,
+                q_proj.qweight.device
+            )
+        elif isinstance(q_proj, ExllamaLinear):
+            qkv_layer = ExllamaLinear(
+                q_proj.in_features,
+                q_proj.out_features,
+                {"zero_point": True, "w_bit": q_proj.w_bit, "q_group_size": q_proj.group_size}
+            )
 
         # replace buffers with real weights
         qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
