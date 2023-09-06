@@ -85,11 +85,9 @@ if os.name == "nt":
         "nvcc": arch_flags
     }
 else:
-    threads = ["--threads", str(min(os.cpu_count(), 8))]
-
     extra_compile_args={
         "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17"],
-        "nvcc": ["-O3", "-std=c++17"] + arch_flags + threads
+        "nvcc": ["-O3", "-std=c++17"] + arch_flags
     }
 
 extensions = [
