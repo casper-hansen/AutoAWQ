@@ -193,12 +193,16 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         if isinstance(prev_op, nn.Linear):
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
-        elif isinstance(prev_op, (nn.LayerNorm, LlamaRMSNorm)):
+
+        elif any(isinstance(prev_op,t) for t in [nn.LayerNorm, LlamaRMSNorm]) \
+             or 'rmsnorm' in str(prev_op.__class__).lower():
             scale_ln_fcs(prev_op, layers, scales)
+
         elif any(isinstance(prev_op,t) for t in [nn.GELU, BloomGelu, NewGELUActivation]):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
+            
         else:
             raise NotImplementedError(
                 f"prev_op {type(prev_op)} not supported yet!")

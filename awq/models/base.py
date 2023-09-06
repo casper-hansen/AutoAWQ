@@ -321,7 +321,13 @@ class BaseAWQForCausalLM(nn.Module):
             
             # Load model weights
             model = AutoModelForCausalLM.from_pretrained(
-                model_filename, device_map=device_map, offload_folder="offload", offload_state_dict=True, torch_dtype=torch_dtype, use_safetensors=safetensors
+                model_filename, 
+                device_map=device_map, 
+                trust_remote_code=trust_remote_code, 
+                offload_folder="offload", 
+                offload_state_dict=True, 
+                torch_dtype=torch_dtype, 
+                use_safetensors=safetensors
             )
             model.eval()
 
