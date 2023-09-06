@@ -316,6 +316,10 @@ class BaseAWQForCausalLM(nn.Module):
                 model_filename, device_map=device_map, offload_folder="offload", offload_state_dict=True, torch_dtype=torch_dtype, use_safetensors=safetensors
             )
             model.eval()
+        
+        for name, submodule in model.named_modules():
+            if isinstance(submodule, ExllamaLinear):
+                submodule.post_init()
 
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 

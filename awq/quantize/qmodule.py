@@ -11,7 +11,7 @@ def ext_make_q4(qweight, qzeros, scales, g_idx, device):
     """Construct Q4Matrix, return handle"""
     if not qweight.shape[1] == qzeros.shape[1] * 8:
         raise Exception(f"qweight.shape[1] ({qweight.shape[1]}) "
-                        "must have the same shape as qzeros.shape[1]*8 ({qzeros.shape[1]*8})")
+                        f"must have the same shape as qzeros.shape[1]*8 ({qzeros.shape[1]*8})")
 
     return make_q4(qweight,
                    qzeros,
@@ -36,7 +36,7 @@ class ExllamaLinear(nn.Module):
         self.out_features = out_features
         self.w_bit = q_config["w_bit"]
         self.group_size = q_config["q_group_size"]
-
+        
         self.register_buffer(
             'qweight',
             torch.zeros((out_features, in_features // 32 * q_config["w_bit"]), dtype=torch.int32)
@@ -54,13 +54,17 @@ class ExllamaLinear(nn.Module):
             self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
         else:
             self.bias = None
+    
+    def post_init(self):
+        assert self.qweight.device.type == "cuda"
+        assert self.qweight.device.index is not None
 
         self.q4 = ext_make_q4(
             self.qweight.transpose(0,1),
             self.qzeros,
             self.scales,
             None,
-            0 # device index
+            self.qweight.device.index # device index
         )
 
     def forward(self, x):
