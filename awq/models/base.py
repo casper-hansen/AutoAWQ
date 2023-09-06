@@ -314,9 +314,6 @@ class BaseAWQForCausalLM(nn.Module):
 
             if fuse_layers:
                 self.fuse_layers(model)
-            
-            from awq.utils.utils import simple_dispatch_model
-            model = simple_dispatch_model(model, device_map)
 
         else:
             # If not quantized, must load with AutoModelForCausalLM
