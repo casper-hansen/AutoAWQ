@@ -122,9 +122,9 @@ def run_speed(model_path, quant_file, device, n_generate=128, n_context=256, bat
     # Prints
     memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
     context_tokens_per_second = n_context / context_time * batch_size
-    context_ms_per_token = (context_time*1000) / n_context * batch_size
+    context_ms_per_token = (context_time*1000) / n_context / batch_size
     inference_tokens_per_second = n_generate / generation_time * batch_size
-    inference_ms_per_token = (generation_time*1000) / n_generate * batch_size
+    inference_ms_per_token = (generation_time*1000) / n_generate / batch_size
 
     print(f"[======] Model summary: {model_path} [======]")
     print(f"[*] Load time: {load_time:.2f} seconds")
@@ -185,9 +185,6 @@ if __name__ == '__main__':
         run_eval(args.model_path, args.quant_file, args.device,
                        args.tasks, args.task_batch_size, args.task_n_shot, args.task_use_pretrained)
     elif args.entry_type == 'speed':
-        if args.batch_size > 1 and not args.disable_fused_layers:
-            raise Exception('Fused layers only support batch_size=1. Pass --disable_fused_layers to run batch_size>1 (much slower).')
-        
         run_speed(args.model_path, args.quant_file, args.device, args.n_generate, args.n_context, args.batch_size, args.disable_fused_layers)
     else:
         raise Exception('--entry_type must be one of (search|quant|eval|speed)')
