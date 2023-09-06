@@ -99,6 +99,7 @@ class LlamaFuser:
             attn = QuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
+                module.num_key_value_heads,
                 qkv_layer,
                 module.o_proj,
                 qkv_layer.qweight.device,
