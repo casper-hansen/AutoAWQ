@@ -50,7 +50,10 @@ class BaseAWQForCausalLM(nn.Module):
             self._awq_quant()
             self.is_quantized = True
     
-    
+    @staticmethod
+    def fuse_layers(model):
+        pass
+        
     def _awq_quant(self):
         assert self.quant_config["zero_point"], "We only support zero_point quantization now."
         layers = self.get_model_layers(self.model)
@@ -294,26 +297,37 @@ class BaseAWQForCausalLM(nn.Module):
         
         model.tie_weights()
 
+        device_map = infer_auto_device_map(
+            model,
+            no_split_module_classes=[self.layer_type], 
+            dtype=torch_dtype
+        )
+
         # Load model weights
         if is_quantized:
-            model = load_checkpoint_and_dispatch(model, model_filename, device_map=device, no_split_module_classes=[self.layer_type])
+            model = load_checkpoint_and_dispatch(
+                model, 
+                model_filename, 
+                device_map=device_map, 
+                no_split_module_classes=[self.layer_type]
+            )
 
             if fuse_layers:
                 self.fuse_layers(model)
 
         else:
             # If not quantized, must load with AutoModelForCausalLM
-            device_map = infer_auto_device_map(
-                model,
-                no_split_module_classes=[self.layer_type], 
-                dtype=torch_dtype
-            )
-            
             del model
             
             # Load model weights
             model = AutoModelForCausalLM.from_pretrained(
-                model_filename, device_map=device_map, offload_folder="offload", offload_state_dict=True, torch_dtype=torch_dtype, use_safetensors=safetensors
+                model_filename, 
+                device_map=device_map, 
+                trust_remote_code=trust_remote_code, 
+                offload_folder="offload", 
+                offload_state_dict=True, 
+                torch_dtype=torch_dtype, 
+                use_safetensors=safetensors
             )
             model.eval()
         

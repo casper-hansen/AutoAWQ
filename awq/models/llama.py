@@ -99,9 +99,10 @@ class LlamaFuser:
             attn = QuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
+                module.num_key_value_heads,
                 qkv_layer,
                 module.o_proj,
-                qkv_layer.qweight.device,
+                next(iter(qkv_layer.state_dict().values())).device,
                 self.model.config.max_new_tokens
             )
             set_module_name(self.model, name, attn)
@@ -110,7 +111,7 @@ class LlamaFuser:
         # get qkv and bias
         q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
-        
+
         # create module
         if isinstance(q_proj, WQLinear):
             qkv_layer = WQLinear(
@@ -119,7 +120,7 @@ class LlamaFuser:
                 q_proj.in_features, 
                 q_proj.out_features + k_proj.out_features + v_proj.out_features, 
                 q_proj.bias is not None,
-                q_proj.qweight.device
+                next(iter(module.state_dict().values())).device
             )
         elif isinstance(q_proj, ExllamaLinear):
             qkv_layer = ExllamaLinear(
