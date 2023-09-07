@@ -9,10 +9,6 @@ none_tensor = torch.empty((1, 1), device="meta")
 
 def ext_make_q4(qweight, qzeros, scales, g_idx, device):
     """Construct Q4Matrix, return handle"""
-    if not qweight.shape[1] == qzeros.shape[1] * 8:
-        raise Exception(f"qweight.shape[1] ({qweight.shape[1]}) "
-                        f"must have the same shape as qzeros.shape[1]*8 ({qzeros.shape[1]*8})")
-
     return make_q4(qweight,
                    qzeros,
                    scales,
@@ -39,7 +35,7 @@ class ExllamaLinear(nn.Module):
         
         self.register_buffer(
             'qweight',
-            torch.zeros((out_features, in_features // 32 * q_config["w_bit"]), dtype=torch.int32)
+            torch.zeros((in_features // 32 * q_config["w_bit"]), out_features, dtype=torch.int32)
         )
         self.register_buffer(
             'qzeros',
@@ -60,7 +56,7 @@ class ExllamaLinear(nn.Module):
         assert self.qweight.device.index is not None
 
         self.q4 = ext_make_q4(
-            self.qweight.transpose(0,1),
+            self.qweight,
             self.qzeros,
             self.scales,
             None,
@@ -99,7 +95,7 @@ class WQLinear(nn.Module):
         assert self.in_features % self.group_size == 0
         assert out_features % (32 // self.w_bit) == 0
 
-        self.register_buffer('qweight', torch.zeros((in_features, out_features // (32 // self.w_bit)), dtype=torch.int32, device=dev))
+        self.register_buffer('qweight', torch.zeros((in_features  // (32 // self.w_bit), out_features)), dtype=torch.int32, device=dev))
         self.register_buffer('qzeros', torch.zeros((in_features // self.group_size, out_features // (32 // self.w_bit)), dtype=torch.int32, device=dev))
         self.register_buffer('scales', torch.zeros((in_features // self.group_size, out_features), dtype=torch.float16, device=dev))
         if bias:
@@ -129,29 +125,19 @@ class WQLinear(nn.Module):
         intweight = torch.cat(intweight, dim=1)
         intweight = intweight.t().contiguous()
         intweight = intweight.to(dtype=torch.int32)
-        qweight = torch.zeros((intweight.shape[0], intweight.shape[1] // 32 * awq_linear.w_bit), dtype=torch.int32, device=intweight.device)           
+        qweight = torch.zeros((intweight.shape[0]  // 32 * awq_linear.w_bit, intweight.shape[1]), dtype=torch.int32, device=intweight.device)           
          
-        for col in range(intweight.shape[1] // pack_num):
-            if awq_linear.w_bit == 4:
-                order_map = [0, 2, 4, 6, 1, 3, 5, 7]
-            else:
-                raise NotImplementedError("Only 4-bit are supported for now.")
+        for row in range(intweight.shape[0] // pack_num):
             for i in range(pack_num):
-                qweight_col = intweight[:, col * pack_num + order_map[i]]
-                qweight[:, col] |= qweight_col << (i * awq_linear.w_bit)
+                qweight[row] |= intweight[row * pack_num + i] << (i * awq_linear.w_bit)
         awq_linear.qweight = qweight
 
         zeros = zeros.to(dtype=torch.int32)
         qzeros = torch.zeros((zeros.shape[0], zeros.shape[1] // 32 * awq_linear.w_bit), dtype=torch.int32, device=zeros.device)
         
-        for col in range(zeros.shape[1] // pack_num):     
-            if awq_linear.w_bit == 4:
-                order_map = [0, 2, 4, 6, 1, 3, 5, 7]
-            else:
-                raise NotImplementedError("Only 4-bit are supported for now.")
+        for col in range(zeros.shape[1] // pack_num):
             for i in range(pack_num):
-                qzero_col = zeros[:, col * pack_num + order_map[i]]
-                qzeros[:, col] |= qzero_col << (i * awq_linear.w_bit)
+                qzeros[:, col] |= zeros[:, col * pack_num + i] << (i * awq_linear.w_bit)
         awq_linear.qzeros = qzeros
         
         return awq_linear

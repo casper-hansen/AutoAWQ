@@ -355,7 +355,7 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if use_exllama and module.in_features == module.out_features:
+                if use_exllama:
                     q_linear = ExllamaLinear(
                         module.in_features,
                         module.out_features,
