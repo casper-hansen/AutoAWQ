@@ -8,6 +8,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "opt": OptAWQForCausalLM,
     "RefinedWeb": FalconAWQForCausalLM,
     "RefinedWebModel": FalconAWQForCausalLM,
+    "falcon": FalconAWQForCausalLM,
     "bloom": BloomAWQForCausalLM,
     "gptj": GPTJAWQForCausalLM
 }
