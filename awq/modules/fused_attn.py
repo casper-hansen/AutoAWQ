@@ -23,7 +23,7 @@ class QuantLlamaRotary(nn.Module):
         cache = torch.cat((cos, sin), dim=-1).to(torch.get_default_dtype())
 
         # Embedding size: [max_position, rotary_dim]
-        self.register_buffer("cos_sin_cache", cache, persistent=False)
+        self.register_buffer("cos_sin_cache", cache.half(), persistent=False)
     
     def forward(self, qkv_states: torch.Tensor, position_ids: torch.Tensor):
         query, key, value = qkv_states.chunk(chunks=3, dim=-1)
@@ -73,11 +73,12 @@ class TorchAttention(nn.Module):
         }
         self.attn_config = self.backend_map[attention_type]
     
-    def forward(self, query:torch.Tensor, key:torch.Tensor, value:torch.Tensor, use_cache:bool, past_key_value:torch.Tensor):
+    def forward(self, query:torch.Tensor, key:torch.Tensor, value:torch.Tensor, use_cache:bool, 
+                      past_key_value:torch.Tensor, hidden_states_shape:torch.Size):
+        batch_size, q_len, _ = hidden_states_shape
         is_causal = past_key_value is None
-        query_batch_size, query_len, _ = query.shape
 
-        kv_seq_len = query_len
+        kv_seq_len = q_len
         if past_key_value is not None:
             kv_seq_len += past_key_value[0].shape[-2]
         
@@ -102,8 +103,7 @@ class TorchAttention(nn.Module):
         
         del query, key, value
 
-        attn_output = attn_output.transpose(1, 2).reshape(query_batch_size, query_len, self.hidden_size)
-        attn_output = self.o_proj(attn_output)
+        attn_output = attn_output.transpose(1, 2).reshape(batch_size, q_len, self.hidden_size)
 
         return attn_output, None, past_key_value
 
@@ -142,6 +142,7 @@ class QuantLlamaAttention(nn.Module):
     def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
         qkv_states = self.qkv_proj(hidden_states)
         query, key, value = self.rotary_emb(qkv_states, position_ids)
-        attn_output, _, past_key_value = self.attn(query, key, value, use_cache, past_key_value)
+        attn_output, _, past_key_value = self.attn(query, key, value, use_cache, past_key_value, hidden_states.shape)
+        attn_output = self.o_proj(attn_output)
 
         return attn_output, None, past_key_value
