@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
+from torch.backends.cuda import sdp_kernel, SDPBackend
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, LlamaRotaryEmbedding
 
 class QuantLlamaRotaryEmbedding(nn.Module):
@@ -67,7 +68,8 @@ class QuantLlamaAttention(nn.Module):
         o_proj,
         dev,
         max_new_tokens,
-        use_hf_rotary=False
+        use_hf_rotary=False,
+        attention_type=SDPBackend.FLASH_ATTENTION
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -81,6 +83,12 @@ class QuantLlamaAttention(nn.Module):
                              f" and `num_heads`: {num_heads}).")
         self.qkv_proj = qkv_proj
         self.o_proj = o_proj
+        self.attention_type = attention_type
+        self.backend_map = {
+            SDPBackend.MATH: {"enable_math": True, "enable_flash": False, "enable_mem_efficient": False},
+            SDPBackend.FLASH_ATTENTION: {"enable_math": False, "enable_flash": True, "enable_mem_efficient": False},
+            SDPBackend.EFFICIENT_ATTENTION: {"enable_math": False, "enable_flash": False, "enable_mem_efficient": True}
+        }
 
         if use_hf_rotary:
             self.rotary_emb = LlamaRotaryEmbedding(self.head_dim, max_new_tokens, device=dev)
@@ -156,8 +164,9 @@ class QuantLlamaAttention(nn.Module):
 
         past_key_value = (key, value) if use_cache else None
 
-        # with torch.backends.cuda.sdp_kernel(enable_math=False):
-        attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        with sdp_kernel(**self.backend_map[self.attention_type]):
+            attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        
         del query, key, value
 
         attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
