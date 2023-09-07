@@ -95,7 +95,7 @@ class WQLinear(nn.Module):
         assert self.in_features % self.group_size == 0
         assert out_features % (32 // self.w_bit) == 0
 
-        self.register_buffer('qweight', torch.zeros((in_features  // (32 // self.w_bit), out_features)), dtype=torch.int32, device=dev))
+        self.register_buffer('qweight', torch.zeros((in_features  // (32 // self.w_bit), out_features)), dtype=torch.int32, device=dev)
         self.register_buffer('qzeros', torch.zeros((in_features // self.group_size, out_features // (32 // self.w_bit)), dtype=torch.int32, device=dev))
         self.register_buffer('scales', torch.zeros((in_features // self.group_size, out_features), dtype=torch.float16, device=dev))
         if bias:
