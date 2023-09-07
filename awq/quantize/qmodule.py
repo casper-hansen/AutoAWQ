@@ -25,51 +25,6 @@ def ext_q4_matmul(x, q4, q4_width):
 
     return output.view(outshape)
 
-class ExllamaLinear(nn.Module):
-    def __init__(self, in_features:int, out_features:int, q_config:dict, bias=None):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.w_bit = q_config["w_bit"]
-        self.group_size = q_config["q_group_size"]
-        
-        self.register_buffer(
-            'qweight',
-            torch.zeros((in_features // 32 * q_config["w_bit"]), out_features, dtype=torch.int32)
-        )
-        self.register_buffer(
-            'qzeros',
-            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features // 32 * q_config["w_bit"]), dtype=torch.int32)
-        )
-        self.register_buffer(
-            'scales',
-            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features), dtype=torch.float16)
-        )
-
-        if bias:
-            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
-        else:
-            self.bias = None
-    
-    def post_init(self):
-        assert self.qweight.device.type == "cuda"
-        assert self.qweight.device.index is not None
-
-        self.q4 = ext_make_q4(
-            self.qweight,
-            self.qzeros,
-            self.scales,
-            None,
-            self.qweight.device.index # device index
-        )
-
-    def forward(self, x):
-        out = ext_q4_matmul(x.half(), self.q4, self.out_features)
-
-        if self.bias is not None:
-            out.add_(self.bias)
-        return out
-
 class ScaledActivation(nn.Module):
     def __init__(self, module, scales):
         super().__init__()
@@ -153,3 +108,78 @@ class WQLinear(nn.Module):
         return 'in_features={}, out_features={}, bias={}, w_bit={}, group_size={}'.format(
             self.in_features, self.out_features, self.bias is not None, self.w_bit, self.group_size
         )
+
+class ExllamaLinear(nn.Module):
+    def __init__(self, in_features:int, out_features:int, q_config:dict, bias=None):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.w_bit = q_config["w_bit"]
+        self.group_size = q_config["q_group_size"]
+        
+        self.register_buffer(
+            'qweight',
+            torch.zeros((in_features // 32 * q_config["w_bit"]), out_features, dtype=torch.int32)
+        )
+        self.register_buffer(
+            'qzeros',
+            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features // 32 * q_config["w_bit"]), dtype=torch.int32)
+        )
+        self.register_buffer(
+            'scales',
+            torch.zeros((math.ceil(in_features / q_config["q_group_size"]), out_features), dtype=torch.float16)
+        )
+
+        if bias:
+            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
+        else:
+            self.bias = None
+    
+    def post_init(self):
+        assert self.qweight.device.type == "cuda"
+        assert self.qweight.device.index is not None
+
+        self.q4 = ext_make_q4(
+            self.qweight,
+            self.qzeros,
+            self.scales,
+            None,
+            self.qweight.device.index # device index
+        )
+    
+    @classmethod
+    def from_qlinear(self, q_linear: WQLinear):
+        # Create a new instance of the WQLinear class from ExllamaLinear with the same parameters
+        exllama_linear = ExllamaLinear(
+            q_linear.in_features,
+            q_linear.out_features,
+            {"zero_point": True, "w_bit": q_linear.w_bit, "q_group_size": q_linear.group_size},
+            q_linear.bias is not None
+        )
+
+        # Copy scales and bias directly
+        if q_linear.bias is not None:
+            exllama_linear.bias.copy_(q_linear.bias)
+            
+        # Transform qweight
+        pack_num = 32 // exllama_linear.w_bit
+        for row in range(q_linear.qweight.shape[0]):
+            for col in range(q_linear.qweight.shape[1]):
+                for i in range(pack_num):
+                    exllama_linear.qweight[row // pack_num, col * pack_num + i] = (q_linear.qweight[row, col] >> (i * exllama_linear.w_bit)) & (2**exllama_linear.w_bit - 1)
+        
+        # Transform qzeros
+        for row in range(q_linear.qzeros.shape[0]):
+            for col in range(q_linear.qzeros.shape[1]):
+                for i in range(pack_num):
+                    exllama_linear.qzeros[row, col * pack_num + i] = (q_linear.qzeros[row, col] >> (i * exllama_linear.w_bit)) & (2**exllama_linear.w_bit - 1)
+        
+        return exllama_linear
+        
+
+    def forward(self, x):
+        out = ext_q4_matmul(x.half(), self.q4, self.out_features)
+
+        if self.bias is not None:
+            out.add_(self.bias)
+        return out
