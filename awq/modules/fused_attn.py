@@ -25,7 +25,8 @@ class QuantLlamaRotary(nn.Module):
         # Embedding size: [max_position, rotary_dim]
         self.register_buffer("cos_sin_cache", cache.half(), persistent=False)
     
-    def forward(self, qkv_states: torch.Tensor, position_ids: torch.Tensor):
+    def forward(self, qkv_states: torch.Tensor, position_ids: torch.Tensor, hidden_states_shape: torch.Size):
+        # get qkv
         query, key, value = qkv_states.chunk(chunks=3, dim=-1)
         del qkv_states
 
@@ -40,11 +41,9 @@ class QuantLlamaRotary(nn.Module):
         # [num_tokens]
         positions = position_ids.view(-1).to(query.device)
 
-        # contiguous memory
         query = query.contiguous()
         key = key.contiguous()
 
-        # apply vLLM kernel
         awq_inference_engine.rotary_embedding(
             positions,
             query,
@@ -54,10 +53,10 @@ class QuantLlamaRotary(nn.Module):
             self.is_neox
         )
 
-        # reshape output for attention
-        query = query.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key = key.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
-        value = value.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
+        batch_size, q_len, _ = hidden_states_shape
+        query = query.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key = key.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         return query, key, value
 
@@ -98,8 +97,8 @@ class TorchAttention(nn.Module):
 
         past_key_value = (key, value) if use_cache else None
 
-        with sdp_kernel(**self.attn_config):
-            attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        # with sdp_kernel(**self.attn_config):
+        attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
         
         del query, key, value
 
@@ -141,7 +140,7 @@ class QuantLlamaAttention(nn.Module):
 
     def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
         qkv_states = self.qkv_proj(hidden_states)
-        query, key, value = self.rotary_emb(qkv_states, position_ids)
+        query, key, value = self.rotary_emb(qkv_states, position_ids, hidden_states.shape)
         attn_output, _, past_key_value = self.attn(query, key, value, use_cache, past_key_value, hidden_states.shape)
         attn_output = self.o_proj(attn_output)
 
