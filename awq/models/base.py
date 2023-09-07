@@ -359,7 +359,8 @@ class BaseAWQForCausalLM(nn.Module):
                     q_linear = ExllamaLinear(
                         module.in_features,
                         module.out_features,
-                        quant_config
+                        quant_config,
+                        module.bias is not None,
                     )
                 else:
                     q_linear = WQLinear.from_linear(
