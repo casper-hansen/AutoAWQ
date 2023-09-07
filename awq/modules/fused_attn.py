@@ -3,6 +3,12 @@ import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
 
+try:
+    from flash_attn import flash_attn_func
+    FLASH_INSTALLED = True
+except:
+    FLASH_INSTALLED = False
+
 class QuantLlamaRotary(nn.Module):
     def __init__(self, dim=4096, max_position_embeddings=2048, base=10000, device=None, 
                        is_neox=True, num_heads=None, num_kv_heads=None):
@@ -66,9 +72,10 @@ class QuantLlamaRotary(nn.Module):
         return query, key, value
 
 class TorchAttention(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, use_flash=False):
         super().__init__()
         self.hidden_size = hidden_size
+        self.use_flash = use_flash
     
     def forward(
         self,
@@ -102,7 +109,14 @@ class TorchAttention(nn.Module):
 
         past_key_value = (key, value) if use_cache else None
 
-        attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        if self.use_flash and FLASH_INSTALLED:
+            query = query.transpose(1,2)
+            key = key.transpose(1,2)
+            value = value.transpose(1,2)
+            attn_output = flash_attn_func(query, key, value, causal=is_causal)
+        else:
+            attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        
         del query, key, value
 
         attn_output = attn_output.transpose(1, 2).reshape(batch_size, q_len, self.hidden_size)
