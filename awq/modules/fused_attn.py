@@ -3,148 +3,81 @@ import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
 from torch.backends.cuda import sdp_kernel, SDPBackend
-from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, LlamaRotaryEmbedding
 
-class QuantLlamaRotaryEmbedding(nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
+class QuantLlamaRotary(nn.Module):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, is_neox=True,
+                       num_heads=None, head_dim=None, num_kv_heads=None):
         super().__init__()
-
         self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
-        self.register_buffer("inv_freq", inv_freq)
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=max_position_embeddings, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
+        self.is_neox = is_neox
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.num_kv_heads = num_kv_heads
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
-
-        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        
+        # create cache
+        inv_freq = 1.0 / (base**(torch.arange(0, dim, 2, device=device) / dim))
+        t = torch.arange(max_position_embeddings, device=device).float()
+        freqs = torch.einsum("i,j -> ij", t, inv_freq.float())
         cos = freqs.cos()
         sin = freqs.sin()
-        cache = torch.cat((cos, sin), dim=-1)
-        
-        # [max_position, rot_dim]
-        self.register_buffer("cos_sin_cache", cache.half(), persistent=False)
+        cache = torch.cat((cos, sin), dim=-1).to(torch.get_default_dtype())
+
+        # Embedding size: [max_position, rotary_dim]
+        self.register_buffer("cos_sin_cache", cache, persistent=False)
     
-    def forward(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        positions: torch.Tensor,
-    ):
-        # Apply rotary embedding to the query and key before passing them
-        # to the attention op.
+    def forward(self, qkv_states: torch.Tensor, position_ids: torch.Tensor):
+        query, key, value = qkv_states.chunk(chunks=3, dim=-1)
+        del qkv_states
+
+        # [num_tokens, num_heads * head_size]
+        query_batch_size, query_len, _ = query.shape
+        query = query.view(query_len*query_batch_size, self.num_heads * self.head_dim)
+
+        # [num_tokens, num_kv_heads * head_size]
+        key_batch_size, key_len, _ = key.shape
+        key = key.view(key_len*key_batch_size, self.num_kv_heads * self.head_dim)
+
+        # [num_tokens]
+        positions = position_ids.view(-1).to(query.device)
+
+        # contiguous memory
         query = query.contiguous()
         key = key.contiguous()
 
+        # apply vLLM kernel
         awq_inference_engine.rotary_embedding(
             positions,
             query,
             key,
             self.dim,
             self.cos_sin_cache,
-            True # is_neox
+            self.is_neox
         )
 
-        return query, key
+        # reshape output for attention
+        query = query.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key = key.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.view(query_batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
 
-class QuantLlamaAttention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
+        return query, key, value
 
-    def __init__(
-        self,
-        hidden_size,
-        num_heads,
-        num_kv_heads,
-        qkv_proj,
-        o_proj,
-        dev,
-        max_new_tokens,
-        use_hf_rotary=False,
-        attention_type=SDPBackend.FLASH_ATTENTION
-    ):
+class TorchAttention(nn.Module):
+    def __init__(self, attention_type:int, hidden_size:int) -> None:
         super().__init__()
-        self.hidden_size = hidden_size
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = hidden_size // num_heads
-        self.use_hf_rotary = use_hf_rotary
 
-        if (self.head_dim * num_heads) != self.hidden_size:
-            raise ValueError(f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                             f" and `num_heads`: {num_heads}).")
-        self.qkv_proj = qkv_proj
-        self.o_proj = o_proj
-        self.attention_type = attention_type
+        self.hidden_size = hidden_size
         self.backend_map = {
             SDPBackend.MATH: {"enable_math": True, "enable_flash": False, "enable_mem_efficient": False},
             SDPBackend.FLASH_ATTENTION: {"enable_math": False, "enable_flash": True, "enable_mem_efficient": False},
             SDPBackend.EFFICIENT_ATTENTION: {"enable_math": False, "enable_flash": False, "enable_mem_efficient": True}
         }
-
-        if use_hf_rotary:
-            self.rotary_emb = LlamaRotaryEmbedding(self.head_dim, max_new_tokens, device=dev)
-        else:
-            self.rotary_emb = QuantLlamaRotaryEmbedding(self.head_dim, max_position_embeddings=max_new_tokens, device = dev)
-
-    def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
-        """Input shape: Batch x Time x Channel"""
-
-        bsz, q_len, _ = hidden_states.size()
-
-        qkv_states = self.qkv_proj(hidden_states)
-
-        if self.use_hf_rotary:
-            # get qkv
-            qkv_states = qkv_states.view(bsz, q_len, 3, self.num_heads, self.head_dim)
-            query, key, value = torch.split(qkv_states, 1, dim=2)
-            del qkv_states
-            
-            # reshape for hf rotary
-            query = query.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-            key = key.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-            value = value.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-
-            kv_seq_len = key.shape[-2]
-            if past_key_value is not None:
-                kv_seq_len += past_key_value[0].shape[-2]
-            
-            cos, sin = self.rotary_emb(value, seq_len=kv_seq_len)
-            query, key = apply_rotary_pos_emb(query, key, cos, sin, position_ids)
-
-        else:
-            # get qkv
-            query, key, value = qkv_states.chunk(chunks=3, dim=-1)
-            del qkv_states
-
-            # [num_tokens, num_heads * head_size]
-            query_batch_size, query_len, _ = query.shape
-            query = query.view(query_len*query_batch_size, self.num_heads * self.head_dim)
-
-            # [num_tokens, num_kv_heads * head_size]
-            key_batch_size, key_len, _ = key.shape
-            key = key.view(key_len*key_batch_size, self.num_kv_heads * self.head_dim)
-
-            # [num_tokens]
-            positions = position_ids.view(-1).to(query.device)
-
-            query, key = self.rotary_emb(query, key, positions)
-
-            query = query.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-            key = key.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-            value = value.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        
+        self.attn_config = self.backend_map[attention_type]
+    
+    def forward(self, query:torch.Tensor, key:torch.Tensor, value:torch.Tensor, use_cache:bool, past_key_value:torch.Tensor):
         is_causal = past_key_value is None
+        query_batch_size, query_len, _ = query.shape
 
-        kv_seq_len = q_len
+        kv_seq_len = query_len
         if past_key_value is not None:
             kv_seq_len += past_key_value[0].shape[-2]
         
@@ -164,12 +97,51 @@ class QuantLlamaAttention(nn.Module):
 
         past_key_value = (key, value) if use_cache else None
 
-        with sdp_kernel(**self.backend_map[self.attention_type]):
+        with sdp_kernel(**self.attn_config):
             attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
         
         del query, key, value
 
-        attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
+        attn_output = attn_output.transpose(1, 2).reshape(query_batch_size, query_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)
+
+        return attn_output, None, past_key_value
+
+class QuantLlamaAttention(nn.Module):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def __init__(
+        self,
+        hidden_size:int,
+        num_heads:int,
+        num_kv_heads:int,
+        qkv_proj: torch.Tensor,
+        o_proj: torch.Tensor,
+        dev:str,
+        max_new_tokens:int,
+        attention_type=SDPBackend.FLASH_ATTENTION
+    ):
+        super().__init__()
+        self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads
+        self.head_dim = hidden_size // num_heads
+        self.qkv_proj = qkv_proj
+        self.o_proj = o_proj
+        self.attn = TorchAttention(attention_type, hidden_size)
+
+        self.rotary_emb = QuantLlamaRotary(
+            self.head_dim, 
+            max_position_embeddings=max_new_tokens, 
+            device=dev,
+            is_neox=True,
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+            num_kv_heads=self.num_kv_heads
+        )
+
+    def forward(self, hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False):
+        qkv_states = self.qkv_proj(hidden_states)
+        query, key, value = self.rotary_emb(qkv_states, position_ids)
+        attn_output, _, past_key_value = self.attn(query, key, value, use_cache, past_key_value)
 
         return attn_output, None, past_key_value
