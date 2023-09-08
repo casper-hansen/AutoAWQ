@@ -44,7 +44,8 @@ requirements = [
     "toml",
     "attributedict",
     "protobuf",
-    "torchvision"
+    "torchvision",
+    "tabulate"
 ]
 
 def get_include_dirs():
