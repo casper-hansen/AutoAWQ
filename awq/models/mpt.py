@@ -6,7 +6,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_seq_len"
 
     @staticmethod
-    def fuse_layers(model: MptForCausalLM):
+    def fuse_layers(model: MptForCausalLM, quant_config:dict):
         fuser = MptFuser(model)
         fuser.fuse_mlp()
 

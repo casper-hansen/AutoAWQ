@@ -6,8 +6,8 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model: LlamaForCausalLM, quant_config: dict):
+        fuser = LlamaFuser(model, quant_config)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -66,17 +66,18 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 import torch
-from typing import List, Tuple
-from awq.modules.qlinear import WQLinear_GEMM
+from typing import List, Tuple, Union
 from awq.utils.utils import set_module_name
 from awq.modules.fused.mlp import QuantLlamaMLP
 from awq.modules.fused.norm import FTLlamaRMSNorm
 from awq.modules.fused.attn import QuantLlamaAttention
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
-    def __init__(self, model):
+    def __init__(self, model, quant_config):
         self.model = model
+        self.quant_config = quant_config
 
         self.attention_modules: List[Tuple[str, LlamaAttention]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -95,7 +96,7 @@ class LlamaFuser:
     
     def fuse_attention(self):
         for name, module in self.attention_modules:
-            qkv_layer: WQLinear_GEMM = self._fuse_qkv(module)
+            qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv(module)
             attn = QuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
@@ -113,7 +114,12 @@ class LlamaFuser:
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
         # create module
-        qkv_layer = WQLinear_GEMM(
+        if self.quant_config["version"] == 'GEMM':
+            qkv_module = WQLinear_GEMM
+        elif self.quant_config["version"] == 'GEMV':
+            qkv_module = WQLinear_GEMV
+        
+        qkv_layer = qkv_module(
             q_proj.w_bit, 
             q_proj.group_size, 
             q_proj.in_features, 
