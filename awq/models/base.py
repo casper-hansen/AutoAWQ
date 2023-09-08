@@ -7,10 +7,11 @@ import torch.nn as nn
 from tqdm import tqdm
 from collections import defaultdict
 
+from awq.modules.qlinear import WQLinear_GEMM
+from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.quantizer import pseudo_quantize_tensor
-from awq.quantize.qmodule import WQLinear, ScaledActivation
 from awq.quantize.auto_clip import auto_clip_block, apply_clip
 from awq.quantize.auto_scale import auto_scale_block, apply_scale
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
@@ -76,7 +77,7 @@ class BaseAWQForCausalLM(nn.Module):
                 scales = scales.t().contiguous()
                 zeros = zeros.t().contiguous()
 
-                q_linear = WQLinear.from_linear(
+                q_linear = WQLinear_GEMM.from_linear(
                     module, 
                     self.quant_config['w_bit'], 
                     self.quant_config['q_group_size'], 
@@ -351,7 +352,7 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                q_linear = WQLinear.from_linear(
+                q_linear = WQLinear_GEMM.from_linear(
                     module, quant_config['w_bit'], quant_config['q_group_size'], True)
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)

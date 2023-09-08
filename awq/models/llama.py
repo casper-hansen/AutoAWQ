@@ -67,11 +67,11 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
 
 import torch
 from typing import List, Tuple
-from awq.quantize.qmodule import WQLinear
+from awq.modules.qlinear import WQLinear_GEMM
 from awq.utils.utils import set_module_name
-from awq.modules.fused_mlp import QuantLlamaMLP
-from awq.modules.fused_norm import FTLlamaRMSNorm
-from awq.modules.fused_attn import QuantLlamaAttention
+from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.norm import FTLlamaRMSNorm
+from awq.modules.fused.attn import QuantLlamaAttention
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
@@ -95,7 +95,7 @@ class LlamaFuser:
     
     def fuse_attention(self):
         for name, module in self.attention_modules:
-            qkv_layer: WQLinear = self._fuse_qkv(module)
+            qkv_layer: WQLinear_GEMM = self._fuse_qkv(module)
             attn = QuantLlamaAttention(
                 module.hidden_size,
                 module.num_heads,
@@ -113,7 +113,7 @@ class LlamaFuser:
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
         # create module
-        qkv_layer = WQLinear(
+        qkv_layer = WQLinear_GEMM(
             q_proj.w_bit, 
             q_proj.group_size, 
             q_proj.in_features, 

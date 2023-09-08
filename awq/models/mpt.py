@@ -67,7 +67,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
-from awq.modules.fused_mlp import QuantMPTMLP
+from awq.modules.fused.mlp import QuantMPTMLP
 
 class MptFuser:
     def __init__(self, model):
