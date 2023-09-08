@@ -70,7 +70,7 @@ from typing import List, Tuple, Union
 from awq.utils.utils import set_module_name
 from awq.modules.fused.mlp import QuantLlamaMLP
 from awq.modules.fused.norm import FTLlamaRMSNorm
-from awq.modules.fused.attn import QuantLlamaAttention
+from awq.modules.fused.attn import QuantLlamaAttention, QuantLlamaAttentionFused
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
@@ -96,17 +96,58 @@ class LlamaFuser:
     
     def fuse_attention(self):
         for name, module in self.attention_modules:
-            qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv(module)
-            attn = QuantLlamaAttention(
+            qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv2(module)
+            # attn = QuantLlamaAttention(
+            #     module.hidden_size,
+            #     module.num_heads,
+            #     module.num_key_value_heads,
+            #     qkv_layer,
+            #     module.o_proj,
+            #     next(iter(qkv_layer.state_dict().values())).device,
+            #     self.model.config.max_new_tokens
+            # )
+            attn = QuantLlamaAttentionFused(
                 module.hidden_size,
                 module.num_heads,
-                module.num_key_value_heads,
-                qkv_layer,
+                qkv_layer, 
                 module.o_proj,
                 next(iter(qkv_layer.state_dict().values())).device,
                 self.model.config.max_new_tokens
             )
             set_module_name(self.model, name, attn)
+    
+    def _fuse_qkv2(self, module: LlamaAttention):
+        q_proj = module.q_proj
+        k_proj = module.k_proj
+        v_proj = module.v_proj
+
+        qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
+        qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
+        scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
+        # g_idx = torch.cat([q_proj.g_idx, k_proj.g_idx, v_proj.g_idx], dim=0)
+        g_idx = None
+        bias = (
+            torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0)
+            if q_proj.bias is not None
+            else None
+        )
+
+        qkv_layer = WQLinear_GEMV(
+            q_proj.w_bit,
+            q_proj.group_size,
+            q_proj.in_features,
+            q_proj.out_features + k_proj.out_features + v_proj.out_features,
+            q_proj.bias is not None,
+            q_proj.qweight.device,
+        )
+        qkv_layer.qweight = qweights
+        qkv_layer.qzeros = qzeros
+        qkv_layer.scales = scales
+
+        qkv_layer.bias = bias
+        qkv_layer.split_k_iters = q_proj.split_k_iters
+
+        return qkv_layer
     
     def _fuse_qkv(self, module: LlamaAttention):
         # get qkv and bias
@@ -129,10 +170,11 @@ class LlamaFuser:
         )
 
         # replace buffers with real weights
-        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
-        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
-        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        qkv_layer.qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
+        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
+        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
         qkv_layer.bias = bias
+        qkv_layer.split_k_iters = q_proj.split_k_iters
 
         return qkv_layer
 
