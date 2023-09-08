@@ -98,7 +98,7 @@ def auto_scale_block(awq_model,
     from .quantizer import pseudo_quantize_tensor
     # firstly, get the weight quantize function
     if quant_config['w_bit'] is not None:
-        def w_quantize_func(p): return pseudo_quantize_tensor(p, **quant_config).detach()
+        def w_quantize_func(p): return pseudo_quantize_tensor(p, w_bit=quant_config["w_bit"], q_group_size=quant_config["q_group_size"]).detach()
     else:
         def w_quantize_func(p): return p
 
