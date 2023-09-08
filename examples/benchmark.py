@@ -47,18 +47,22 @@ def run_round(model_path, quant_file, n_generate, input_ids):
     print(f" -- Generating {n_generate} tokens, {len(input_ids)} token prompt...")
     context_time, generate_time = generate(model, input_ids, n_generate)
 
+    device = next(model.parameters()).device
     prefill_tokens_per_second = n_generate / context_time
     decode_tokens_per_second = n_generate / generate_time
-    memory_used = torch.cuda.max_memory_allocated(next(model.parameters()).device) / (1024 ** 2)
+    memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+    memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
 
     print(f" ** Speed (Prefill): {prefill_tokens_per_second:.2f} tokens/second")
     print(f" ** Speed (Decode): {decode_tokens_per_second:.2f} tokens/second")
-    print(f" ** Max Memory (): {memory_used:.2f} GB")
+    print(f" ** Max Memory (VRAM): {memory_used:.2f} GB ({memory_pct:.2f}%)")
 
     return {
+        "Prefill length": len(input_ids),
+        "Decode length": n_generate,
         "Prefill tokens/s": prefill_tokens_per_second,
         "Decode tokens/s": decode_tokens_per_second,
-        "Memory (VRAM)": memory_used,
+        "Memory (VRAM)": f"{memory_used:.2f} GB ({memory_pct:.2f}%)",
         "GPU": torch.cuda.get_device_name()
     }
 
