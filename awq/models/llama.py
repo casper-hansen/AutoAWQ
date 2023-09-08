@@ -111,20 +111,31 @@ class LlamaFuser:
         q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
-        qkv_layer = WQLinear_GEMV(
+        if isinstance(q_proj, WQLinear_GEMV):
+            q_linear = WQLinear_GEMV
+        else:
+            q_linear = WQLinear_GEMM
+
+        qkv_layer = q_linear(
             q_proj.w_bit,
             q_proj.group_size,
             q_proj.in_features,
             q_proj.out_features + k_proj.out_features + v_proj.out_features,
             q_proj.bias is not None,
-            q_proj.qweight.device,
+            next(iter(module.state_dict().values())).device
         )
-        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
-        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
-        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
 
+        if isinstance(qkv_layer, WQLinear_GEMV):
+            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
+            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
+            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
+            qkv_layer.split_k_iters = q_proj.split_k_iters
+        else:
+            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        
         qkv_layer.bias = bias
-        qkv_layer.split_k_iters = q_proj.split_k_iters
 
         return qkv_layer
 
