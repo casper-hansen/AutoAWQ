@@ -77,13 +77,13 @@ class BaseAWQForCausalLM(nn.Module):
                 module.weight.data, scales, zeros = pseudo_quantize_tensor(
                     module.weight.data, 
                     get_scale_zp=True, 
-                    **self.quant_config
+                    w_bit=self.quant_config["w_bit"], 
+                    q_group_size=self.quant_config["q_group_size"]
                 )
 
-                scales = scales.t().contiguous()
-                zeros = zeros.t().contiguous()
-
                 if self.quant_config["version"] == 'GEMM':
+                    scales = scales.t().contiguous()
+                    zeros = zeros.t().contiguous()
                     q_linear_module = WQLinear_GEMM
                 elif self.quant_config["version"] == 'GEMV':
                     q_linear_module = WQLinear_GEMV
