@@ -70,7 +70,7 @@ from typing import List, Tuple, Union
 from awq.utils.utils import set_module_name
 from awq.modules.fused.mlp import QuantLlamaMLP
 from awq.modules.fused.norm import FTLlamaRMSNorm
-from awq.modules.fused.attn import QuantLlamaAttentionFused
+from awq.modules.fused.attn import QuantAttentionFused
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
@@ -97,7 +97,7 @@ class LlamaFuser:
     def fuse_attention(self):
         for name, module in self.attention_modules:
             qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv(module)
-            attn = QuantLlamaAttentionFused(
+            attn = QuantAttentionFused(
                 module.hidden_size,
                 module.num_heads,
                 qkv_layer, 
