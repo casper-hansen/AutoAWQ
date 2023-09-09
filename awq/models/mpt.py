@@ -1,5 +1,5 @@
 from .base import BaseAWQForCausalLM
-from transformers.models.mpt.modeling_mpt import MptBlock, MptForCausalLM, MptMLP
+from transformers.models.mpt.modeling_mpt import MptBlock, MptForCausalLM, MptMLP, MptAttention, LayerNorm
 
 class MptAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MPTBlock"
@@ -8,7 +8,8 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: MptForCausalLM, quant_config:dict):
         fuser = MptFuser(model)
-        fuser.fuse_mlp()
+        fuser.fuse_attention()
+        fuser.fuse_layernorm()
 
     @staticmethod
     def get_model_layers(model: MptForCausalLM):
@@ -65,13 +66,26 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
         return layers
 
+import torch
+import xformers
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
-from awq.modules.fused.mlp import QuantMPTMLP
+from xformers.triton.layer_norm import FusedLayerNorm
+from awq.modules.fused.attn import QuantAttentionFused
 
 class MptFuser:
     def __init__(self, model):
         self.model = model
+
+        self.attention_modules: List[Tuple[str, MptAttention]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, MptAttention)
+        ]
+
+        self.layernorm_modules: List[Tuple[str, LayerNorm]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, LayerNorm)
+        ]
 
         self.mlp_modules: List[Tuple[str, MptMLP]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -79,12 +93,29 @@ class MptFuser:
         ]
     
     def fuse_attention(self):
-        pass
+        for name, qkv_layer in self.attention_modules:
+            attn = QuantAttentionFused(
+                qkv_layer.hidden_size,
+                qkv_layer.n_heads,
+                qkv_layer, 
+                qkv_layer.out_proj,
+                next(iter(qkv_layer.state_dict().values())).device,
+                self.model.config.max_new_tokens,
+                use_alibi=True
+            )
+            set_module_name(self.model, name, attn)
 
     def fuse_layernorm(self):
-        pass
+        xformers.triton.k_layer_norm._triton_layernorm_fp16_enabled = True
+        for name, module in self.layernorm_modules:
+            norm = FusedLayerNorm(module.weight.shape, eps=module.eps).to(module.weight.device)
+
+            # copy weights and bias
+            with torch.no_grad():
+                norm.weight = module.weight
+                norm.bias = module.bias
+
+            set_module_name(self.model, name, norm)
 
     def fuse_mlp(self):
-        for name, module in self.mlp_modules:
-            mlp = QuantMPTMLP(module.up_proj, module.act, module.down_proj)
-            set_module_name(self.model, name, mlp)
+        pass

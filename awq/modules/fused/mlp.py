@@ -1,43 +1,7 @@
-import torch
 import torch.nn as nn
 import awq_inference_engine
 import torch.nn.functional as F
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-
-class QuantMPTMLP(nn.Module):
-    def __init__(
-        self,
-        up_proj,
-        act,
-        down_proj
-    ):
-        super().__init__()
-        self.register_buffer('up_proj_qweight', up_proj.qweight)
-        self.register_buffer('up_proj_scales', up_proj.scales)
-        self.register_buffer('up_proj_qzeros', up_proj.qzeros)
-
-        self.up_proj = up_proj
-        self.act = act
-        self.down_proj = down_proj
-
-        if isinstance(down_proj, WQLinear_GEMV):
-            self.linear = awq_inference_engine.gemv_forward_cuda
-            self.group_size = down_proj.group_size
-        else:
-            self.linear = awq_inference_engine.gemm_forward_cuda
-            self.group_size = 8
-    
-    def forward(self, x: torch.Tensor):
-        x = x.reshape(-1, x.shape[-1])
-        x = self.linear(
-            x, 
-            self.up_proj_qweight, 
-            self.up_proj_scales, 
-            self.up_proj_qzeros, 
-            self.group_size
-        )
-
-        return self.down_proj(self.act(x))
 
 class QuantLlamaMLP(nn.Module):
 
