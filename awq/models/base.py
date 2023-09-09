@@ -44,10 +44,6 @@ class BaseAWQForCausalLM(nn.Module):
                        calib_data="pileval"):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
-        if quant_config["version"] == "GEMM":
-            logging.warning('Deprecated model weight format. Re-quantize '
-                            'your weights again with version="GEMV" for a speedup. '
-                            'In the next AutoAWQ version, GEMM will be deprecated.')
 
         if run_search:
             self.search_result = self._awq_search(tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
@@ -351,11 +347,6 @@ class BaseAWQForCausalLM(nn.Module):
     def _load_quantized_modules(self, model, quant_config, version):
         # Real quantization of weights
         assert quant_config["zero_point"], "We only support zero_point quantization now."
-
-        if version == 'GEMM':
-            logging.warning('Deprecated model weight format. Re-quantize '
-                            'your weights again with version="GEMV" for a speedup. '
-                            'In the next AutoAWQ version, GEMM will be deprecated.')
         
         # Get blocks of model
         layers = self.get_model_layers(model)
