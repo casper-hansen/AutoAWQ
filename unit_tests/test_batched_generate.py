@@ -4,6 +4,7 @@ import unittest
 import torch
 import gc
 
+
 quant_path = "casperhansen/vicuna-7b-v1.5-awq"
 quant_file = "awq_model_w4_g128.pt"
 
