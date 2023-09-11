@@ -1,5 +1,5 @@
 from .base import BaseAWQForCausalLM
-from transformers.models.mpt.modeling_mpt import MptBlock, MptForCausalLM, MptMLP, MptAttention, LayerNorm
+from transformers.models.mpt.modeling_mpt import MptBlock as OldMptBlock, MptForCausalLM, MptAttention
 
 class MptAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MPTBlock"
@@ -9,14 +9,14 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     def fuse_layers(model: MptForCausalLM, quant_config:dict):
         fuser = MptFuser(model)
         fuser.fuse_attention()
-        fuser.fuse_layernorm()
+        fuser.fuse_block()
 
     @staticmethod
     def get_model_layers(model: MptForCausalLM):
         return model.transformer.blocks
     
     @staticmethod
-    def get_act_for_scaling(module: MptBlock):
+    def get_act_for_scaling(module: OldMptBlock):
         return dict(
             is_scalable=True,
             scale_name="ffn.act",
@@ -30,7 +30,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
         model.transformer.emb_drop = model.transformer.emb_drop.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: MptBlock, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldMptBlock, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -66,11 +66,9 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
         return layers
 
-import torch
-import xformers
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
-from xformers.triton.layer_norm import FusedLayerNorm
+from awq.modules.fused.block import MptBlock
 from awq.modules.fused.attn import QuantAttentionFused
 
 class MptFuser:
@@ -82,14 +80,9 @@ class MptFuser:
             if isinstance(module, MptAttention)
         ]
 
-        self.layernorm_modules: List[Tuple[str, LayerNorm]] = [
+        self.mpt_blocks: List[Tuple[str, OldMptBlock]] = [
             (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LayerNorm)
-        ]
-
-        self.mlp_modules: List[Tuple[str, MptMLP]] = [
-            (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, MptMLP)
+            if 'mptblock' in module.__class__.__name__.lower()
         ]
     
     def fuse_attention(self):
@@ -105,17 +98,14 @@ class MptFuser:
             )
             set_module_name(self.model, name, attn)
 
-    def fuse_layernorm(self):
-        xformers.triton.k_layer_norm._triton_layernorm_fp16_enabled = True
-        for name, module in self.layernorm_modules:
-            norm = FusedLayerNorm(module.weight.shape, eps=module.eps).to(module.weight.device)
+    def fuse_block(self):
+        for name, module in self.mpt_blocks:
+            block = MptBlock(
+                self.model.config.d_model,
+                self.model.config.n_heads,
+                module.attn.Wqkv,
+                module.attn.out_proj,
+                module.ffn
+            )
 
-            # copy weights and bias
-            with torch.no_grad():
-                norm.weight = module.weight
-                norm.bias = module.bias
-
-            set_module_name(self.model, name, norm)
-
-    def fuse_mlp(self):
-        pass
+            set_module_name(self.model, name, block)
