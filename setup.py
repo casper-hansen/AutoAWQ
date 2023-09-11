@@ -45,8 +45,7 @@ requirements = [
     "attributedict",
     "protobuf",
     "torchvision",
-    "tabulate",
-    "xformers"
+    "tabulate"
 ]
 
 def get_include_dirs():
