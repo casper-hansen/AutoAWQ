@@ -8,7 +8,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: MptForCausalLM, quant_config:dict):
         fuser = MptFuser(model)
-        fuser.fuse_block()
+        fuser.fuse_transformer()
 
     @staticmethod
     def get_model_layers(model: MptForCausalLM):
@@ -67,10 +67,11 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
-from awq.modules.fused.block import MptBlock
+from awq.modules.fused.block import MPTBlock
+from awq.modules.fused.model import MPTModel
 
 class MptFuser:
-    def __init__(self, model):
+    def __init__(self, model: MptForCausalLM):
         self.model = model
 
         self.mpt_blocks: List[Tuple[str, OldMptBlock]] = [
@@ -78,15 +79,26 @@ class MptFuser:
             if 'mptblock' in module.__class__.__name__.lower()
         ]
 
-    def fuse_block(self):
-        for name, module in self.mpt_blocks:
-            block = MptBlock(
+    def fuse_transformer(self):
+        blocks = []
+
+        module: OldMptBlock
+        for module in self.model.transformer.blocks:
+            blocks.append(MPTBlock(
                 self.model.config.d_model,
                 self.model.config.n_heads,
                 module.attn.Wqkv,
                 module.attn.out_proj,
                 module.ffn,
-                next(iter(module.state_dict().values())).device
-            )
+                module.norm_1,
+                module.norm_2,
+                next(iter(module.state_dict().values())).device, 
+                self.model.config.max_new_tokens
+            ))
 
-            set_module_name(self.model, name, block)
+        self.model.transformer = MPTModel(
+            self.model.config.vocab_size,
+            blocks,
+            self.model.transformer.wte,
+            self.model.transformer.norm_f,
+        )
