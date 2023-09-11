@@ -85,7 +85,8 @@ class MptFuser:
                 self.model.config.n_heads,
                 module.attn.Wqkv,
                 module.attn.out_proj,
-                module.ffn
+                module.ffn,
+                next(iter(module.state_dict().values())).device
             )
 
             set_module_name(self.model, name, block)

@@ -2,14 +2,14 @@ import torch.nn as nn
 from awq.modules.fused.attn import QuantAttentionFused
 
 class MptBlock(nn.Module):
-    def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mpt_mlp):
+    def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mpt_mlp, dev):
         super().__init__()
         self.n_heads = n_heads
         self.hidden_size = hidden_size
-        self.attn = QuantAttentionFused(hidden_size, self.n_heads, qkv_layer, o_proj, dev="cuda:0", max_seq_len=8096, use_alibi=True).to("cuda:0")
-        self.ffn = mpt_mlp.to("cuda:0")
-        self.norm_1 = nn.LayerNorm(hidden_size, eps=1e-6).half().to("cuda:0")
-        self.norm_2 = nn.LayerNorm(hidden_size, eps=1e-6).half().to("cuda:0")
+        self.attn = QuantAttentionFused(hidden_size, self.n_heads, qkv_layer, o_proj, dev="cuda:0", max_seq_len=8096, use_alibi=True)
+        self.ffn = mpt_mlp
+        self.norm_1 = nn.LayerNorm(hidden_size, eps=1e-6).half().to(dev)
+        self.norm_2 = nn.LayerNorm(hidden_size, eps=1e-6).half().to(dev)
 
     def forward(
         self, hidden_states, past_key_value, attn_bias, attention_mask, is_causal
