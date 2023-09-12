@@ -34,11 +34,7 @@ class FalconDecoderLayer(nn.Module):
         self.n_heads = n_heads
         self.hidden_size = hidden_size
         self.new_decoder_arch = new_decoder_arch
-        
-        if new_decoder_arch:
-            attention_shapes = None
-        else:
-            attention_shapes = self._get_attention_shapes(1, n_heads, max_seq_len, self.hidden_size // n_heads)
+        attention_shapes = self._get_attention_shapes(1, n_heads, max_seq_len, self.hidden_size // n_heads, new_decoder_arch)
         
         # TODO: Falcon has ALiBi implemented but which model uses it?
         self.attn = QuantAttentionFused(
@@ -55,23 +51,45 @@ class FalconDecoderLayer(nn.Module):
         
         self.mlp = mlp
     
-    def _get_attention_shapes(self, batch_size, n_heads, max_seq_len, head_dim):
-        self.attention_shapes = {
-            # following fastertransformer definition
-            "cache_v": (batch_size, 1, max_seq_len, head_dim,),
-            # 8: pack 8 fp16 in FT, if fp32 then use 4
-            "cache_k": (batch_size, 1, head_dim // 8, max_seq_len, 8,),
-            "xqkv_view": (n_heads+2, head_dim),
-            "xq_slice": lambda xqkv: xqkv[:, :, :-2],
-            "xk_slice": lambda xqkv: xqkv[:, :, [-2]],
-            "xv_slice": lambda xqkv: xqkv[:, :, [-1]],
-            "xk_reshape": (1, head_dim // 8, 8),
-            "xk_view": (1, head_dim),
-            "xv_view": (1, head_dim),
-            "single_xq_view": (n_heads, head_dim),
-            "single_xk_view": (1, head_dim),
-            "single_xv_view": (1, head_dim)
-        }
+    def _get_attention_shapes(self, batch_size, n_heads, max_seq_len, head_dim, new_decoder_arch):
+        if new_decoder_arch:
+            kv_heads = 8
+
+            self.attention_shapes = {
+                # following fastertransformer definition
+                "cache_v": (batch_size, n_heads+(kv_heads*2), max_seq_len, head_dim,),
+                # 8: pack 8 fp16 in FT, if fp32 then use 4
+                "cache_k": (batch_size, n_heads+(kv_heads*2), head_dim // 8, max_seq_len, 8,),
+                "xqkv_view": (-1, n_heads+(kv_heads*2), head_dim),
+                "xq_slice": lambda xqkv: xqkv[:, :, :,0],
+                "xk_slice": lambda xqkv: xqkv[:, :, :,1],
+                "xv_slice": lambda xqkv: xqkv[:, :, :,2],
+                "xk_reshape": (1, head_dim // 8, 8),
+                "xq_view": (1, head_dim),
+                "xk_view": (1, head_dim),
+                "xv_view": (1, head_dim),
+                "single_xq_view": (n_heads, head_dim),
+                "single_xk_view": (1, 8, head_dim),
+                "single_xv_view": (1, 8, head_dim)
+            }
+        else:
+            self.attention_shapes = {
+                # following fastertransformer definition
+                "cache_v": (batch_size, 1, max_seq_len, head_dim,),
+                # 8: pack 8 fp16 in FT, if fp32 then use 4
+                "cache_k": (batch_size, 1, head_dim // 8, max_seq_len, 8,),
+                "xqkv_view": (n_heads+2, head_dim),
+                "xq_slice": lambda xqkv: xqkv[:, :, :-2],
+                "xk_slice": lambda xqkv: xqkv[:, :, [-2]],
+                "xv_slice": lambda xqkv: xqkv[:, :, [-1]],
+                "xk_reshape": (1, head_dim // 8, 8),
+                "xq_view": (n_heads, head_dim),
+                "xk_view": (1, head_dim),
+                "xv_view": (1, head_dim),
+                "single_xq_view": (n_heads, head_dim),
+                "single_xk_view": (1, head_dim),
+                "single_xv_view": (1, head_dim)
+            }
 
         return self.attention_shapes
 
