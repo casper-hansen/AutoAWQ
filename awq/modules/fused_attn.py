@@ -156,8 +156,10 @@ class QuantLlamaAttention(nn.Module):
 
         past_key_value = (key, value) if use_cache else None
 
-        # with torch.backends.cuda.sdp_kernel(enable_math=False):
-        attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        with torch.autocast(device_type='cuda', dtype=torch.float32):
+            # with torch.backends.cuda.sdp_kernel(enable_math=False):
+            attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=is_causal)
+        
         del query, key, value
 
         attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
