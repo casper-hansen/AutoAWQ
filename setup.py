@@ -68,7 +68,7 @@ def get_compute_capabilities():
         compute_capabilities.add(major * 10 + minor)
 
     # figure out compute capability
-    compute_capabilities = {80, 86, 89, 90}
+    # compute_capabilities = {80, 86, 89, 90}
 
     capability_flags = []
     for cap in compute_capabilities:
