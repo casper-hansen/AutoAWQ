@@ -162,7 +162,7 @@ class QuantLlamaAttention(nn.Module):
         
         del query, key, value
 
-        attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
+        attn_output = attn_output.transpose(1, 2).reshape(bsz, q_len, self.hidden_size).half()
         attn_output = self.o_proj(attn_output)
 
         return attn_output, None, past_key_value

@@ -1,8 +1,8 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "casperhansen/vicuna-7b-v1.5-awq"
-quant_file = "awq_model_w4_g128.pt"
+quant_path = "/code/AutoAWQ"
+quant_file = "vicuna-7b-base-4bit-AWQ.pt"
 
 # Load model
 model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file, fuse_layers=True)
