@@ -7,7 +7,7 @@ class FalconAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: FalconForCausalLM, quant_config:dict):
         fuser = FalconFuser(model)
-        # fuser.fuse_transformer()
+        fuser.fuse_transformer()
 
     @staticmethod
     def get_model_layers(model: FalconForCausalLM):
