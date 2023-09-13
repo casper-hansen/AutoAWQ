@@ -1,3 +1,4 @@
+import os
 import math
 import torch
 import torch.nn as nn
@@ -114,7 +115,8 @@ class QuantLlamaRotaryEmbedding(nn.Module):
         return query, key
 
 class QuantAttentionFused(nn.Module):
-    def __init__(self, hidden_size, num_heads, qkv_layer, o_proj, dev, max_seq_len, use_alibi=False, attention_shapes=None):
+    def __init__(self, hidden_size, num_heads, qkv_layer, o_proj, dev, max_seq_len, 
+                       use_alibi=False, attention_shapes=None):
         super().__init__()
         self.hidden_size = hidden_size
         self.n_local_heads = num_heads
@@ -123,7 +125,7 @@ class QuantAttentionFused(nn.Module):
         self.o_proj = o_proj
         self.start_pos = 0
         self.use_alibi = use_alibi
-        self.cache_batch_size = 1
+        self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
         self.attention_shapes = attention_shapes if attention_shapes is not None else {
             # following fastertransformer definition
             "cache_v": (self.cache_batch_size, self.n_local_heads, max_seq_len, self.head_dim,),
@@ -170,6 +172,11 @@ class QuantAttentionFused(nn.Module):
         hidden_states, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False
     ):
         bsz, seqlen, _ = hidden_states.shape
+        if bsz != self.cache_batch_size:
+            raise RuntimeError(
+                f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
+                f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
+            )
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
         

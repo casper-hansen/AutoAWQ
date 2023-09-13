@@ -1,3 +1,4 @@
+import os
 import torch.nn as nn
 from awq.modules.fused.attn import QuantAttentionFused
 
@@ -34,7 +35,7 @@ class FalconDecoderLayer(nn.Module):
         self.n_heads = n_heads
         self.hidden_size = hidden_size
         self.new_decoder_arch = new_decoder_arch
-        attention_shapes = self._get_attention_shapes(1, n_heads, max_seq_len, self.hidden_size // n_heads, new_decoder_arch)
+        attention_shapes = self._get_attention_shapes(n_heads, max_seq_len, self.hidden_size // n_heads, new_decoder_arch)
         
         # TODO: Falcon has ALiBi implemented but which model uses it?
         self.attn = QuantAttentionFused(
@@ -51,7 +52,9 @@ class FalconDecoderLayer(nn.Module):
         
         self.mlp = mlp
     
-    def _get_attention_shapes(self, batch_size, n_heads, max_seq_len, head_dim, new_decoder_arch):
+    def _get_attention_shapes(self, n_heads, max_seq_len, head_dim, new_decoder_arch):
+        batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
+        
         if new_decoder_arch:
             kv_heads = 8
 
