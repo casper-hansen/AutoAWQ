@@ -1,21 +1,21 @@
 from .base import BaseAWQForCausalLM
-from transformers.models.mpt.modeling_mpt import MptBlock, MptForCausalLM, MptMLP
+from transformers.models.mpt.modeling_mpt import MptBlock as OldMptBlock, MptForCausalLM
 
 class MptAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MPTBlock"
     max_new_tokens_key = "max_seq_len"
 
     @staticmethod
-    def fuse_layers(model: MptForCausalLM):
+    def fuse_layers(model: MptForCausalLM, quant_config:dict):
         fuser = MptFuser(model)
-        fuser.fuse_mlp()
+        fuser.fuse_transformer()
 
     @staticmethod
     def get_model_layers(model: MptForCausalLM):
         return model.transformer.blocks
     
     @staticmethod
-    def get_act_for_scaling(module: MptBlock):
+    def get_act_for_scaling(module: OldMptBlock):
         return dict(
             is_scalable=True,
             scale_name="ffn.act",
@@ -29,7 +29,7 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
         model.transformer.emb_drop = model.transformer.emb_drop.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: MptBlock, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldMptBlock, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -67,24 +67,38 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
 
 from typing import List, Tuple
 from awq.utils.utils import set_module_name
-from awq.modules.fused_mlp import QuantMPTMLP
+from awq.modules.fused.block import MPTBlock
+from awq.modules.fused.model import MPTModel
 
 class MptFuser:
-    def __init__(self, model):
+    def __init__(self, model: MptForCausalLM):
         self.model = model
 
-        self.mlp_modules: List[Tuple[str, MptMLP]] = [
+        self.mpt_blocks: List[Tuple[str, OldMptBlock]] = [
             (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, MptMLP)
+            if 'mptblock' in module.__class__.__name__.lower()
         ]
-    
-    def fuse_attention(self):
-        pass
 
-    def fuse_layernorm(self):
-        pass
+    def fuse_transformer(self):
+        blocks = []
 
-    def fuse_mlp(self):
-        for name, module in self.mlp_modules:
-            mlp = QuantMPTMLP(module.up_proj, module.act, module.down_proj)
-            set_module_name(self.model, name, mlp)
+        module: OldMptBlock
+        for module in self.model.transformer.blocks:
+            blocks.append(MPTBlock(
+                self.model.config.d_model,
+                self.model.config.n_heads,
+                module.attn.Wqkv,
+                module.attn.out_proj,
+                module.ffn,
+                module.norm_1,
+                module.norm_2,
+                next(iter(module.state_dict().values())).device, 
+                self.model.config.max_new_tokens
+            ))
+
+        self.model.transformer = MPTModel(
+            self.model.config.vocab_size,
+            blocks,
+            self.model.transformer.wte,
+            self.model.transformer.norm_f,
+        )
