@@ -2,15 +2,17 @@ import os
 import gc
 import json
 import torch
+import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
 from collections import defaultdict
 
+from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.quantizer import pseudo_quantize_tensor
-from awq.quantize.qmodule import WQLinear, ScaledActivation
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.quantize.auto_clip import auto_clip_block, apply_clip
 from awq.quantize.auto_scale import auto_scale_block, apply_scale
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
@@ -41,6 +43,7 @@ class BaseAWQForCausalLM(nn.Module):
                        auto_scale=True, mse_range=True, run_search=True, run_quant=True,
                        calib_data="pileval"):
         self.quant_config = quant_config
+        quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
 
         if run_search:
             self.search_result = self._awq_search(tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
@@ -51,7 +54,7 @@ class BaseAWQForCausalLM(nn.Module):
             self.is_quantized = True
     
     @staticmethod
-    def fuse_layers(model):
+    def fuse_layers(model, quant_config):
         pass
         
     def _awq_quant(self):
@@ -70,18 +73,23 @@ class BaseAWQForCausalLM(nn.Module):
                 module.weight.data, scales, zeros = pseudo_quantize_tensor(
                     module.weight.data, 
                     get_scale_zp=True, 
-                    **self.quant_config
+                    w_bit=self.quant_config["w_bit"], 
+                    q_group_size=self.quant_config["q_group_size"]
                 )
 
-                scales = scales.t().contiguous()
-                zeros = zeros.t().contiguous()
-
-                q_linear = WQLinear.from_linear(
-                    module, 
-                    self.quant_config['w_bit'], 
-                    self.quant_config['q_group_size'], 
-                    False, 
-                    scales, 
+                if self.quant_config["version"] == 'GEMM':
+                    scales = scales.t().contiguous()
+                    zeros = zeros.t().contiguous()
+                    q_linear_module = WQLinear_GEMM
+                elif self.quant_config["version"] == 'GEMV':
+                    q_linear_module = WQLinear_GEMV
+                
+                q_linear = q_linear_module.from_linear(
+                    module,
+                    self.quant_config['w_bit'],
+                    self.quant_config['q_group_size'],
+                    False,
+                    scales,
                     zeros
                 )
 
@@ -253,7 +261,7 @@ class BaseAWQForCausalLM(nn.Module):
     @classmethod
     def from_quantized(self, model_path, model_type, model_filename, max_new_tokens=None,
                        device='balanced', torch_dtype=torch.float16, trust_remote_code=True, 
-                       safetensors=False, is_quantized=True, fuse_layers=False):
+                       safetensors=False, is_quantized=True, fuse_layers=False, version='GEMM'):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*"]
@@ -273,9 +281,12 @@ class BaseAWQForCausalLM(nn.Module):
         if os.path.exists(quant_config_path):
             with open(quant_config_path, 'r') as file:
                 quant_config = json.loads(file.read())
+            
+            if "version" not in quant_config.keys():
+                quant_config["version"] = version
         else:
             # Default config that works for most models
-            quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4}
+            quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": version}
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
@@ -293,7 +304,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Only need to replace layers if a model is AWQ quantized
         if is_quantized:
             # Prepare WQLinear layers, replace nn.Linear
-            self._load_quantized_modules(self, model, quant_config)
+            self._load_quantized_modules(self, model, quant_config, quant_config["version"])
         
         model.tie_weights()
 
@@ -313,7 +324,7 @@ class BaseAWQForCausalLM(nn.Module):
             )
 
             if fuse_layers:
-                self.fuse_layers(model)
+                self.fuse_layers(model, quant_config)
 
         else:
             # If not quantized, must load with AutoModelForCausalLM
@@ -333,7 +344,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 
-    def _load_quantized_modules(self, model, quant_config):
+    def _load_quantized_modules(self, model, quant_config, version):
         # Real quantization of weights
         assert quant_config["zero_point"], "We only support zero_point quantization now."
         
@@ -351,8 +362,17 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                q_linear = WQLinear.from_linear(
-                    module, quant_config['w_bit'], quant_config['q_group_size'], True)
+                if version == 'GEMM':
+                    q_linear_module = WQLinear_GEMM
+                elif version == 'GEMV':
+                    q_linear_module = WQLinear_GEMV
+                
+                q_linear = q_linear_module.from_linear(
+                    module,
+                    quant_config['w_bit'],
+                    quant_config['q_group_size'],
+                    True
+                )
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
             

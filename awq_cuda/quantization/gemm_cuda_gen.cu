@@ -10,6 +10,7 @@
  */
 
 #include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
 #include "gemm_cuda.h"
 #include "dequantize.cuh"
 #include <cuda_fp16.h>
@@ -439,6 +440,7 @@ torch::Tensor gemm_forward_cuda(
     auto scaling_factors = reinterpret_cast<half*>(_scaling_factors.data_ptr<at::Half>());
     auto zeros = reinterpret_cast<int*>(_zeros.data_ptr<int>());
     int group_size = num_in_channels / _scaling_factors.size(0);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     if (num_out_channels % 64 != 0)
         throw std::invalid_argument("OC is not multiple of cta_N = 64");
@@ -456,7 +458,7 @@ torch::Tensor gemm_forward_cuda(
         // threadIdx.x: 32
         // threadIdx.y: i_factors[2] * j_factors[2]
         dim3 threads_per_block(32, 2);
-        gemm_forward_4bit_cuda_m16n128k32<<<num_blocks, threads_per_block>>>(
+        gemm_forward_4bit_cuda_m16n128k32<<<num_blocks, threads_per_block, 0, stream>>>(
             group_size, split_k_iters, in_feats, kernel, scaling_factors, zeros, num_in_feats, num_in_channels, num_out_channels, out_feats);
     }
     else if (num_out_channels % 64 == 0)
@@ -467,7 +469,7 @@ torch::Tensor gemm_forward_cuda(
         // threadIdx.x: 32
         // threadIdx.y: i_factors[2] * j_factors[2]
         dim3 threads_per_block(32, 2);
-        gemm_forward_4bit_cuda_m16n64k32<<<num_blocks, threads_per_block>>>(
+        gemm_forward_4bit_cuda_m16n64k32<<<num_blocks, threads_per_block, 0, stream>>>(
             group_size, split_k_iters, in_feats, kernel, scaling_factors, zeros, num_in_feats, num_in_channels, num_out_channels, out_feats);
     }
     return _out_feats.sum(0);

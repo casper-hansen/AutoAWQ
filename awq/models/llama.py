@@ -6,8 +6,8 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model: LlamaForCausalLM, quant_config: dict):
+        fuser = LlamaFuser(model, quant_config)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -66,17 +66,18 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 import torch
-from typing import List, Tuple
-from awq.quantize.qmodule import WQLinear
+from typing import List, Tuple, Union
 from awq.utils.utils import set_module_name
-from awq.modules.fused_mlp import QuantLlamaMLP
-from awq.modules.fused_norm import FTLlamaRMSNorm
-from awq.modules.fused_attn import QuantLlamaAttention
+from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.norm import FTLlamaRMSNorm
+from awq.modules.fused.attn import QuantAttentionFused
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
-    def __init__(self, model):
+    def __init__(self, model, quant_config):
         self.model = model
+        self.quant_config = quant_config
 
         self.attention_modules: List[Tuple[str, LlamaAttention]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -95,12 +96,11 @@ class LlamaFuser:
     
     def fuse_attention(self):
         for name, module in self.attention_modules:
-            qkv_layer: WQLinear = self._fuse_qkv(module)
-            attn = QuantLlamaAttention(
+            qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv(module)
+            attn = QuantAttentionFused(
                 module.hidden_size,
                 module.num_heads,
-                module.num_key_value_heads,
-                qkv_layer,
+                qkv_layer, 
                 module.o_proj,
                 next(iter(qkv_layer.state_dict().values())).device,
                 self.model.config.max_new_tokens
@@ -108,24 +108,33 @@ class LlamaFuser:
             set_module_name(self.model, name, attn)
     
     def _fuse_qkv(self, module: LlamaAttention):
-        # get qkv and bias
         q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
-        # create module
-        qkv_layer = WQLinear(
-            q_proj.w_bit, 
-            q_proj.group_size, 
-            q_proj.in_features, 
-            q_proj.out_features + k_proj.out_features + v_proj.out_features, 
+        if isinstance(q_proj, WQLinear_GEMV):
+            q_linear = WQLinear_GEMV
+        else:
+            q_linear = WQLinear_GEMM
+
+        qkv_layer = q_linear(
+            q_proj.w_bit,
+            q_proj.group_size,
+            q_proj.in_features,
+            q_proj.out_features + k_proj.out_features + v_proj.out_features,
             q_proj.bias is not None,
             next(iter(module.state_dict().values())).device
         )
 
-        # replace buffers with real weights
-        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
-        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
-        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        if isinstance(qkv_layer, WQLinear_GEMV):
+            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
+            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
+            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
+            qkv_layer.split_k_iters = q_proj.split_k_iters
+        else:
+            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        
         qkv_layer.bias = bias
 
         return qkv_layer

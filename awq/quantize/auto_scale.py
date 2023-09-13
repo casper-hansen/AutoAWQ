@@ -7,7 +7,7 @@ from transformers.models.bloom.modeling_bloom import BloomBlock, BloomGelu
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaRMSNorm
 from transformers.activations import NewGELUActivation
-from .qmodule import ScaledActivation
+from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, get_op_name, set_op_by_name
 
 __all__ = ["auto_scale_block", "apply_scale"]
@@ -98,7 +98,7 @@ def auto_scale_block(awq_model,
     from .quantizer import pseudo_quantize_tensor
     # firstly, get the weight quantize function
     if quant_config['w_bit'] is not None:
-        def w_quantize_func(p): return pseudo_quantize_tensor(p, **quant_config).detach()
+        def w_quantize_func(p): return pseudo_quantize_tensor(p, w_bit=quant_config["w_bit"], q_group_size=quant_config["q_group_size"]).detach()
     else:
         def w_quantize_func(p): return p
 
