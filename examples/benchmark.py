@@ -13,7 +13,7 @@ def warmup(model):
 
 def generate(model, input_ids, n_generate):
     context_time = 0
-    generate_time = 0
+    generate_time = []
 
     with torch.inference_mode():
         for i in range(n_generate):
@@ -35,7 +35,7 @@ def generate(model, input_ids, n_generate):
             if i == 0:
                 context_time += time.time() - start
             else:
-                generate_time += time.time() - start
+                generate_time.append(time.time() - start)
     
     return context_time, generate_time
 
@@ -65,8 +65,10 @@ def run_round(model_path, quant_file, n_generate, input_ids, batch_size):
     memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
 
     if successful_generate:
-        prefill_tokens_per_second = n_generate / context_time * batch_size
-        decode_tokens_per_second = n_generate / generate_time * batch_size
+        # number of tokens in context / time for processing context * batch size
+        prefill_tokens_per_second = input_ids.shape[1] / context_time * batch_size
+        # 1 second / median time per token in seconds * batch size
+        decode_tokens_per_second = 1 / np.median(generate_time) * batch_size
 
         print(f" ** Speed (Prefill): {prefill_tokens_per_second:.2f} tokens/second")
         print(f" ** Speed (Decode): {decode_tokens_per_second:.2f} tokens/second")
@@ -82,11 +84,10 @@ def run_round(model_path, quant_file, n_generate, input_ids, batch_size):
         "Prefill tokens/s": prefill_tokens_per_second,
         "Decode tokens/s": decode_tokens_per_second,
         "Memory (VRAM)": f"{memory_used:.2f} GB ({memory_pct:.2f}%)"
-    }
+    }, model.quant_config["version"]
 
 def main(args):
     rounds = [
-        {"context": 4, "n_generate": 200},
         {"context": 32, "n_generate": 32},
         {"context": 64, "n_generate": 64},
         {"context": 128, "n_generate": 128},
@@ -102,7 +103,7 @@ def main(args):
     for settings in rounds:
         input_ids = torch.randint(0, tokenizer.vocab_size, (args.batch_size, settings["context"])).cuda()
 
-        stats = run_round(
+        stats, model_version = run_round(
             args.model_path,
             args.quant_file,
             settings["n_generate"],
@@ -118,6 +119,7 @@ def main(args):
     df = pd.DataFrame(all_stats)
     print('GPU:', torch.cuda.get_device_name())
     print('Model:', args.model_path)
+    print('Version:', model_version)
     print(df.to_markdown(index=False))
 
 if __name__ == "__main__":
