@@ -72,9 +72,21 @@ The detailed support list:
 
 Under examples, you can find examples of how to quantize, run inference, and benchmark AutoAWQ models.
 
+### INT4 GEMM vs INT4 GEMV vs FP16
+
+There are two versions of AWQ: GEMM and GEMV. Both names to how matrix multiplication runs under the hood. We suggest the following:
+
+- GEMV (quantized): Best for small context, batch size 1, highest number of tokens/s.
+- GEMM (quantized): Best for larger context, up to batch size 8, faster than GEMV on batch size > 1, slower than GEMV on batch size = 1.
+- FP16 (non-quantized): Best for large batch sizes of 8 or larger, highest throughput. We recommend [TGI](https://github.com/huggingface/text-generation-inference) or [vLLM](https://github.com/vllm-project/vllm).
+
+### Examples
+
 <details>
 
 <summary>Quantization</summary>
+
+Expect this to take 10-15 minutes on smaller 7B models, and around 1 hour for 70B models.
 
 ```python
 from awq import AutoAWQForCausalLM
