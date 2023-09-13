@@ -136,6 +136,18 @@ generation_output = model.generate(
 
 </details>
 
+<details>
+
+<summary>AutoAWQForCausalLM.from_quantized</summary>
+
+- `quant_path`: Path to folder containing model files.
+- `quant_filename`: The filename to model weights or `index.json` file.
+- `max_new_tokens`: The max sequence length, used to allocate kv-cache for fused models.
+- `fuse_layers`: Whether or not to use fused layers.
+- `batch_size`: The batch size to initialize the AWQ model with.
+
+</details>
+
 ## Benchmarks
 
 | Model       | GPU   | FP16 latency (ms) | INT4 latency (ms) | Speedup |
