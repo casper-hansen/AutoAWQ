@@ -228,10 +228,11 @@ generation_output = model.generate(
 
 ### Falcon 7B
 
-Note: Fast generation, fast context processing
-GPU: NVIDIA GeForce RTX 3090
-Command: `python examples/benchmark.py --model_path casperhansen/falcon-7b-awq --quant_file awq_model_w4_g64.pt`
-Version: GEMM
+- Note: Fast generation, fast context processing
+- GPU: NVIDIA GeForce RTX 3090
+- Command: `python examples/benchmark.py --model_path casperhansen/falcon-7b-awq --quant_file awq_model_w4_g64.pt`
+- Version: GEMM
+
 |   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
 |-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
 |            1 |               32 |              32 |            466.826 |           95.1413 | 4.47 GB (18.88%) |
