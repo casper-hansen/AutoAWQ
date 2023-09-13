@@ -217,7 +217,7 @@ class BaseAWQForCausalLM(nn.Module):
         
         return awq_results
 
-    def save_quantized(self, save_dir, use_safetensors=False, shard_size="10GB"):
+    def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
         def _save_files(save_dir, model_name='', search_result=None):
             class EmptyModule(nn.Module):
                 def __init__(self): super(EmptyModule, self).__init__()
@@ -233,7 +233,7 @@ class BaseAWQForCausalLM(nn.Module):
                 torch.save(search_result, f'{save_dir}/{model_name}')
             else:
                 # model_name has no extension, add it when saving state_dict
-                model_name = 'model.safetensors' if use_safetensors else 'pytorch_model.bin'
+                model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
 
                 # shard checkpoint into chunks (10GB default)
                 shards, index = shard_checkpoint(
@@ -243,7 +243,7 @@ class BaseAWQForCausalLM(nn.Module):
                 )
 
                 for shard_file, shard in shards.items():
-                    if use_safetensors:
+                    if safetensors:
                         # safetensors must be in the same memory, so we duplicate and use contiguous memory
                         shard = {k: v.clone().contiguous() for k, v in shard.items()}
                         save_file(shard, os.path.join(save_dir, shard_file), metadata={"format": "pt"})
