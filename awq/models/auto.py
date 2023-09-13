@@ -35,12 +35,13 @@ class AutoAWQForCausalLM:
         )
 
     @classmethod
-    def from_quantized(self, quant_path, quant_filename, max_new_tokens=None,
+    def from_quantized(self, quant_path, quant_filename='pytorch_model.bin', max_new_tokens=None,
                        device='balanced', trust_remote_code=True, fuse_layers=True,
-                       batch_size=1) -> BaseAWQForCausalLM:
+                       batch_size=1, use_safetensors=False) -> BaseAWQForCausalLM:
         os.environ["AWQ_BATCH_SIZE"] = str(batch_size)
         model_type = check_and_get_model_type(quant_path, trust_remote_code)
 
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_quantized(
-            quant_path, model_type, quant_filename, max_new_tokens, device, trust_remote_code=trust_remote_code, fuse_layers=fuse_layers
+            quant_path, model_type, quant_filename, max_new_tokens, device, trust_remote_code=trust_remote_code, 
+            fuse_layers=fuse_layers, safetensors=use_safetensors
         )
