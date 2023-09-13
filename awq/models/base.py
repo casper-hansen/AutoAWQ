@@ -292,10 +292,10 @@ class BaseAWQForCausalLM(nn.Module):
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*"]
             if safetensors:
-                ignore_patterns.extend(["*.pt", "*.bin"])
+                ignore_patterns.extend(["*.pt*", "*.bin*"])
             else:
-                ignore_patterns.append("*safetensors*")
-
+                ignore_patterns.append("*.safetensors*")
+            
             model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns)
         
         model_weights_path = model_path + f'/{model_filename}'
