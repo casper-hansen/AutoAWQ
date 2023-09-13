@@ -162,23 +162,85 @@ generation_output = model.generate(
 
 ## Benchmarks
 
-| Model       | GPU   | FP16 latency (ms) | INT4 latency (ms) | Speedup |
-| ----------- |:-----:|:-----------------:|:-----------------:|:-------:|
-| LLaMA-2-7B  | 4090  | 19.97             | 8.66              | 2.31x   |
-| LLaMA-2-13B | 4090  | OOM               | 13.54             | --      |
-| Vicuna-7B   | 4090  | 19.09             | 8.61              | 2.22x   |
-| Vicuna-13B  | 4090  | OOM               | 12.17             | --      |
-| MPT-7B      | 4090  | 17.09             | 12.58             | 1.36x   |
-| MPT-30B     | 4090  | OOM               | 23.54             | --      |
-| Falcon-7B   | 4090  | 29.91             | 19.84             | 1.51x   |
-| LLaMA-2-7B  | A6000 | 27.14             | 12.44             | 2.18x   |
-| LLaMA-2-13B | A6000 | 47.28             | 20.28             | 2.33x   |
-| Vicuna-7B   | A6000 | 26.06             | 12.43             | 2.10x   |
-| Vicuna-13B  | A6000 | 44.91             | 17.30             | 2.60x   |
-| MPT-7B      | A6000 | 22.79             | 16.87             | 1.35x   |
-| MPT-30B     | A6000 | OOM               | 31.57             | --      |
-| Falcon-7B   | A6000 | 39.44             | 27.34             | 1.44x   |
+### Vicuna 7B (LLaMa-2)
 
+- Note: Blazing fast generation, slow context processing
+- GPU: NVIDIA GeForce RTX 3090
+- Version: GEMV
+- Command: `python examples/benchmark.py --model_path casperhansen/vicuna-7b-v1.5-awq-gemv`
+
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
+|            1 |               32 |              32 |           231.393  |           153.632 | 4.66 GB (19.68%) |
+|            1 |               64 |              64 |           233.909  |           154.475 | 4.66 GB (19.68%) |
+|            1 |              128 |             128 |           233.145  |           152.133 | 4.66 GB (19.68%) |
+|            1 |              256 |             256 |           228.562  |           147.692 | 4.67 GB (19.72%) |
+|            1 |              512 |             512 |           228.914  |           139.179 | 4.80 GB (20.26%) |
+|            1 |             1024 |            1024 |           227.393  |           125.058 | 5.56 GB (23.48%) |
+|            1 |             2048 |            2048 |           225.736  |           123.228 | 8.08 GB (34.09%) |
+
+- Note: Fast generation, fast context processing
+- GPU: NVIDIA GeForce RTX 3090
+- Version: GEMM
+- Command: `python examples/benchmark.py --model_path casperhansen/vicuna-7b-v1.5-awq`
+
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
+|            1 |               32 |              32 |            521.444 |           126.51  | 4.55 GB (19.21%) |
+|            1 |               64 |              64 |           2618.88  |           125.428 | 4.57 GB (19.31%) |
+|            1 |              128 |             128 |           2808.09  |           123.865 | 4.61 GB (19.44%) |
+|            1 |              256 |             256 |           2807.46  |           120.779 | 4.67 GB (19.72%) |
+|            1 |              512 |             512 |           2769.9   |           115.08  | 4.80 GB (20.26%) |
+|            1 |             1024 |            1024 |           2640.95  |           105.493 | 5.56 GB (23.48%) |
+|            1 |             2048 |            2048 |           2341.36  |           104.188 | 8.08 GB (34.09%) |
+
+### MPT 7B
+
+- Note: Blazing fast generation, slow context processing
+- GPU: NVIDIA GeForce RTX 3090
+- Command: `python examples/benchmark.py --model_path casperhansen/mpt-7b-8k-chat-awq-gemv`
+- Version: GEMV
+
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
+|            1 |               32 |              32 |            187.332 |           136.765 | 3.65 GB (15.42%) |
+|            1 |               64 |              64 |            241.026 |           136.476 | 3.67 GB (15.48%) |
+|            1 |              128 |             128 |            239.44  |           137.599 | 3.70 GB (15.61%) |
+|            1 |              256 |             256 |            233.184 |           137.02  | 3.76 GB (15.88%) |
+|            1 |              512 |             512 |            233.082 |           135.633 | 3.89 GB (16.41%) |
+|            1 |             1024 |            1024 |            231.504 |           122.197 | 4.40 GB (18.57%) |
+|            1 |             2048 |            2048 |            228.307 |           121.468 | 5.92 GB (24.98%) |
+
+- Note: Fast generation, fast context processing
+- GPU: NVIDIA GeForce RTX 3090
+- Version: GEMM
+- Command: `python examples/benchmark.py --model_path casperhansen/mpt-7b-8k-chat-awq`
+
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
+|            1 |               32 |              32 |            557.714 |           118.567 | 3.65 GB (15.42%) |
+|            1 |               64 |              64 |           2752.9   |           120.772 | 3.67 GB (15.48%) |
+|            1 |              128 |             128 |           2982.67  |           119.52  | 3.70 GB (15.61%) |
+|            1 |              256 |             256 |           3009.16  |           116.911 | 3.76 GB (15.88%) |
+|            1 |              512 |             512 |           2901.91  |           111.607 | 3.95 GB (16.68%) |
+|            1 |             1024 |            1024 |           2718.68  |           102.623 | 4.40 GB (18.57%) |
+|            1 |             2048 |            2048 |           2363.61  |           101.368 | 5.92 GB (24.98%) |
+
+### Falcon 7B
+
+Note: Fast generation, fast context processing
+GPU: NVIDIA GeForce RTX 3090
+Command: `python examples/benchmark.py --model_path casperhansen/falcon-7b-awq --quant_file awq_model_w4_g64.pt`
+Version: GEMM
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
+|            1 |               32 |              32 |            466.826 |           95.1413 | 4.47 GB (18.88%) |
+|            1 |               64 |              64 |           1920.61  |           94.5963 | 4.48 GB (18.92%) |
+|            1 |              128 |             128 |           2406.1   |           94.793  | 4.48 GB (18.92%) |
+|            1 |              256 |             256 |           2521.08  |           94.1144 | 4.48 GB (18.92%) |
+|            1 |              512 |             512 |           2478.28  |           93.4123 | 4.48 GB (18.92%) |
+|            1 |             1024 |            1024 |           2256.22  |           94.0237 | 4.69 GB (19.78%) |
+|            1 |             2048 |            2048 |           1831.71  |           94.2032 | 6.83 GB (28.83%) |
 
 ## Reference
 
