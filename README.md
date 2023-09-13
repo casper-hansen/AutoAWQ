@@ -74,7 +74,7 @@ Under examples, you can find examples of how to quantize, run inference, and ben
 
 ### INT4 GEMM vs INT4 GEMV vs FP16
 
-There are two versions of AWQ: GEMM and GEMV. Both names to how matrix multiplication runs under the hood. We suggest the following:
+There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix multiplication runs under the hood. We suggest the following:
 
 - GEMV (quantized): Best for small context, batch size 1, highest number of tokens/s.
 - GEMM (quantized): Best for larger context, up to batch size 8, faster than GEMV on batch size > 1, slower than GEMV on batch size = 1.
