@@ -7,6 +7,7 @@
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon). LLaMa 7B - up to 180 tokens/s.
 - [2023/09] Multi-GPU support, bug fixes, and better benchmark scripts available
 - [2023/08] PyPi package released and AutoModel class available
 
@@ -42,6 +43,8 @@ pip install autoawq
 
 <summary>Build AutoAWQ from scratch</summary>
 
+Build time can take 10 minutes. Download your model while you install AutoAWQ.
+
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
 cd AutoAWQ
@@ -67,9 +70,11 @@ The detailed support list:
 
 ## Usage
 
-Below, you will find examples of how to easily quantize a model and run inference.
+Under examples, you can find examples of how to quantize, run inference, and benchmark AutoAWQ models.
 
-### Quantization
+<details>
+
+<summary>Quantization</summary>
 
 ```python
 from awq import AutoAWQForCausalLM
@@ -91,26 +96,47 @@ model.save_quantized(quant_path)
 tokenizer.save_pretrained(quant_path)
 ```
 
-### Inference
+</details>
 
-Run inference on a quantized model from Huggingface:
+<details>
+
+<summary>Inference</summary>
 
 ```python
 from awq import AutoAWQForCausalLM
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, TextStreamer
 
 quant_path = "casperhansen/vicuna-7b-v1.5-awq"
 quant_file = "awq_model_w4_g128.pt"
 
-model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file)
+# Load model
+model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
+streamer = TextStreamer(tokenizer, skip_special_tokens=True)
 
-model.generate(...)
+# Convert prompt to tokens
+prompt_template = """\
+A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+
+USER: {prompt}
+ASSISTANT:"""
+
+tokens = tokenizer(
+    prompt_template.format(prompt="How are you today?"), 
+    return_tensors='pt'
+).input_ids.cuda()
+
+# Generate output
+generation_output = model.generate(
+    tokens, 
+    streamer=streamer,
+    max_new_tokens=512
+)
 ```
 
-## Benchmarks
+</details>
 
-Benchmark speeds may vary from server to server and that it also depends on your CPU. If you want to minimize latency, you should rent a GPU/CPU combination that has high memory bandwidth for both and high single-core speed for CPU.
+## Benchmarks
 
 | Model       | GPU   | FP16 latency (ms) | INT4 latency (ms) | Speedup |
 | ----------- |:-----:|:-----------------:|:-----------------:|:-------:|
@@ -129,22 +155,6 @@ Benchmark speeds may vary from server to server and that it also depends on your
 | MPT-30B     | A6000 | OOM               | 31.57             | --      |
 | Falcon-7B   | A6000 | 39.44             | 27.34             | 1.44x   |
 
-<details>
-
-<summary>Detailed benchmark (CPU vs. GPU)</summary>
-
-Here is the difference between a fast and slow CPU on MPT-7B:
-
-RTX 4090 + Intel i9 13900K (2 different VMs):
-- CUDA 12.0, Driver 525.125.06: 134 tokens/s (7.46 ms/token)
-- CUDA 12.0, Driver 525.125.06: 117 tokens/s (8.52 ms/token)
-
-RTX 4090 + AMD EPYC 7-Series (3 different VMs):
-- CUDA 12.2, Driver 535.54.03: 53 tokens/s (18.6 ms/token)
-- CUDA 12.2, Driver 535.54.03: 56 tokens/s (17.71 ms/token)
-- CUDA 12.0, Driver 525.125.06: 55 tokens/ (18.15 ms/token)
-
-</details>
 
 ## Reference
 
