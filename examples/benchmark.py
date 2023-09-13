@@ -55,7 +55,10 @@ def run_round(model_path, quant_file, n_generate, input_ids, batch_size):
         context_time, generate_time = generate(model, input_ids, n_generate)
         successful_generate = True
     except RuntimeError as ex:
-        successful_generate = False
+        if 'cuda out of memory' in str(ex).lower():
+            successful_generate = False
+        else:
+            raise RuntimeError(ex)
     
     device = next(model.parameters()).device
     memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
