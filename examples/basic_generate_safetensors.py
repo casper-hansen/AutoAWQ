@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, TextStreamer
 quant_path = "casperhansen/opt-125m-awq"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True, use_safetensors=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True, safetensors=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_special_tokens=True)
 
