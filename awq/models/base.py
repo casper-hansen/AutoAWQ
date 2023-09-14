@@ -1,12 +1,12 @@
 import os
 import gc
 import json
-from typing import List, Union
 import torch
 import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
+from typing import List, Union
 from collections import defaultdict
 
 from awq.modules.act import ScaledActivation
@@ -42,13 +42,17 @@ class BaseAWQForCausalLM(nn.Module):
     @torch.no_grad()
     def quantize(self, tokenizer=None, quant_config={}, n_samples=128, seqlen=512,
                        auto_scale=True, mse_range=True, run_search=True, run_quant=True,
-                       calib_data: Union[str, List[str]]="pileval"):
+                       calib_data: Union[str, List[str]]="pileval", split="train",
+                       text_column="text"):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
 
         if run_search:
-            self.search_result = self._awq_search(tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
-                       auto_scale=auto_scale, mse_range=mse_range, calib_data=calib_data)
+            self.search_result = self._awq_search(
+                tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
+                auto_scale=auto_scale, mse_range=mse_range, calib_data=calib_data,
+                split=split, text_column=text_column
+            )
         
         if run_quant:
             self._awq_quant()
