@@ -9,7 +9,7 @@ os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
 
 common_setup_kwargs = {
-    "version": "0.0.1",
+    "version": "0.0.2",
     "name": "autoawq",
     "author": "Casper Hansen",
     "license": "MIT",
@@ -44,14 +44,28 @@ requirements = [
     "toml",
     "attributedict",
     "protobuf",
-    "torchvision"
+    "torchvision",
+    "tabulate"
 ]
 
-include_dirs = []
+def get_include_dirs():
+    include_dirs = []
 
-conda_cuda_include_dir = os.path.join(get_python_lib(), "nvidia/cuda_runtime/include")
-if os.path.isdir(conda_cuda_include_dir):
-    include_dirs.append(conda_cuda_include_dir)
+    conda_cuda_include_dir = os.path.join(get_python_lib(), "nvidia/cuda_runtime/include")
+    if os.path.isdir(conda_cuda_include_dir):
+        include_dirs.append(conda_cuda_include_dir)
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    include_dirs.append(this_dir)
+
+    return include_dirs
+
+def get_generator_flag():
+    generator_flag = []
+    torch_dir = torch.__path__[0]
+    if os.path.exists(os.path.join(torch_dir, "include", "ATen", "CUDAGeneratorImpl.h")):
+        generator_flag = ["-DOLD_GENERATOR_PATH"]
+    
+    return generator_flag
 
 def check_dependencies():
     if CUDA_HOME is None:
@@ -77,6 +91,8 @@ def get_compute_capabilities():
     return capability_flags
 
 check_dependencies()
+include_dirs = get_include_dirs()
+generator_flags = get_generator_flag()
 arch_flags = get_compute_capabilities()
 
 if os.name == "nt":
@@ -86,8 +102,21 @@ if os.name == "nt":
     }
 else:
     extra_compile_args={
-        "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17"],
-        "nvcc": ["-O3", "-std=c++17"] + arch_flags
+        "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
+        "nvcc": [
+            "-O3", 
+            "-std=c++17",
+            "-DENABLE_BF16",
+            "-U__CUDA_NO_HALF_OPERATORS__",
+            "-U__CUDA_NO_HALF_CONVERSIONS__",
+            "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+            "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+            "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+            "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
+            "--expt-relaxed-constexpr",
+            "--expt-extended-lambda",
+            "--use_fast_math",
+        ] + arch_flags + generator_flags
     }
 
 extensions = [
@@ -97,7 +126,10 @@ extensions = [
             "awq_cuda/pybind.cpp",
             "awq_cuda/quantization/gemm_cuda_gen.cu",
             "awq_cuda/layernorm/layernorm.cu",
-            "awq_cuda/position_embedding/pos_encoding_kernels.cu"
+            "awq_cuda/position_embedding/pos_encoding_kernels.cu",
+            "awq_cuda/quantization/gemv_cuda.cu",
+            "awq_cuda/attention/ft_attention.cpp",
+            "awq_cuda/attention/decoder_masked_multihead_attention.cu"
         ], extra_compile_args=extra_compile_args
     )
 ]

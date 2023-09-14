@@ -7,7 +7,7 @@ from transformers.models.bloom.modeling_bloom import BloomBlock, BloomGelu
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaRMSNorm
 from transformers.activations import NewGELUActivation
-from .qmodule import ScaledActivation
+from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, get_op_name, set_op_by_name
 
 __all__ = ["auto_scale_block", "apply_scale"]
@@ -98,7 +98,7 @@ def auto_scale_block(awq_model,
     from .quantizer import pseudo_quantize_tensor
     # firstly, get the weight quantize function
     if quant_config['w_bit'] is not None:
-        def w_quantize_func(p): return pseudo_quantize_tensor(p, **quant_config).detach()
+        def w_quantize_func(p): return pseudo_quantize_tensor(p, w_bit=quant_config["w_bit"], q_group_size=quant_config["q_group_size"]).detach()
     else:
         def w_quantize_func(p): return p
 
@@ -193,12 +193,16 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         if isinstance(prev_op, nn.Linear):
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
-        elif isinstance(prev_op, (nn.LayerNorm, LlamaRMSNorm)):
+
+        elif any(isinstance(prev_op,t) for t in [nn.LayerNorm, LlamaRMSNorm]) \
+             or 'rmsnorm' in str(prev_op.__class__).lower():
             scale_ln_fcs(prev_op, layers, scales)
+
         elif any(isinstance(prev_op,t) for t in [nn.GELU, BloomGelu, NewGELUActivation]):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
+            
         else:
             raise NotImplementedError(
                 f"prev_op {type(prev_op)} not supported yet!")
