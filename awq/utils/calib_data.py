@@ -3,22 +3,26 @@ import torch
 import logging
 from datasets import load_dataset
 
-def get_calib_dataset(data: Union[str, List[str]] = "pileval", tokenizer=None, n_samples=512, block_size=512):
+def get_calib_dataset(data: Union[str, List[str]] = "pileval",
+                      tokenizer=None, n_samples=512, block_size=512,
+                      split="train", text_column="text"):
     if isinstance(data, str):
         if data == "pileval":
             dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
         else:
-            raise NotImplementedError
+            dataset = load_dataset(data, split=split)
     elif isinstance(data, list):
-        dataset = [{"text": text} for text in data]
+        dataset = [{text_column: text} for text in data]
     else:
-        raise NotImplementedError
+        raise NotImplementedError(
+            "Either pass a string to a huggingface dataset or a list"
+            "that is preprocessed with one sample of text per element.")
 
     dataset = dataset.shuffle(seed=42)
     samples = []
     n_run = 0
     for data in dataset:
-        line = data["text"]
+        line = data[text_column]
         line = line.strip()
         line_encoded = tokenizer.encode(line)
         if len(line_encoded) > 512:
