@@ -8,16 +8,19 @@ import torch.nn as nn
 from tqdm import tqdm
 from typing import List, Union
 from collections import defaultdict
+from safetensors.torch import save_file
 
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
+from awq.utils.utils import simple_dispatch_model
 from awq.utils.calib_data import get_calib_dataset
+from transformers.modeling_utils import shard_checkpoint
 from awq.quantize.quantizer import pseudo_quantize_tensor
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.quantize.auto_clip import auto_clip_block, apply_clip
 from awq.quantize.auto_scale import auto_scale_block, apply_scale
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
-from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map
+from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
 class BaseAWQForCausalLM(nn.Module):
@@ -222,20 +225,43 @@ class BaseAWQForCausalLM(nn.Module):
         
         return awq_results
 
-    def save_quantized(self, save_dir):
-        def _save_files(save_dir, model_name, model):
+    def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
+        def _save_files(save_dir, model_name='', search_result=None):
             class EmptyModule(nn.Module):
                 def __init__(self): super(EmptyModule, self).__init__()
                 def forward(self, x): return x
 
-            # Save model fiels without search results
+            # Save model files with empty state dict
             self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
 
-            # Remove empty module
+            # Remove empty state dict
             os.remove(f'{save_dir}/pytorch_model.bin')
 
-            # Save search results
-            torch.save(model, f'{save_dir}/{model_name}')
+            if search_result is not None:
+                torch.save(search_result, f'{save_dir}/{model_name}')
+            else:
+                # model_name has no extension, add it when saving state_dict
+                model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
+
+                # shard checkpoint into chunks (10GB default)
+                shards, index = shard_checkpoint(
+                    self.model.state_dict(), 
+                    max_shard_size=shard_size, 
+                    weights_name=model_name
+                )
+
+                for shard_file, shard in shards.items():
+                    if safetensors:
+                        # safetensors must be in the same memory, so we duplicate and use contiguous memory
+                        shard = {k: v.clone().contiguous() for k, v in shard.items()}
+                        save_file(shard, os.path.join(save_dir, shard_file), metadata={"format": "pt"})
+                    else:
+                        torch.save(shard, os.path.join(save_dir, shard_file))
+
+                # save shard index
+                if index is not None:
+                    with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
+                        file.write(json.dumps(index, indent=4))
 
             # Save config
             with open(f'{save_dir}/quant_config.json', 'w+') as file:
@@ -245,8 +271,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         # Save model
         if self.search_result is None or self.is_quantized:
-            model_name = f'awq_model_w{self.quant_config["w_bit"]}_g{self.quant_config["q_group_size"]}.pt'
-            _save_files(save_dir, model_name, self.model.state_dict())
+            _save_files(save_dir, '', search_result=None)
         else:
             model_name = 'awq_model_search_result.pt'
             _save_files(save_dir, model_name, self.search_result)
@@ -267,21 +292,24 @@ class BaseAWQForCausalLM(nn.Module):
         )
 
     @classmethod
-    def from_quantized(self, model_path, model_type, model_filename, max_new_tokens=None,
-                       device='balanced', torch_dtype=torch.float16, trust_remote_code=True, 
-                       safetensors=False, is_quantized=True, fuse_layers=False, version='GEMM'):
+    def from_quantized(self, model_path, model_type, model_filename='', 
+                             max_new_tokens=None, device='balanced', torch_dtype=torch.float16, 
+                             trust_remote_code=True, safetensors=False, is_quantized=True, 
+                             fuse_layers=False, version='GEMM'):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*"]
             if safetensors:
-                ignore_patterns.extend(["*.pt", "*.bin"])
+                ignore_patterns.extend(["*.pt*", "*.bin*"])
             else:
-                ignore_patterns.append("*safetensors*")
-
+                ignore_patterns.append("*.safetensors*")
+            
             model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns)
         
-        # TODO: Better naming, model_filename becomes a directory
-        model_filename = model_path + f'/{model_filename}'
+        if model_filename != '':
+            model_weights_path = model_path + f'/{model_filename}'
+        else:
+            model_weights_path = model_path
 
         # [STEP 2] Load config and set sequence length
         # TODO: Create BaseAWQConfig class
@@ -324,13 +352,14 @@ class BaseAWQForCausalLM(nn.Module):
 
         # Load model weights
         if is_quantized:
-            model = load_checkpoint_and_dispatch(
-                model, 
-                model_filename, 
-                device_map=device_map, 
-                no_split_module_classes=[self.layer_type]
+            load_checkpoint_in_model(
+                model,
+                checkpoint=model_weights_path,
+                device_map=device_map
             )
-
+            
+            model = simple_dispatch_model(model, device_map)
+            
             if fuse_layers:
                 self.fuse_layers(model, quant_config)
 
@@ -340,7 +369,7 @@ class BaseAWQForCausalLM(nn.Module):
             
             # Load model weights
             model = AutoModelForCausalLM.from_pretrained(
-                model_filename, 
+                model_weights_path, 
                 device_map=device_map, 
                 trust_remote_code=trust_remote_code, 
                 offload_folder="offload", 
