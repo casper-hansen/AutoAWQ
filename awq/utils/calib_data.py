@@ -1,17 +1,30 @@
 import torch
 import logging
+from typing import List, Union
 from datasets import load_dataset
 
-def get_calib_dataset(data="pileval", tokenizer=None, n_samples=512, block_size=512):
-    if data == "pileval":
-        dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
+def get_calib_dataset(data: Union[str, List[str]] = "pileval",
+                      tokenizer=None, n_samples=512, block_size=512,
+                      split="train", text_column="text"):
+    if isinstance(data, str):
+        if data == "pileval":
+            dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
+        else:
+            dataset = load_dataset(data, split=split)
+        
+        dataset = dataset.shuffle(seed=42)
+
+    elif isinstance(data, list):
+        dataset = [{text_column: text} for text in data]
     else:
-        raise NotImplementedError
-    dataset = dataset.shuffle(seed=42)
+        raise NotImplementedError(
+            "Either pass a string to a huggingface dataset or a list"
+            "that is preprocessed with one sample of text per element.")
+    
     samples = []
     n_run = 0
     for data in dataset:
-        line = data["text"]
+        line = data[text_column]
         line = line.strip()
         line_encoded = tokenizer.encode(line)
         if len(line_encoded) > 512:
