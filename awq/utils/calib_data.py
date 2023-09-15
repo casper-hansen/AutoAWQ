@@ -1,6 +1,6 @@
-from typing import List, Union
 import torch
 import logging
+from typing import List, Union
 from datasets import load_dataset
 
 def get_calib_dataset(data: Union[str, List[str]] = "pileval",
@@ -11,14 +11,16 @@ def get_calib_dataset(data: Union[str, List[str]] = "pileval",
             dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
         else:
             dataset = load_dataset(data, split=split)
+        
+        dataset = dataset.shuffle(seed=42)
+
     elif isinstance(data, list):
         dataset = [{text_column: text} for text in data]
     else:
         raise NotImplementedError(
             "Either pass a string to a huggingface dataset or a list"
             "that is preprocessed with one sample of text per element.")
-
-    dataset = dataset.shuffle(seed=42)
+    
     samples = []
     n_run = 0
     for data in dataset:
