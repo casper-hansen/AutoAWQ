@@ -35,7 +35,7 @@ class AutoAWQForCausalLM:
         )
 
     @classmethod
-    def from_quantized(self, quant_path, quant_filename='pytorch_model.bin', max_new_tokens=None,
+    def from_quantized(self, quant_path, quant_filename='', max_new_tokens=None,
                        device='balanced', trust_remote_code=True, fuse_layers=True,
                        batch_size=1, safetensors=False) -> BaseAWQForCausalLM:
         os.environ["AWQ_BATCH_SIZE"] = str(batch_size)
