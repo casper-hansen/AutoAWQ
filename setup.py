@@ -97,9 +97,18 @@ arch_flags = get_compute_capabilities()
 
 if os.name == "nt":
     # Relaxed args on Windows
-    extra_compile_args={
-        "nvcc": arch_flags
-    }
+    extensions = [
+        CUDAExtension(
+            "awq_inference_engine",
+            [
+                "awq_cuda/pybind_windows.cpp",
+                "awq_cuda/quantization/gemm_cuda_gen.cu",
+                "awq_cuda/layernorm/layernorm.cu",
+                "awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                "awq_cuda/quantization/gemv_cuda.cu",
+            ]
+        )
+    ]
 else:
     extra_compile_args={
         "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
@@ -118,21 +127,21 @@ else:
             "--use_fast_math",
         ] + arch_flags + generator_flags
     }
-
-extensions = [
-    CUDAExtension(
-        "awq_inference_engine",
-        [
-            "awq_cuda/pybind.cpp",
-            "awq_cuda/quantization/gemm_cuda_gen.cu",
-            "awq_cuda/layernorm/layernorm.cu",
-            "awq_cuda/position_embedding/pos_encoding_kernels.cu",
-            "awq_cuda/quantization/gemv_cuda.cu",
-            "awq_cuda/attention/ft_attention.cpp",
-            "awq_cuda/attention/decoder_masked_multihead_attention.cu"
-        ], extra_compile_args=extra_compile_args
-    )
-]
+    
+    extensions = [
+        CUDAExtension(
+            "awq_inference_engine",
+            [
+                "awq_cuda/pybind_linux.cpp",
+                "awq_cuda/quantization/gemm_cuda_gen.cu",
+                "awq_cuda/layernorm/layernorm.cu",
+                "awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                "awq_cuda/quantization/gemv_cuda.cu",
+                "awq_cuda/attention/ft_attention.cpp",
+                "awq_cuda/attention/decoder_masked_multihead_attention.cu"
+            ], extra_compile_args=extra_compile_args
+        )
+    ]
 
 additional_setup_kwargs = {
     "ext_modules": extensions,

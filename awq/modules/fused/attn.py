@@ -5,6 +5,8 @@ import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
 
+have_single_query_attention = hasattr(awq_inference_engine, 'single_query_attention')
+
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)  # type: ignore
@@ -184,7 +186,7 @@ class QuantAttentionFused(nn.Module):
         xk = self.attention_shapes["xk_slice"](xqkv)
         xv = self.attention_shapes["xv_slice"](xqkv)
 
-        if seqlen > 1:
+        if seqlen > 1 and have_single_query_attention:
             xq = xq.view((bsz, seqlen) + self.attention_shapes["xq_view"])
             xk = xk.view((bsz, seqlen) + self.attention_shapes["xk_view"])
             xv = xv.view((bsz, seqlen) + self.attention_shapes["xv_view"])
