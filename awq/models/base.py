@@ -108,11 +108,14 @@ class BaseAWQForCausalLM(nn.Module):
             gc.collect()
     
     def _awq_search(self, tokenizer, quant_config, n_samples=128, seqlen=512,
-                       auto_scale=True, mse_range=True, calib_data:Union[str, List[str]]="pileval"):
+                       auto_scale=True, mse_range=True, calib_data:Union[str, List[str]]="pileval",
+                       split="train", text_column="text"):
         layers = self.get_model_layers(self.model)
 
         samples = get_calib_dataset(
-            data=calib_data, tokenizer=tokenizer, n_samples=n_samples, block_size=seqlen)
+            data=calib_data, tokenizer=tokenizer, n_samples=n_samples, block_size=seqlen,
+            split=split, text_column=text_column
+        )
         samples = torch.cat(samples, dim=0)
 
         inps = []
