@@ -67,7 +67,7 @@ class QuantLlamaAttention(nn.Module):
         o_proj,
         dev,
         max_new_tokens,
-        use_hf_rotary=False
+        use_hf_rotary=True
     ):
         super().__init__()
         self.hidden_size = hidden_size
