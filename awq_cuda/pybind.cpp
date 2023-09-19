@@ -3,7 +3,6 @@
 #include "attention/ft_attention.h"
 #include "layernorm/layernorm.h"
 #include "quantization/gemm_cuda.h"
-#include "quantization/gemmv2_cuda.h"
 #include "quantization/gemv_cuda.h"
 #include "position_embedding/pos_encoding.h"
 
