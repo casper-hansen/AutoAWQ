@@ -100,6 +100,7 @@ class LlamaFuser:
             attn = QuantAttentionFused(
                 module.hidden_size,
                 module.num_heads,
+                module.num_key_value_heads,
                 qkv_layer, 
                 module.o_proj,
                 next(iter(qkv_layer.state_dict().values())).device,

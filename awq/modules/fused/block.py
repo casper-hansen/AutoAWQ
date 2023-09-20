@@ -6,9 +6,13 @@ class MPTBlock(nn.Module):
     def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mpt_mlp, norm_1, norm_2, dev, max_seq_len):
         super().__init__()
         self.n_heads = n_heads
+        self.n_kv_heads = 0
         self.hidden_size = hidden_size
         self.norm_1 = norm_1
-        self.attn = QuantAttentionFused(hidden_size, self.n_heads, qkv_layer, o_proj, dev=dev, max_seq_len=max_seq_len, use_alibi=True).to(dev)
+        self.attn = QuantAttentionFused(
+            hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj, 
+            dev=dev, max_seq_len=max_seq_len, use_alibi=True
+        ).to(dev)
         self.norm_2 = norm_2
         self.ffn = mpt_mlp.to(dev)
 
@@ -30,16 +34,22 @@ class MPTBlock(nn.Module):
         return out, None, past_key_value
 
 class FalconDecoderLayer(nn.Module):
-    def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mlp, dev, max_seq_len, input_layernorm=None, ln_attn=None, ln_mlp=None, new_decoder_arch=True):
+    def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mlp, dev, max_seq_len, 
+                       input_layernorm=None, ln_attn=None, ln_mlp=None, new_decoder_arch=True):
         super().__init__()
         self.n_heads = n_heads
+        self.n_kv_heads = 8
         self.hidden_size = hidden_size
         self.new_decoder_arch = new_decoder_arch
-        attention_shapes = self._get_attention_shapes(n_heads, max_seq_len, self.hidden_size // n_heads, new_decoder_arch)
+
+        if new_decoder_arch:
+            attention_shapes = None
+        else:
+            attention_shapes = self._get_attention_shapes(n_heads, max_seq_len, self.hidden_size // n_heads)
         
         # TODO: Falcon has ALiBi implemented but which model uses it?
         self.attn = QuantAttentionFused(
-            hidden_size, self.n_heads, qkv_layer, o_proj, 
+            hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj, 
             dev=dev, max_seq_len=max_seq_len, use_alibi=False,
             attention_shapes=attention_shapes
         ).to(dev)
@@ -52,47 +62,26 @@ class FalconDecoderLayer(nn.Module):
         
         self.mlp = mlp
     
-    def _get_attention_shapes(self, n_heads, max_seq_len, head_dim, new_decoder_arch):
+    def _get_attention_shapes(self, n_heads, max_seq_len, head_dim):
         batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
         
-        if new_decoder_arch:
-            kv_heads = 8
-
-            self.attention_shapes = {
-                # following fastertransformer definition
-                "cache_v": (batch_size, n_heads+(kv_heads*2), max_seq_len, head_dim,),
-                # 8: pack 8 fp16 in FT, if fp32 then use 4
-                "cache_k": (batch_size, n_heads+(kv_heads*2), head_dim // 8, max_seq_len, 8,),
-                "xqkv_view": (-1, n_heads+(kv_heads*2), head_dim),
-                "xq_slice": lambda xqkv: xqkv[:, :, :,0],
-                "xk_slice": lambda xqkv: xqkv[:, :, :,1],
-                "xv_slice": lambda xqkv: xqkv[:, :, :,2],
-                "xk_reshape": (1, head_dim // 8, 8),
-                "xq_view": (1, head_dim),
-                "xk_view": (1, head_dim),
-                "xv_view": (1, head_dim),
-                "single_xq_view": (n_heads, head_dim),
-                "single_xk_view": (1, 8, head_dim),
-                "single_xv_view": (1, 8, head_dim)
-            }
-        else:
-            self.attention_shapes = {
-                # following fastertransformer definition
-                "cache_v": (batch_size, 1, max_seq_len, head_dim,),
-                # 8: pack 8 fp16 in FT, if fp32 then use 4
-                "cache_k": (batch_size, 1, head_dim // 8, max_seq_len, 8,),
-                "xqkv_view": (n_heads+2, head_dim),
-                "xq_slice": lambda xqkv: xqkv[:, :, :-2],
-                "xk_slice": lambda xqkv: xqkv[:, :, [-2]],
-                "xv_slice": lambda xqkv: xqkv[:, :, [-1]],
-                "xk_reshape": (1, head_dim // 8, 8),
-                "xq_view": (n_heads, head_dim),
-                "xk_view": (1, head_dim),
-                "xv_view": (1, head_dim),
-                "single_xq_view": (n_heads, head_dim),
-                "single_xk_view": (1, head_dim),
-                "single_xv_view": (1, head_dim)
-            }
+        self.attention_shapes = {
+            # following fastertransformer definition
+            "cache_v": (batch_size, 1, max_seq_len, head_dim,),
+            # 8: pack 8 fp16 in FT, if fp32 then use 4
+            "cache_k": (batch_size, 1, head_dim // 8, max_seq_len, 8,),
+            "xqkv_view": (n_heads+2, head_dim),
+            "xq_slice": lambda xqkv: xqkv[:, :, :-2],
+            "xk_slice": lambda xqkv: xqkv[:, :, [-2]],
+            "xv_slice": lambda xqkv: xqkv[:, :, [-1]],
+            "xq_view": (n_heads, head_dim),
+            "xk_view": (1, head_dim),
+            "xv_view": (1, head_dim),
+            "xk_reshape": (1, head_dim // 8, 8),
+            "single_xq_view": (n_heads, head_dim),
+            "single_xk_view": (1, head_dim),
+            "single_xv_view": (1, head_dim)
+        }
 
         return self.attention_shapes
 
