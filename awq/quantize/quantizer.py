@@ -12,7 +12,8 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 
 class AwqQuantizer:
-    def __init__(self, model, tokenizer, w_bit, group_size, version, calib_data, split, text_column) -> None:
+    def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, calib_data, split, text_column) -> None:
+        self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
         self.w_bit = w_bit
@@ -21,7 +22,7 @@ class AwqQuantizer:
         self.calib_data = calib_data
         self.split = split
         self.text_column = text_column
-        self.modules, self.module_kwargs = self.init_quant()
+        self.modules, self.module_kwargs, self.inps = self.init_quant()
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
         org_w_shape = w.shape
@@ -51,8 +52,8 @@ class AwqQuantizer:
         else:
             return w
     
-    def quantize(self, get_layers_for_scaling: function):
-        for i in tqdm(range(len(self.modules)), desc="QUANTIZING"):
+    def quantize(self):
+        for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # [STEP 1]: Get layer, extract linear modules, extract input features
             self.modules[i] = self.modules[i].cuda()
             named_linears = get_named_linears(self.modules[i])
@@ -60,22 +61,22 @@ class AwqQuantizer:
             clear_memory()
 
             # [STEP 2]: Compute and apply scale list
-            module_config: list[dict] = get_layers_for_scaling(
+            module_config: list[dict] = self.awq_model.get_layers_for_scaling(
                 self.modules[i], input_feat, self.module_kwargs
             )
-            scales_list = [self._search_best_scale(**layer) for layer in module_config]
+            scales_list = [self._search_best_scale(self.modules[i], **layer) for layer in module_config]
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
             scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 3]: Compute and apply clipping list
-            clip_list = self._search_best_clip(named_linears, input_feat)
-            apply_clip(self.modules[i], clip_list)
-            clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+            # clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
+            # apply_clip(self.modules[i], clip_list)
+            # clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 4]: Quantize weights
             for name, linear_layer in named_linears.items():
                 linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
-                    linear_layer.weight.data, 
+                    linear_layer.weight.data.float(), 
                     get_scale_zp=True
                 )
 
@@ -102,10 +103,99 @@ class AwqQuantizer:
                 clear_memory()
             
             clear_memory()
-        
-        return self.model
 
-    
+    @torch.no_grad()
+    def _search_best_scale(self, module, prev_op, layers: list[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
+        if module2inspect is None:
+            assert len(layers) == 1
+            module2inspect = layers[0]
+        
+        if "use_cache" in kwargs:
+            kwargs.pop("use_cache")
+        
+        # Put x on the right device
+        inp = inp.to(next(module2inspect.parameters()).device)
+
+        # [STEP 1]: Compute maximum of weight
+        weight = torch.cat([_m.weight for _m in layers], dim=0)
+        org_shape = weight.shape
+        weight = weight.view(-1, self.group_size)
+        w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+        w_scale = w_scale.view(org_shape)
+        w_max = w_scale.mean(0)
+        clear_memory(weight)
+
+        # [STEP 2]: Compute maximum of x
+        x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
+
+        # [STEP 3]: Compute output of module
+        with torch.no_grad():
+            org_out = module2inspect(inp, **kwargs)
+            if isinstance(org_out, tuple):
+                org_out = org_out[0]
+        
+        # [STEP 4]: Compute loss
+        best_scales = self._compute_best_scale(
+            inp, w_max, x_max, module2inspect,
+            layers, org_out, kwargs
+        )
+        
+        return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
+
+    def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: list[nn.Linear], org_out, kwargs={}):
+        """
+        Compute loss and select best scales
+
+        L(s) = || Q(W * s) (s^-1 * X) - W * X ||
+        Q: weight quantization function | pseudo_quantize_tensor(W * s)
+        X: inputs from calib dataset    | X
+        W: original weights in FP16     | layer
+        s: per channel scaling factor   | s^-1 * X
+        """
+        n_grid = 20
+        history = []
+        best_ratio = -1
+        best_scales = None
+        best_error = float('inf')
+
+        org_sd = {k: v.cpu() for k, v in module2inspect.state_dict().items()}
+        
+        device = x.device
+        x_max = x_max.view(-1).to(device)
+        w_max = w_max.view(-1).to(device)
+        
+        for ratio in range(n_grid):
+            # create new scales
+            ratio = ratio / n_grid
+            scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
+            scales = scales / (scales.max() * scales.min()).sqrt()
+            
+            scales_view = scales.view(1, -1).to(device)
+            for fc in linears2scale:
+                fc.weight.mul_(scales_view)
+                fc.weight.data = self.pseudo_quantize_tensor(fc.weight.data) / scales_view
+
+            out = module2inspect(x, **kwargs)
+            if isinstance(out, tuple):
+                out = out[0]
+
+            # measure loss and check if better than best
+            loss = (org_out - out).float().pow(2).mean().item() # NOTE: float prevents overflow
+            history.append(loss)
+            if loss < best_error:
+                best_error = loss
+                best_ratio = ratio
+                best_scales = scales.clone()
+            module2inspect.load_state_dict(org_sd)
+
+        if best_ratio == -1:
+            logging.debug(history)
+            raise Exception
+
+        assert torch.isnan(best_scales).sum() == 0, best_scales
+
+        return best_scales.detach().cpu()
+
     @torch.no_grad()
     def _search_best_clip(self, layer, named_linears, input_feat):
         clip_list = []
@@ -121,7 +211,7 @@ class AwqQuantizer:
             clip_list.append((name, max_val))
 
             named_linears[name].cpu()
-    
+
     @torch.no_grad()
     def _compute_best_clip(self, w: torch.Tensor, input_feat: torch.Tensor, n_grid=20, max_shrink=0.5, n_sample_token=512):
         assert w.dim() == 2
@@ -172,94 +262,8 @@ class AwqQuantizer:
 
         return best_max_val.squeeze(1)
 
-    @torch.no_grad()
-    def _search_best_scale(self, previous_layer, linears2scale: list[nn.Linear], x: torch.Tensor, kwargs={}):
-        # Put x on the right device
-        x = x.to(next(previous_layer.parameters()).device)
-
-        # [STEP 1]: Compute maximum of weight
-        weight = torch.cat([_m.weight for _m in linears2scale], dim=0)
-        weight = weight.view(-1, self.group_size)
-        w_max = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
-        w_max = w_max.view(weight.shape)
-        w_max = w_max.mean(0)
-        clear_memory(weight)
-
-        # [STEP 2]: Compute maximum of x
-        x_max = x.abs().view(-1, x.shape[-1]).mean(0)
-
-        # [STEP 3]: Compute output of previous layer
-        with torch.no_grad():
-            org_out = previous_layer(x, **kwargs)
-            if isinstance(org_out, tuple):
-                org_out = org_out[0]
-        
-        # [STEP 4]: Compute loss
-        best_scales = self._compute_best_scale(
-            x, w_max, x_max, previous_layer, 
-            linears2scale, org_out, kwargs
-        )
-        
-        return best_scales
-
-    def _compute_best_scale(self, x, w_max, x_max, previous_layer, linears2scale: list[nn.Linear], org_out, kwargs={}):
-        """
-        Compute loss and select best scales
-
-        L(s) = || Q(W * s) (s^-1 * X) - W * X ||
-        Q: weight quantization function | pseudo_quantize_tensor(W * s)
-        X: inputs from calib dataset    | X
-        W: original weights in FP16     | layer
-        s: per channel scaling factor   | s^-1 * X
-        """
-        n_grid = 20
-        history = []
-        best_ratio = -1
-        best_scales = None
-        best_error = float('inf')
-
-        org_sd = {k: v.cpu() for k, v in previous_layer.state_dict().items()}
-        
-        device = x.device
-        x_max = x_max.view(-1).to(device)
-        w_max = w_max.view(-1).to(device)
-        
-        for ratio in range(n_grid):
-            # create new scales
-            ratio = ratio / n_grid
-            scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
-            scales = scales / (scales.max() * scales.min()).sqrt()
-            
-            scales_view = scales.view(1, -1).to(device)
-            for fc in linears2scale:
-                fc.weight.mul_(scales_view)
-                fc.weight.data = self.pseudo_quantize_tensor(fc.weight.data) / scales_view
-
-            out = previous_layer(x, **kwargs)
-            if isinstance(out, tuple):
-                out = out[0]
-
-            # measure loss and check if better than best
-            loss = (org_out - out).float().pow(2).mean().item() # NOTE: float prevents overflow
-            history.append(loss)
-            if loss < best_error:
-                best_error = loss
-                best_ratio = ratio
-                best_scales = scales.clone()
-            previous_layer.load_state_dict(org_sd)
-
-        if best_ratio == -1:
-            logging.debug(history)
-            raise Exception
-
-        assert torch.isnan(best_scales).sum() == 0, best_scales
-
-        return best_scales.detach()
-
-
     def init_quant(self, n_samples=128, seqlen=512):
-        layers = self.get_model_layers(self.model)
-
+        modules = self.awq_model.get_model_layers(self.model)
         samples = get_calib_dataset(
             data=self.calib_data, tokenizer=self.tokenizer, n_samples=n_samples, block_size=seqlen,
             split=self.split, text_column=self.text_column
@@ -269,8 +273,8 @@ class AwqQuantizer:
         inps = []
         layer_kwargs = {}
 
-        layers[0] = layers[0].cuda()
-        self.move_embed(self.model, "cuda")
+        modules[0] = modules[0].cuda()
+        self.awq_model.move_embed(self.model, "cuda")
         
         # get input and kwargs to layer 0
         # with_kwargs is only supported in PyTorch 2.0
@@ -286,21 +290,21 @@ class AwqQuantizer:
                 raise ValueError  # early exit to break later inference
 
         # patch layer 0 to catch input and kwargs
-        layers[0] = Catcher(layers[0])
+        modules[0] = Catcher(modules[0])
         try:
             self.model(samples.to(next(self.model.parameters()).device))
         except ValueError:  # work with early exit
             pass
         del samples
-        layers[0] = layers[0].module  # restore
+        modules[0] = modules[0].module  # restore
         inps = inps[0]
 
-        layers[0] = layers[0].cpu()
-        self.move_embed(self.model, "cpu")
+        modules[0] = modules[0].cpu()
+        self.awq_model.move_embed(self.model, "cpu")
         
         clear_memory()
 
-        return layers, layer_kwargs
+        return modules, layer_kwargs, inps
     
     def _get_input_feat(self, layer, named_linears):
         # firstly, get input features of all linear layers
@@ -315,9 +319,9 @@ class AwqQuantizer:
             handles.append(named_linears[name].register_forward_hook(
                 functools.partial(cache_input_hook, name=name,
                                 feat_dict=input_feat)))
-        inps = inps.to(next(layer.parameters()).device)  # in case multi-gpu
+        self.inps = self.inps.to(next(layer.parameters()).device)  # in case multi-gpu
         # get output as next layer's input
-        inps = layer(inps, **self.module_kwargs)[0]
+        self.inps = layer(self.inps, **self.module_kwargs)[0]
         for h in handles:
             h.remove()
         # now solve for scaling and clipping

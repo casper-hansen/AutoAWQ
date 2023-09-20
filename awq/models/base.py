@@ -15,7 +15,6 @@ from huggingface_hub import snapshot_download
 from awq.utils.utils import simple_dispatch_model
 from awq.utils.calib_data import get_calib_dataset
 from transformers.modeling_utils import shard_checkpoint
-from awq.quantize.quantizer import pseudo_quantize_tensor
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.quantize.auto_clip import auto_clip_block, apply_clip
 from awq.quantize.auto_scale import auto_scale_block, apply_scale
@@ -43,23 +42,32 @@ class BaseAWQForCausalLM(nn.Module):
             return self.model.generate(*args, **kwargs)
 
     @torch.no_grad()
-    def quantize(self, tokenizer=None, quant_config={}, n_samples=128, seqlen=512,
-                       auto_scale=True, mse_range=True, run_search=True, run_quant=True,
-                       calib_data: Union[str, List[str]]="pileval", split="train",
-                       text_column="text"):
+    def quantize(self, tokenizer=None, quant_config={},
+                       calib_data: Union[str, List[str]]="pileval", 
+                       split="train", text_column="text"):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
 
-        if run_search:
-            self.search_result = self._awq_search(
-                tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
-                auto_scale=auto_scale, mse_range=mse_range, calib_data=calib_data,
-                split=split, text_column=text_column
-            )
+        from awq.quantize.quantizer import AwqQuantizer
+
+        quantizer = AwqQuantizer(
+            self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
+            quant_config["version"], calib_data, split, text_column
+        )
+        quantizer.quantize()
+
+        self.is_quantized = True
+
+        # if run_search:
+        #     self.search_result = self._awq_search(
+        #         tokenizer, quant_config, n_samples=n_samples, seqlen=seqlen,
+        #         auto_scale=auto_scale, mse_range=mse_range, calib_data=calib_data,
+        #         split=split, text_column=text_column
+        #     )
         
-        if run_quant:
-            self._awq_quant()
-            self.is_quantized = True
+        # if run_quant:
+        #     self._awq_quant()
+        #     self.is_quantized = True
     
     @staticmethod
     def fuse_layers(model, quant_config):

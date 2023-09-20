@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from .quantizer import pseudo_quantize_tensor
 import gc
 
 __all__ = ["auto_clip_block"]
