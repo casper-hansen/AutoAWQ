@@ -6,8 +6,8 @@ from tqdm import tqdm
 from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
+from awq.quantize.scale import apply_scale, apply_clip
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.quantize.apply_quantized import apply_scale, apply_clip
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
 

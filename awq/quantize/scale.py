@@ -4,9 +4,9 @@ import torch.nn as nn
 from typing import Tuple
 from awq.modules.act import ScaledActivation
 from transformers.activations import NewGELUActivation
+from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
-from awq.utils.module import get_op_by_name, get_op_name, set_op_by_name
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm]
 allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation]
