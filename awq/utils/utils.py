@@ -1,3 +1,4 @@
+import gc
 import torch
 import accelerate
 
@@ -53,3 +54,9 @@ def set_module_name(model, name, value):
         child_name = name
 
     setattr(parent, child_name, value)
+
+def clear_memory(weight=None):
+    if weight is not None:
+        del weight
+    gc.collect()
+    torch.cuda.empty_cache()
