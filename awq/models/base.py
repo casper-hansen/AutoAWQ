@@ -55,55 +55,46 @@ class BaseAWQForCausalLM(nn.Module):
         pass
 
     def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
-        def _save_files(save_dir, model_name='', search_result=None):
-            class EmptyModule(nn.Module):
-                def __init__(self): super(EmptyModule, self).__init__()
-                def forward(self, x): return x
-
-            # Save model files with empty state dict
-            self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
-
-            # Remove empty state dict
-            os.remove(f'{save_dir}/pytorch_model.bin')
-
-            if search_result is not None:
-                torch.save(search_result, f'{save_dir}/{model_name}')
-            else:
-                # model_name has no extension, add it when saving state_dict
-                model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
-
-                # shard checkpoint into chunks (10GB default)
-                shards, index = shard_checkpoint(
-                    self.model.state_dict(), 
-                    max_shard_size=shard_size, 
-                    weights_name=model_name
-                )
-
-                for shard_file, shard in shards.items():
-                    if safetensors:
-                        # safetensors must be in the same memory, so we duplicate and use contiguous memory
-                        shard = {k: v.clone().contiguous() for k, v in shard.items()}
-                        save_file(shard, os.path.join(save_dir, shard_file), metadata={"format": "pt"})
-                    else:
-                        torch.save(shard, os.path.join(save_dir, shard_file))
-
-                # save shard index
-                if index is not None:
-                    with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
-                        file.write(json.dumps(index, indent=4))
-
-            # Save config
-            with open(f'{save_dir}/quant_config.json', 'w+') as file:
-                file.write(json.dumps(self.quant_config, indent=4))
-
         save_dir = save_dir[:-1] if save_dir[-1] == '/' else save_dir
 
         # Save model
-        if self.search_result is None or self.is_quantized:
-            _save_files(save_dir, '', search_result=None)
-        else:
-            model_name = 'awq_model_search_result.pt'
-            _save_files(save_dir, model_name, self.search_result)
+        class EmptyModule(nn.Module):
+            def __init__(self): super(EmptyModule, self).__init__()
+            def forward(self, x): return x
+
+        # Save model files with empty state dict
+        self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
+
+        # Remove empty state dict
+        os.remove(f'{save_dir}/pytorch_model.bin')
+
+        # model_name has no extension, add it when saving state_dict
+        model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
+
+        # shard checkpoint into chunks (10GB default)
+        shards, index = shard_checkpoint(
+            self.model.state_dict(), 
+            max_shard_size=shard_size, 
+            weights_name=model_name
+        )
+
+        for shard_file, shard in shards.items():
+            if safetensors:
+                # safetensors must be in the same memory, so we duplicate and use contiguous memory
+                shard = {k: v.clone().contiguous() for k, v in shard.items()}
+                save_file(shard, os.path.join(save_dir, shard_file), metadata={"format": "pt"})
+            else:
+                torch.save(shard, os.path.join(save_dir, shard_file))
+
+        # save shard index
+        if index is not None:
+            with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
+                file.write(json.dumps(index, indent=4))
+
+        # Save config
+        with open(f'{save_dir}/quant_config.json', 'w+') as file:
+            file.write(json.dumps(self.quant_config, indent=4))
+        
         
     @classmethod
     def from_pretrained(self, model_path, model_type, torch_dtype: torch.dtype = torch.float16, 
