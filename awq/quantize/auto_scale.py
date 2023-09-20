@@ -6,12 +6,14 @@ import logging
 from transformers.models.bloom.modeling_bloom import BloomBlock, BloomGelu
 from transformers.models.opt.modeling_opt import OPTDecoderLayer
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaRMSNorm
-from transformers.activations import NewGELUActivation
+from transformers.activations import NewGELUActivation, PytorchGELUTanh
 from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, get_op_name, set_op_by_name
 
 __all__ = ["auto_scale_block", "apply_scale"]
 
+norms = [nn.LayerNorm, LlamaRMSNorm]
+act_functions = [nn.GELU, BloomGelu, NewGELUActivation, PytorchGELUTanh]
 
 @torch.no_grad()
 def get_weight_scale(weight, q_group_size=-1):
@@ -80,7 +82,7 @@ def scale_fc_fc(fc1, fc2, scales):
 
 @torch.no_grad()
 def scale_gelu_fc(gelu, fc, scales):
-    assert any(isinstance(gelu,t) for t in [nn.GELU, BloomGelu, NewGELUActivation])
+    assert any(isinstance(gelu,t) for t in act_functions)
     assert isinstance(fc, nn.Linear)
 
     fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
@@ -194,11 +196,11 @@ def apply_scale(module, scales_list, input_feat_dict=None):
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
 
-        elif any(isinstance(prev_op,t) for t in [nn.LayerNorm, LlamaRMSNorm]) \
+        elif any(isinstance(prev_op,t) for t in norms) \
              or 'rmsnorm' in str(prev_op.__class__).lower():
             scale_ln_fcs(prev_op, layers, scales)
 
-        elif any(isinstance(prev_op,t) for t in [nn.GELU, BloomGelu, NewGELUActivation]):
+        elif any(isinstance(prev_op,t) for t in act_functions):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
