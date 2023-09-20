@@ -12,7 +12,7 @@ def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot
     if task_use_pretrained:
         model = AutoAWQForCausalLM.from_pretrained(model_path)
     else:
-        model = AutoAWQForCausalLM.from_quantized(model_path, quant_file)
+        model = AutoAWQForCausalLM.from_quantized(model_path, quant_file, fuse_layers=False)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
