@@ -75,8 +75,11 @@ class AwqQuantizer:
 
             # [STEP 4]: Quantize weights
             for name, linear_layer in named_linears.items():
+                # NOTE: small regression in perplexity if linear layer you use .cpu().float()
+                linear_layer = linear_layer.cuda().half()
+
                 linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
-                    linear_layer.weight.data.float(), 
+                    linear_layer.weight.data, 
                     get_scale_zp=True
                 )
 
