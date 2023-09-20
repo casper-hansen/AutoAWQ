@@ -176,14 +176,13 @@ class AwqQuantizer:
             # create new scales
             ratio = ratio / n_grid
 
-            # s^-1
+            # NOTE: s^-1 * x is fused here, according to paper
             scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
             scales = scales / (scales.max() * scales.min()).sqrt()
             scales_view = scales.view(1, -1).to(device)
 
-            # NOTE: s^-1 * x is fused here, according to paper
+            # Q(W * s)
             for fc in linears2scale:
-                # Q(W * s)
                 fc.weight.mul_(scales_view)
                 fc.weight.data = self.pseudo_quantize_tensor(fc.weight.data) / scales_view
 
