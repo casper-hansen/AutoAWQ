@@ -69,9 +69,9 @@ class AwqQuantizer:
             scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 3]: Compute and apply clipping list
-            # clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
-            # apply_clip(self.modules[i], clip_list)
-            # clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+            clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
+            apply_clip(self.modules[i], clip_list)
+            clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 4]: Quantize weights
             for name, linear_layer in named_linears.items():
@@ -211,6 +211,8 @@ class AwqQuantizer:
             clip_list.append((name, max_val))
 
             named_linears[name].cpu()
+        
+        return clip_list
 
     @torch.no_grad()
     def _compute_best_clip(self, w: torch.Tensor, input_feat: torch.Tensor, n_grid=20, max_shrink=0.5, n_sample_token=512):
