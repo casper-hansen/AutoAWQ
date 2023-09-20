@@ -35,14 +35,7 @@ class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
             module2inspect=module.attn,
             kwargs=module_kwargs
         ))
-
-        # attention output
-        # layers.append(dict(
-        #     prev_op=module.attn.c_attn,
-        #     layers=[module.attn.c_proj],
-        #     inp=input_feat['attn.c_proj']
-        # ))
-
+        
         # linear 1
         layers.append(dict(
             prev_op=module.ln_2,
