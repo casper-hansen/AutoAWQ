@@ -8,6 +8,7 @@ from typing import List, Union
 from safetensors.torch import save_file
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
+from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
@@ -40,8 +41,6 @@ class BaseAWQForCausalLM(nn.Module):
                        split="train", text_column="text"):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
-
-        from awq.quantize.quantizer import AwqQuantizer
 
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
