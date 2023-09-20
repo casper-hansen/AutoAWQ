@@ -113,3 +113,58 @@ class FalconDecoderLayer(nn.Module):
         out = h_attn + h_mlp
         
         return out, None, past_key_value
+
+class GptBigCodeBlock(nn.Module):
+    def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mlp, norm_1, norm_2, dev, max_seq_len):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = 0
+        self.hidden_size = hidden_size
+        self.norm_1 = norm_1
+        attention_shapes = self._get_attention_shapes(
+            max_seq_len, self.hidden_size // n_heads
+        )
+        self.attn = QuantAttentionFused(
+            hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj, 
+            dev=dev, max_seq_len=max_seq_len, use_alibi=False, attention_shapes=attention_shapes
+        ).to(dev)
+        self.norm_2 = norm_2
+        self.ffn = mlp.to(dev)
+    
+    def _get_attention_shapes(self, max_seq_len, head_dim):
+        batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
+
+        return {
+            # following fastertransformer definition
+            "cache_v": (batch_size, self.n_heads, max_seq_len, head_dim,),
+            # 8: pack 8 fp16 in FT, if fp32 then use 4
+            "cache_k": (batch_size, self.n_heads, head_dim // 8, max_seq_len, 8,),
+            "xqkv_view": (-1, self.n_heads+2, head_dim),
+            "xq_slice": lambda xqkv: xqkv[:, :, :, 0],
+            "xk_slice": lambda xqkv: xqkv[:, :, :, 1],
+            "xv_slice": lambda xqkv: xqkv[:, :, :, 2],
+            "xq_view": (1, head_dim),
+            "xk_view": (1, head_dim),
+            "xv_view": (1, head_dim),
+            "xk_reshape": (1, head_dim // 8, 8),
+            "single_xq_view": (1, head_dim),
+            "single_xk_view": (self.n_heads, head_dim),
+            "single_xv_view": (self.n_heads, head_dim)
+        }
+
+    def forward(
+        self, hidden_states, past_key_value, attn_bias=None, attention_mask=None, is_causal=None
+    ):
+        norm_out = self.norm_1(hidden_states)
+        attn_output, _, past_key_value = self.attn.forward(
+            hidden_states=norm_out,
+            past_key_value=past_key_value,
+            attention_mask=attention_mask,
+            position_ids=None,
+            output_attentions=False,
+            use_cache=True
+        )
+
+        h = hidden_states + attn_output
+        out = h + self.ffn.forward(self.norm_2(h))
+        return out, None, past_key_value

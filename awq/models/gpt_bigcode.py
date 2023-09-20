@@ -1,16 +1,24 @@
 from .base import BaseAWQForCausalLM
-from transformers.models.gpt_bigcode.modeling_gpt_bigcode import GPTBigCodeForCausalLM, GPTBigCodeBlock
+from transformers.models.gpt_bigcode.modeling_gpt_bigcode import GPTBigCodeForCausalLM, GPTBigCodeBlock as OldGptBigCodeBlock
 
 class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "GPTBigCodeBlock"
     max_new_tokens_key = "n_positions"
 
     @staticmethod
+    def fuse_layers(model: GPTBigCodeForCausalLM, quant_config:dict):
+        # TODO: Fix single_query_attention
+        pass
+        # fuser = GptBigCodeFuser(model)
+        # fuser.fuse_transformer()
+
+
+    @staticmethod
     def get_model_layers(model: GPTBigCodeForCausalLM):
         return model.transformer.h
 
     @staticmethod
-    def get_act_for_scaling(module: GPTBigCodeBlock):
+    def get_act_for_scaling(module: OldGptBigCodeBlock):
         return dict(
             is_scalable=True,
             scale_name="mlp.act",
@@ -24,7 +32,7 @@ class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
         model.transformer.drop = model.transformer.drop.to(device)
 
     @staticmethod
-    def get_layers_for_scaling(module:GPTBigCodeBlock, input_feat, module_kwargs):
+    def get_layers_for_scaling(module:OldGptBigCodeBlock, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -52,3 +60,41 @@ class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
         ))
 
         return layers
+
+from typing import List, Tuple
+from awq.modules.fused.block import GptBigCodeBlock
+from awq.modules.fused.model import GptBigCodeModel
+
+class GptBigCodeFuser:
+    def __init__(self, model: GPTBigCodeForCausalLM):
+        self.model = model
+
+        self.blocks: List[Tuple[str, OldGptBigCodeBlock]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if isinstance(module, OldGptBigCodeBlock)
+        ]
+    
+    def fuse_transformer(self):
+        blocks = []
+
+        module: OldGptBigCodeBlock
+        for module in self.model.transformer.h:
+            blocks.append(GptBigCodeBlock(
+                self.model.config.n_embd,
+                self.model.config.n_head,
+                module.attn.c_attn,
+                module.attn.c_proj,
+                module.mlp,
+                module.ln_1,
+                module.ln_2,
+                next(iter(module.state_dict().values())).device, 
+                self.model.config.n_positions
+            ))
+
+        self.model.transformer = GptBigCodeModel(
+            self.model.config.vocab_size,
+            blocks,
+            self.model.transformer.wte,
+            self.model.transformer.wpe,
+            self.model.transformer.ln_f,
+        )
