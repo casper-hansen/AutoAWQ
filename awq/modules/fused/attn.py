@@ -61,34 +61,60 @@ def build_alibi_bias(
 
 
 class QuantAttentionFused(nn.Module):
-    def __init__(self, hidden_size, num_heads, qkv_layer, o_proj, dev, max_seq_len, 
+    def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, dev, max_seq_len, 
                        use_alibi=False, attention_shapes=None):
         super().__init__()
         self.hidden_size = hidden_size
-        self.n_local_heads = num_heads
-        self.head_dim = self.hidden_size // num_heads
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.n_kv_groups = n_heads // n_kv_heads if n_kv_heads != 0 else 0
+        self.head_dim = self.hidden_size // n_heads
         self.qkv_proj = qkv_layer
         self.o_proj = o_proj
         self.start_pos = 0
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
-        self.attention_shapes = attention_shapes if attention_shapes is not None else {
-            # following fastertransformer definition
-            "cache_v": (self.cache_batch_size, self.n_local_heads, max_seq_len, self.head_dim,),
-            # 8: pack 8 fp16 in FT, if fp32 then use 4
-            "cache_k": (self.cache_batch_size, self.n_local_heads, self.head_dim // 8, max_seq_len, 8,),
-            "xqkv_view": (-1, self.n_local_heads, self.head_dim),
-            "xq_slice": lambda xqkv: xqkv[:, :, 0],
-            "xk_slice": lambda xqkv: xqkv[:, :, 1],
-            "xv_slice": lambda xqkv: xqkv[:, :, 2],
-            "xk_reshape": (self.n_local_heads, self.head_dim // 8, 8),
-            "xq_view": (self.n_local_heads, self.head_dim),
-            "xk_view": (self.n_local_heads, self.head_dim),
-            "xv_view": (self.n_local_heads, self.head_dim),
-            "single_xq_view": (self.n_local_heads, self.head_dim),
-            "single_xk_view": (self.n_local_heads, self.head_dim),
-            "single_xv_view": (self.n_local_heads, self.head_dim)
-        }
+
+        if attention_shapes is not None:
+            self.attention_shapes = attention_shapes
+
+        elif self.n_kv_heads == 0:
+            self.attention_shapes = {
+                # following fastertransformer definition
+                "cache_v": (self.cache_batch_size, self.n_heads, max_seq_len, self.head_dim,),
+                # 8: pack 8 fp16 in FT, if fp32 then use 4
+                "cache_k": (self.cache_batch_size, self.n_heads, self.head_dim // 8, max_seq_len, 8,),
+                "xqkv_view": (-1, self.n_heads, self.head_dim),
+                "xq_slice": lambda xqkv: xqkv[:, :, 0],
+                "xk_slice": lambda xqkv: xqkv[:, :, 1],
+                "xv_slice": lambda xqkv: xqkv[:, :, 2],
+                "xq_view": (self.n_heads, self.head_dim),
+                "xk_view": (self.n_heads, self.head_dim),
+                "xv_view": (self.n_heads, self.head_dim),
+                "xk_reshape": (self.n_heads, self.head_dim // 8, 8),
+                "single_xq_view": (self.n_heads, self.head_dim),
+                "single_xk_view": (self.n_heads, self.head_dim),
+                "single_xv_view": (self.n_heads, self.head_dim)
+            }
+
+        else:
+            self.attention_shapes = {
+                # following fastertransformer definition
+                "cache_v": (self.cache_batch_size, self.n_kv_heads, max_seq_len, self.head_dim,),
+                # 8: pack 8 fp16 in FT, if fp32 then use 4
+                "cache_k": (self.cache_batch_size, self.n_kv_heads, self.head_dim // 8, max_seq_len, 8,),
+                "xqkv_view": (self.n_heads + self.n_kv_heads * 2, self.head_dim),
+                "xq_slice": lambda xqkv: xqkv[:, :, 0 : self.n_heads],
+                "xk_slice": lambda xqkv: xqkv[:, :, self.n_heads : (self.n_heads + self.n_kv_heads)],
+                "xv_slice": lambda xqkv: xqkv[:, :, -self.n_kv_heads :],
+                "xq_view": (self.n_heads, self.head_dim),
+                "xk_view": (self.n_kv_heads, self.head_dim),
+                "xv_view": (self.n_kv_heads, self.head_dim),
+                "xk_reshape": (self.n_kv_heads, self.head_dim // 8, 8),
+                "single_xq_view": (self.n_heads, self.head_dim),
+                "single_xk_view": (self.n_kv_heads, self.head_dim),
+                "single_xv_view": (self.n_kv_heads, self.head_dim)
+            }
 
         self.cache_v = (
             torch.zeros(self.attention_shapes["cache_v"]).to(dev).half()
@@ -99,14 +125,14 @@ class QuantAttentionFused(nn.Module):
         )
 
         if use_alibi:
-            alibi_slopes, alibi_bias = build_alibi_bias(self.n_local_heads, max_seq_len)
+            alibi_slopes, alibi_bias = build_alibi_bias(self.n_heads, max_seq_len)
             self.alibi_slopes = alibi_slopes.float().to(dev)
             self.alibi_bias = alibi_bias.float().to(dev)
             self.rotary_dim = 0
             self.is_neox = False
         else:
             self.freqs_cis = precompute_freqs_cis(
-                hidden_size // num_heads,
+                hidden_size // n_heads,
                 max_seq_len * 2,
             ).to(dev)
             self.rotary_dim = self.head_dim
@@ -153,6 +179,11 @@ class QuantAttentionFused(nn.Module):
 
             keys = xk
             values = xv
+
+            if self.n_kv_groups != 0:
+                keys = torch.repeat_interleave(keys, dim=2, repeats=self.n_kv_groups)
+                values = torch.repeat_interleave(values, dim=2, repeats=self.n_kv_groups)
+            
             past_key_value = (xk, xv) if use_cache else None
 
             xq = xq.transpose(1, 2)
