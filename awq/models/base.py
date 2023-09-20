@@ -38,13 +38,13 @@ class BaseAWQForCausalLM(nn.Module):
     @torch.no_grad()
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
-                       split="train", text_column="text", loss_objective='mse'):
+                       split="train", text_column="text"):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
 
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
-            quant_config["version"], calib_data, split, text_column, loss_objective
+            quant_config["version"], calib_data, split, text_column
         )
         quantizer.quantize()
         self.is_quantized = True

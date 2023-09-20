@@ -13,7 +13,7 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column, loss_objective='mse') -> None:
+                       calib_data, split, text_column) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
@@ -24,7 +24,6 @@ class AwqQuantizer:
         self.split = split
         self.text_column = text_column
         self.modules, self.module_kwargs, self.inps = self.init_quant()
-        self.loss_objective = loss_objective
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
         org_w_shape = w.shape
@@ -191,11 +190,8 @@ class AwqQuantizer:
             if isinstance(int_w_output, tuple):
                 int_w_output = int_w_output[0]
             
-            if self.loss_objective == 'mse': # (L2 norm)
-                loss = (fp16_output - int_w_output).float().pow(2).mean().item() # NOTE: float prevents overflow
-                
-            elif self.loss_objective == 'cosine':
-                loss = -nn.functional.cosine_similarity(fp16_output, int_w_output).mean().item() 
+            # compute mean squared error (L2 norm)
+            loss = (fp16_output - int_w_output).float().pow(2).mean().item() # NOTE: float prevents overflow
 
             history.append(loss)
             if loss < best_error:
