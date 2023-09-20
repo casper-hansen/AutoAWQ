@@ -52,7 +52,7 @@ class AwqQuantizer:
             return w
     
     def quantize(self, get_layers_for_scaling: function):
-        for i in tqdm(range(len(self.modules)), desc=""):
+        for i in tqdm(range(len(self.modules)), desc="QUANTIZING"):
             # [STEP 1]: Get layer, extract linear modules, extract input features
             self.modules[i] = self.modules[i].cuda()
             named_linears = get_named_linears(self.modules[i])
