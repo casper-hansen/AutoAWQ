@@ -1,8 +1,12 @@
 import math
 import torch
 import torch.nn as nn
-import awq_inference_engine  # with CUDA kernels
-
+import awq_inference_engine
+from functools import partial
+from torch_int.nn.linear import (
+    W8A8BFP32OFP32LinearWithSFactor, # used for out_proj, down_proj
+    W8A8BFP32OFP32Linear # used for qkv
+)
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
