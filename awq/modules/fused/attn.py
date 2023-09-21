@@ -5,6 +5,12 @@ import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
 
+try:
+    import ft_inference_engine
+    FT_INSTALLED = True
+except:
+    FT_INSTALLED = False
+
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)  # type: ignore
@@ -156,7 +162,7 @@ class QuantAttentionFused(nn.Module):
         xk = self.attention_shapes["xk_slice"](xqkv)
         xv = self.attention_shapes["xv_slice"](xqkv)
 
-        if seqlen > 1:
+        if seqlen > 1 or not FT_INSTALLED:
             xq = xq.view((bsz, seqlen) + self.attention_shapes["xq_view"])
             xk = xk.view((bsz, seqlen) + self.attention_shapes["xk_view"])
             xv = xv.view((bsz, seqlen) + self.attention_shapes["xv_view"])
@@ -177,6 +183,11 @@ class QuantAttentionFused(nn.Module):
             self.cache_v[:bsz, :, self.start_pos : self.start_pos + seqlen, :] = values_store
             self.cache_k[:bsz, :, :, self.start_pos : self.start_pos + seqlen, :] = keys_store
 
+            if seqlen == 1:
+                xv = self.cache_v[:bsz, :, : self.start_pos + seqlen, :].transpose(1, 2).contiguous()
+                xk = self.cache_k[:bsz, :, :, : self.start_pos + seqlen, :].transpose(2, 3).contiguous()
+                xk = xk.reshape(xk.shape[:-2] + (self.head_dim,)).transpose(1, 2).contiguous()
+            
             keys = xk
             values = xv
 
@@ -185,7 +196,6 @@ class QuantAttentionFused(nn.Module):
                 values = torch.repeat_interleave(values, dim=2, repeats=self.n_kv_groups)
             
             past_key_value = (xk, xv) if use_cache else None
-
             xq = xq.transpose(1, 2)
             keys = keys.transpose(1, 2)
             values = values.transpose(1, 2)

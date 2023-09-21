@@ -96,10 +96,13 @@ generator_flags = get_generator_flag()
 arch_flags = get_compute_capabilities()
 
 if os.name == "nt":
+    include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
+
     # Relaxed args on Windows
-    extra_compile_args={
-        "nvcc": arch_flags
-    }
+    if include_arch:
+        extra_compile_args={"nvcc": arch_flags}
+    else:
+        extra_compile_args={}
 else:
     extra_compile_args={
         "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
@@ -123,16 +126,26 @@ extensions = [
     CUDAExtension(
         "awq_inference_engine",
         [
-            "awq_cuda/pybind.cpp",
+            "awq_cuda/pybind_awq.cpp",
             "awq_cuda/quantization/gemm_cuda_gen.cu",
             "awq_cuda/layernorm/layernorm.cu",
             "awq_cuda/position_embedding/pos_encoding_kernels.cu",
-            "awq_cuda/quantization/gemv_cuda.cu",
-            "awq_cuda/attention/ft_attention.cpp",
-            "awq_cuda/attention/decoder_masked_multihead_attention.cu"
+            "awq_cuda/quantization/gemv_cuda.cu"
         ], extra_compile_args=extra_compile_args
     )
 ]
+
+if os.name != "nt":
+    extensions.append(
+        CUDAExtension(
+            "ft_inference_engine",
+            [
+                "awq_cuda/pybind_ft.cpp",
+                "awq_cuda/attention/ft_attention.cpp",
+                "awq_cuda/attention/decoder_masked_multihead_attention.cu"
+            ], extra_compile_args=extra_compile_args
+        )
+    )
 
 additional_setup_kwargs = {
     "ext_modules": extensions,
