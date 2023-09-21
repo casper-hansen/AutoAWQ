@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
-
 from typing import Tuple
 from awq.modules.act import ScaledActivation
-from transformers.activations import NewGELUActivation
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+from transformers.activations import NewGELUActivation, PytorchGELUTanh
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm]
-allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation]
+allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation, PytorchGELUTanh]
 
 @torch.no_grad()
 def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
