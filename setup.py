@@ -97,9 +97,7 @@ arch_flags = get_compute_capabilities()
 
 if os.name == "nt":
     # Relaxed args on Windows
-    extra_compile_args={
-        "nvcc": arch_flags
-    }
+    extra_compile_args={}
 else:
     extra_compile_args={
         "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
