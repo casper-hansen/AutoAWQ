@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, GptBigCodeBlock
-from transformers.modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPastAndCrossAttentions
+from awq.modules.fused.block import MPTBlock, FalconDecoderLayer
+from transformers.modeling_outputs import BaseModelOutputWithPast
 
 class MPTModel(nn.Module):
     def __init__(self, vocab_size, blocks, wte, norm_f):
