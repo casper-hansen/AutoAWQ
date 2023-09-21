@@ -27,10 +27,12 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
         # attention input
         layers.append(dict(
             prev_op=module.self_attn_layer_norm,
-            layers=[module.self_attn.q_proj,
-                    module.self_attn.k_proj, module.self_attn.v_proj],
+            layers=[
+                module.self_attn.q_proj,
+                module.self_attn.k_proj, module.self_attn.v_proj],
             inp=input_feat['self_attn.q_proj'],
-            module2inspect=module.self_attn, kwargs=module_kwargs,
+            module2inspect=module.self_attn, 
+            kwargs=module_kwargs,
         ))
 
         # attention out
