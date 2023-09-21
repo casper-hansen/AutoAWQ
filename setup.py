@@ -96,8 +96,13 @@ generator_flags = get_generator_flag()
 arch_flags = get_compute_capabilities()
 
 if os.name == "nt":
+    include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
+
     # Relaxed args on Windows
-    extra_compile_args={}
+    if include_arch:
+        extra_compile_args={"nvcc": arch_flags}
+    else:
+        extra_compile_args={}
 else:
     extra_compile_args={
         "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
