@@ -46,10 +46,12 @@ pip install autoawq
 Build time can take 10 minutes. Download your model while you install AutoAWQ.
 
 ```
-git clone https://github.com/casper-hansen/AutoAWQ
+git clone --recurse-submodules https://github.com/casper-hansen/AutoAWQ
 cd AutoAWQ
 pip install -e .
 ```
+
+Alternatively, you can use `git submodule update --init --recursive` after cloning.
 
 </details>
 
