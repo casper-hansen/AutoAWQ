@@ -101,19 +101,32 @@ class AwqQuantizer:
             if self.version == 'GEMM':
                 scales = scales.t().contiguous()
                 zeros = zeros.t().contiguous()
-                q_linear_module = WQLinear_GEMM
+                q_linear = WQLinear_GEMM.from_linear(
+                    linear=linear_layer,
+                    w_bit=self.w_bit,
+                    group_size=self.group_size,
+                    init_only=False,
+                    scales=scales,
+                    zeros=zeros
+                )
 
             elif self.version  == 'GEMV':
-                q_linear_module = WQLinear_GEMV
+                q_linear = WQLinear_GEMV.from_linear(
+                    linear=linear_layer,
+                    w_bit=self.w_bit,
+                    group_size=self.group_size,
+                    init_only=False,
+                    scales=scales,
+                    zeros=zeros
+                )
             
-            q_linear = q_linear_module.from_linear(
-                linear=linear_layer,
-                w_bit=self.w_bit,
-                group_size=self.group_size,
-                init_only=False,
-                scales=scales,
-                zeros=zeros
-            )
+            elif self.version == 'SmoothQuant':
+                q_linear = WQLinear_GEMM.from_linear(
+                    linear=module,
+                    input_scale=None, # TODO: Insert scales
+                    quantize_input=False,
+                    init_only=False
+                )
 
             linear_layer.cpu()
             q_linear.to(next(module.parameters()).device)

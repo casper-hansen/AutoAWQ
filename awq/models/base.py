@@ -231,16 +231,27 @@ class BaseAWQForCausalLM(nn.Module):
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
                 if version == 'GEMM':
-                    q_linear_module = WQLinear_GEMM
+                    q_linear = WQLinear_GEMM.from_linear(
+                        linear=module,
+                        w_bit=quant_config['w_bit'],
+                        group_size=quant_config['q_group_size'],
+                        init_only=True
+                    )
                 elif version == 'GEMV':
-                    q_linear_module = WQLinear_GEMV
+                    q_linear = WQLinear_GEMV.from_linear(
+                        linear=module,
+                        w_bit=quant_config['w_bit'],
+                        group_size=quant_config['q_group_size'],
+                        init_only=True
+                    )
+                elif version == 'SmoothQuant':
+                    q_linear = WQLinear_GEMM.from_linear(
+                        linear=module,
+                        input_scale=None, # TODO: Insert scales
+                        quantize_input=False,
+                        init_only=True
+                    )
                 
-                q_linear = q_linear_module.from_linear(
-                    module,
-                    quant_config['w_bit'],
-                    quant_config['q_group_size'],
-                    True
-                )
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
             
