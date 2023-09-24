@@ -94,7 +94,6 @@ check_dependencies()
 include_dirs = get_include_dirs()
 generator_flags = get_generator_flag()
 arch_flags = get_compute_capabilities()
-cutlass_home = os.environ.get("CUTLASS_HOME", "submodules/cutlass")
 
 if os.name == "nt":
     include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
@@ -144,9 +143,7 @@ extensions = [
             'awq_cuda/gemm/fused.cu',
         ], 
         include_dirs=[
-            'awq_cuda/gemm/include',
-            f'{cutlass_home}/include',
-            f'{cutlass_home}/tools/util/include'
+            'awq_cuda/gemm/include'
         ],
         extra_link_args=[
             '-lcublas_static', '-lcublasLt_static',
