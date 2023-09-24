@@ -226,29 +226,24 @@ class WQLinear_INT8(torch.nn.Module):
         if quantize_input:
             self.register_buffer('input_scale', torch.tensor(input_scale))
 
-    def _apply(self, fn):
-        super()._apply(fn)
-        self.bias = self.bias.to(torch.float32)
-        return self
-
-    def to(self, *args, **kwargs):
-        super().to(*args, **kwargs)
-        self.weight = self.weight.to(*args, **kwargs)
-        self.bias = self.bias.to(*args, **kwargs).to(torch.float32)
-        self.a = self.a.to(*args, **kwargs).to(torch.float32)
-        self.input_scale = self.input_scale.to(*args, **kwargs).to(torch.float32)
-        return self
-
     @staticmethod
-    def from_float(module: torch.nn.Linear, input_scale, quantize_input=False):
+    def from_linear(module: torch.nn.Linear, input_scale, quantize_input=False, init_only=False):
         int8_module = WQLinear_INT8(module.in_features, module.out_features, quantize_input=quantize_input)
+        if init_only:
+            if quantize_input:
+                int8_module.input_scale = torch.tensor(input_scale)
+            return int8_module
+
         int8_weight, weight_scale = quantize_per_tensor_absmax(module.weight)
         alpha = input_scale * weight_scale
         int8_module.weight = int8_weight
         mockbias = torch.zeros((1, module.out_features), dtype=torch.float, requires_grad=False)
         int8_module.bias = mockbias.to(torch.float32)
         int8_module.a = alpha
-        int8_module.input_scale = torch.tensor(input_scale)
+
+        if quantize_input:
+            int8_module.input_scale = torch.tensor(input_scale)
+        
         return int8_module
 
     @torch.no_grad()
