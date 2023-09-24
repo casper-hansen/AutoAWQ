@@ -11,9 +11,9 @@ from huggingface_hub import snapshot_download
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_INT8
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 
 class BaseAWQForCausalLM(nn.Module):
@@ -245,10 +245,13 @@ class BaseAWQForCausalLM(nn.Module):
                         init_only=True
                     )
                 elif version == 'SmoothQuant':
-                    q_linear = WQLinear_GEMM.from_linear(
+                    # inputs to these layers are converted from FP16/FP32 to INT8
+                    quantize_input = name in self.int8_scale_inputs
+
+                    q_linear = WQLinear_INT8.from_linear(
                         linear=module,
-                        input_scale=None, # TODO: Insert scales
-                        quantize_input=False,
+                        input_scale=None,
+                        quantize_input=quantize_input,
                         init_only=True
                     )
                 
