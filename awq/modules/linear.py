@@ -229,9 +229,11 @@ class WQLinear_INT8(torch.nn.Module):
     @staticmethod
     def from_linear(module: torch.nn.Linear, input_scale, quantize_input=False, init_only=False):
         int8_module = WQLinear_INT8(module.in_features, module.out_features, quantize_input=quantize_input)
+        
+        if quantize_input:
+            int8_module.input_scale = torch.tensor(input_scale)
+
         if init_only:
-            if quantize_input:
-                int8_module.input_scale = torch.tensor(input_scale)
             return int8_module
 
         int8_weight, weight_scale = quantize_per_tensor_absmax(module.weight)
@@ -240,9 +242,6 @@ class WQLinear_INT8(torch.nn.Module):
         mockbias = torch.zeros((1, module.out_features), dtype=torch.float, requires_grad=False)
         int8_module.bias = mockbias.to(torch.float32)
         int8_module.a = alpha
-
-        if quantize_input:
-            int8_module.input_scale = torch.tensor(input_scale)
         
         return int8_module
 
