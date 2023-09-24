@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import List
 from awq.modules.fused.block import MPTBlock, FalconDecoderLayer
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
@@ -8,7 +9,7 @@ class MPTModel(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.wte = wte
-        self.blocks: list[MPTBlock] = nn.ModuleList(blocks)
+        self.blocks: List[MPTBlock] = nn.ModuleList(blocks)
         self.norm_f = norm_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False
@@ -36,7 +37,7 @@ class FalconModel(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.word_embeddings = word_embeddings
-        self.blocks: list[FalconDecoderLayer] = nn.ModuleList(blocks)
+        self.blocks: List[FalconDecoderLayer] = nn.ModuleList(blocks)
         self.ln_f = ln_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False

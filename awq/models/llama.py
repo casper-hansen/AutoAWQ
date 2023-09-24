@@ -1,4 +1,5 @@
 from .base import BaseAWQForCausalLM
+from typing import Dict
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
@@ -6,7 +7,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM, quant_config: dict):
+    def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):
         fuser = LlamaFuser(model, quant_config)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
