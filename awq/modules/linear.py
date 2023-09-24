@@ -1,12 +1,10 @@
 import math
 import torch
+import int8_engine
 import torch.nn as nn
 import awq_inference_engine
 from functools import partial
-from torch_int.nn.linear import (
-    W8A8BFP32OFP32LinearWithSFactor, # used for out_proj, down_proj
-    W8A8BFP32OFP32Linear # used for qkv
-)
+from awq.quantize.quantizer import quantize_per_tensor_absmax
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
@@ -212,3 +210,64 @@ class WQLinear_GEMV(nn.Module):
         return 'in_features={}, out_features={}, bias={}, w_bit={}, group_size={}'.format(
             self.in_features, self.out_features, self.bias is not None, self.w_bit, self.group_size
         )
+
+class WQLinear_INT8(torch.nn.Module):
+    def __init__(self, in_features, out_features, alpha=1.0, beta=1.0, input_scale=1.0, quantize_input=False):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.quantize_input = quantize_input
+
+        self.register_buffer('weight', torch.randint(-127, 127, (self.out_features, self.in_features), dtype=torch.int8, requires_grad=False))
+        self.register_buffer('bias', torch.zeros((1, self.out_features), dtype=torch.float32, requires_grad=False))
+        self.register_buffer('a', torch.tensor(alpha))
+        self.register_buffer('b', torch.tensor(beta))
+
+        if quantize_input:
+            self.register_buffer('input_scale', torch.tensor(input_scale))
+
+    def _apply(self, fn):
+        super()._apply(fn)
+        self.bias = self.bias.to(torch.float32)
+        return self
+
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self.weight = self.weight.to(*args, **kwargs)
+        self.bias = self.bias.to(*args, **kwargs).to(torch.float32)
+        self.a = self.a.to(*args, **kwargs).to(torch.float32)
+        self.input_scale = self.input_scale.to(*args, **kwargs).to(torch.float32)
+        return self
+
+    @staticmethod
+    def from_float(module: torch.nn.Linear, input_scale, quantize_input=False):
+        int8_module = WQLinear_INT8(module.in_features, module.out_features, quantize_input=quantize_input)
+        int8_weight, weight_scale = quantize_per_tensor_absmax(module.weight)
+        alpha = input_scale * weight_scale
+        int8_module.weight = int8_weight
+        mockbias = torch.zeros((1, module.out_features), dtype=torch.float, requires_grad=False)
+        int8_module.bias = mockbias.to(torch.float32)
+        int8_module.a = alpha
+        int8_module.input_scale = torch.tensor(input_scale)
+        return int8_module
+
+    @torch.no_grad()
+    def forward(self, x):
+        """
+        The arguments to INT8 Engine:
+        x       - INT8
+        weight  - INT8
+        bias    - FP32
+        alpha   - FP32
+        beta    - FP32
+        """
+        x_shape = x.shape
+        x = x.view(-1, x_shape[-1])
+        self.bias = self.bias.to(torch.float32)
+
+        if self.quantize_input:
+            x = (x / self.input_scale).round().clamp(-128, 127).to(torch.int8)
+
+        y = int8_engine.linear_a8_w8_bfp32_ofp32(x, self.weight, self.bias, self.a.item(), self.b.item())
+        y = y.view(*x_shape[:-1], -1)
+        return y

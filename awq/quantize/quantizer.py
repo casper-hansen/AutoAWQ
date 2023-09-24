@@ -10,6 +10,16 @@ from awq.quantize.scale import apply_scale, apply_clip
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
+@torch.no_grad()
+def quantize_per_tensor_absmax(t):
+    scale = t.abs().max() / 127
+    if not t.is_cuda:
+        # half rounding is not supported on CPU
+        t = t.float()
+    # use inplace operation to save memory
+    t.div_(scale).round_()
+    t_q = t.to(torch.int8)
+    return t_q, scale
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
