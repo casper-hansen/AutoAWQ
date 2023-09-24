@@ -227,19 +227,19 @@ class WQLinear_INT8(torch.nn.Module):
             self.register_buffer('input_scale', torch.tensor(input_scale))
 
     @staticmethod
-    def from_linear(module: torch.nn.Linear, input_scale, quantize_input=False, init_only=False):
-        int8_module = WQLinear_INT8(module.in_features, module.out_features, quantize_input=quantize_input)
-        
+    def from_linear(linear: torch.nn.Linear, input_scale, quantize_input=False, init_only=False):
+        int8_module = WQLinear_INT8(linear.in_features, linear.out_features, quantize_input=quantize_input)
+
         if quantize_input:
             int8_module.input_scale = torch.tensor(input_scale)
 
         if init_only:
             return int8_module
 
-        int8_weight, weight_scale = quantize_per_tensor_absmax(module.weight)
+        int8_weight, weight_scale = quantize_per_tensor_absmax(linear.weight)
         alpha = input_scale * weight_scale
         int8_module.weight = int8_weight
-        mockbias = torch.zeros((1, module.out_features), dtype=torch.float, requires_grad=False)
+        mockbias = torch.zeros((1, linear.out_features), dtype=torch.float, requires_grad=False)
         int8_module.bias = mockbias.to(torch.float32)
         int8_module.a = alpha
         
