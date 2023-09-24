@@ -123,15 +123,9 @@ class AwqQuantizer:
             elif self.version == 'SmoothQuant':
                 quantize_input = name in self.awq_model.int8_scale_inputs
 
-                if quantize_input:
-                    # TODO: Generate input scales
-                    input_scale = None
-                else:
-                    input_scale = None
-
                 q_linear = WQLinear_INT8.from_linear(
                     linear=module,
-                    input_scale=input_scale,
+                    input_scale=None,
                     quantize_input=quantize_input,
                     init_only=False
                 )
@@ -153,7 +147,10 @@ class AwqQuantizer:
         # Put x on the right device
         inp = inp.to(next(module2inspect.parameters()).device)
 
-        # [STEP 1]: Compute maximum of weight
+        # TODO: [STEP 1a] (Optional): Compute activation scales
+        pass
+
+        # [STEP 1b]: Compute maximum of weight
         weight = torch.cat([_m.weight for _m in layers], dim=0)
         org_shape = weight.shape
         weight = weight.view(-1, self.group_size)
@@ -162,7 +159,7 @@ class AwqQuantizer:
         w_max = w_scale.mean(0)
         clear_memory(weight)
 
-        # [STEP 2]: Compute maximum of x
+        # [STEP 2]: Compute maximum of x (activation awareness)
         x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
 
         # [STEP 3]: Compute output of module
