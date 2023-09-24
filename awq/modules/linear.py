@@ -227,7 +227,7 @@ class WQLinear_INT8(torch.nn.Module):
             self.register_buffer('input_scale', torch.tensor(input_scale))
 
     @staticmethod
-    def from_linear(linear: torch.nn.Linear, input_scale, quantize_input=False, init_only=False):
+    def from_linear(linear: torch.nn.Linear, input_scale=None, quantize_input=False, init_only=False):
         int8_module = WQLinear_INT8(linear.in_features, linear.out_features, quantize_input=quantize_input)
 
         if quantize_input:
