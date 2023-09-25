@@ -220,28 +220,28 @@ class WQLinear_INT8(torch.nn.Module):
 
         self.register_buffer('weight', torch.randint(-127, 127, (self.out_features, self.in_features), dtype=torch.int8, requires_grad=False))
         self.register_buffer('bias', torch.zeros((1, self.out_features), dtype=torch.float32, requires_grad=False))
-        self.register_buffer('a', torch.tensor(alpha))
-        self.register_buffer('b', torch.tensor(beta))
+        self.register_buffer('alpha', torch.tensor(alpha))
+        self.register_buffer('beta', torch.tensor(beta))
 
         if quantize_input:
             self.register_buffer('input_scale', torch.tensor(input_scale))
 
     @staticmethod
     def from_linear(linear: torch.nn.Linear, input_scale=None, quantize_input=False, init_only=False):
-        int8_module = WQLinear_INT8(linear.in_features, linear.out_features, quantize_input=quantize_input)
-
-        if quantize_input:
-            int8_module.input_scale = torch.tensor(input_scale)
+        """
+        linear.weight: assumed to already be quantized to INT8
+        input_scale: used to scale the inputs (x) in layers with quantize_input=True
+        """
+        int8_module = WQLinear_INT8(linear.in_features, linear.out_features, input_scale=input_scale, quantize_input=quantize_input)
 
         if init_only:
             return int8_module
 
-        int8_weight, weight_scale = quantize_per_tensor_absmax(linear.weight)
-        alpha = input_scale * weight_scale
-        int8_module.weight = int8_weight
-        mockbias = torch.zeros((1, linear.out_features), dtype=torch.float, requires_grad=False)
-        int8_module.bias = mockbias.to(torch.float32)
-        int8_module.a = alpha
+        int8_module.weight = linear.weight
+        int8_module.alpha = input_scale * (linear.weight.abs().max() / 127)
+        int8_module.bias = torch.zeros(
+            (1, linear.out_features), dtype=torch.float, requires_grad=False
+        ).to(torch.float32)
         
         return int8_module
 
@@ -262,6 +262,8 @@ class WQLinear_INT8(torch.nn.Module):
         if self.quantize_input:
             x = (x / self.input_scale).round().clamp(-128, 127).to(torch.int8)
 
-        y = int8_engine.linear_a8_w8_bfp32_ofp32(x, self.weight, self.bias, self.a.item(), self.b.item())
+        y = int8_engine.linear_a8_w8_bfp32_ofp32(
+            x, self.weight, self.bias, self.alpha.item(), self.beta.item()
+        )
         y = y.view(*x_shape[:-1], -1)
         return y
