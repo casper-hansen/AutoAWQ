@@ -57,7 +57,7 @@ class AwqQuantizer:
             zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
         else:
             if self.w_bit != 8:
-                raise Exception("zero_point=False is only support when w_bit=8")
+                raise Exception("zero_point=False is only supported when w_bit=8")
             
             max_val = w.abs().amax(dim=1, keepdim=True)
             max_val = max_val.clamp(min=1e-5)
@@ -153,7 +153,7 @@ class AwqQuantizer:
                 quantize_input = name in self.awq_model.int8_scale_inputs
 
                 q_linear = WQLinear_INT8.from_linear(
-                    linear=module,
+                    linear=linear_layer,
                     input_scale=None,
                     quantize_input=quantize_input,
                     init_only=False
