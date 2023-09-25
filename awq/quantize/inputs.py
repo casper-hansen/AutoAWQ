@@ -22,20 +22,17 @@ class ActivationStatCollector:
         )
     
     def forward(self):
-        for i in tqdm(range(self.num_samples), desc="SmoothQuant"):
-            device = next(self.model.parameters()).device
+        self.model.cuda()
 
-            input_ids = self.tokenizer(
-                self.samples[i]["text"], return_tensors="pt",
-                max_length=self.seq_len, truncation=True
-            ).input_ids.to(device)
-
-            self.model(input_ids)
+        for sample in tqdm(self.samples, desc="SmoothQuant"):
+            self.model(sample.cuda())
+        
+        self.model.cpu()
         
     def stat_tensor(self, name: str, tensor: torch.Tensor):
         hidden_dim = tensor.shape[-1]
         tensor = tensor.view(-1, hidden_dim).abs().detach()
-        comming_max = torch.max(tensor, dim=0)[0].float().cpu()
+        comming_max = torch.max(tensor, dim=0)[0].float()
         if name in self.act_scales:
             self.act_scales[name] = torch.max(self.act_scales[name], comming_max)
         else:
