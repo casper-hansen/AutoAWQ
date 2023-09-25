@@ -229,7 +229,7 @@ class WQLinear_INT8(torch.nn.Module):
     @staticmethod
     def from_linear(linear: torch.nn.Linear, input_scale=None, quantize_input=False, init_only=False):
         """
-        linear.weight: assumed to already be quantized to INT8
+        linear.weight: assumed to already be quantized
         input_scale: used to scale the inputs (x) in layers with quantize_input=True
         """
         int8_module = WQLinear_INT8(linear.in_features, linear.out_features, input_scale=input_scale, quantize_input=quantize_input)
@@ -237,7 +237,7 @@ class WQLinear_INT8(torch.nn.Module):
         if init_only:
             return int8_module
 
-        int8_module.weight = linear.weight
+        int8_module.weight = linear.weight.to(torch.int8)
         int8_module.alpha = input_scale * (linear.weight.abs().max() / 127)
         int8_module.bias = torch.zeros(
             (1, linear.out_features), dtype=torch.float, requires_grad=False
