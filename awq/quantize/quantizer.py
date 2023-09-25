@@ -75,7 +75,8 @@ class AwqQuantizer:
         w = w.reshape(org_w_shape)
 
         if get_scale_zp:
-            return w, scales.view(w.shape[0], -1), zeros.view(w.shape[0], -1)
+            zeros = zeros.view(w.shape[0], -1) if type(zeros) != int else zeros
+            return w, scales.view(w.shape[0], -1), zeros
         else:
             return w
     
@@ -102,9 +103,9 @@ class AwqQuantizer:
             scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 3]: Compute and apply clipping list
-            clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
-            apply_clip(self.modules[i], clip_list)
-            clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+            # clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
+            # apply_clip(self.modules[i], clip_list)
+            # clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 4]: Quantize weights
             self._apply_quant(self.modules[i], named_linears)
@@ -144,10 +145,12 @@ class AwqQuantizer:
             
             elif self.version == 'SmoothQuant':
                 quantize_input = name in self.awq_model.int8_scale_inputs
+                linear_layer_name = get_op_name(self.model, linear_layer)
+                input_scale = self.collector.act_scales[linear_layer_name]
 
                 q_linear = WQLinear_INT8.from_linear(
                     linear=linear_layer,
-                    input_scale=None,
+                    input_scale=input_scale,
                     quantize_input=quantize_input,
                     init_only=False
                 )
@@ -172,7 +175,10 @@ class AwqQuantizer:
         # [STEP 1]: Compute maximum of weight
         weight = torch.cat([_m.weight for _m in layers], dim=0)
         org_shape = weight.shape
-        weight = weight.view(-1, self.group_size)
+        
+        if self.group_size > 0:
+            weight = weight.view(-1, self.group_size)
+        
         w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
         w_scale = w_scale.view(org_shape)
         w_max = w_scale.mean(0)
