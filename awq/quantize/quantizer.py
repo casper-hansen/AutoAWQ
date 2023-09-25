@@ -24,13 +24,14 @@ def quantize_per_tensor_absmax(t):
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column) -> None:
+                       zero_point, calib_data, split, text_column) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
         self.w_bit = w_bit
         self.group_size = group_size
         self.version = version
+        self.zero_point = zero_point
         self.calib_data = calib_data
         self.split = split
         self.text_column = text_column
@@ -47,7 +48,24 @@ class AwqQuantizer:
             w = w.reshape(-1, self.group_size)
         assert w.dim() == 2
 
-        # zero point quantization
+        if self.zero_point:
+            max_val = w.amax(dim=1, keepdim=True)
+            min_val = w.amin(dim=1, keepdim=True)
+            max_int = 2 ** self.w_bit - 1
+            min_int = 0
+            scales = (max_val - min_val).clamp(min=1e-5) / max_int
+            zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+        else:
+            if self.w_bit != 8:
+                raise Exception("zero_point=False is only support when w_bit=8")
+            
+            max_val = w.abs().amax(dim=1, keepdim=True)
+            max_val = max_val.clamp(min=1e-5)
+            max_int = 2 ** (self.w_bit - 1) - 1
+            min_int = - 2 ** (self.w_bit - 1)
+            scales = max_val / max_int
+            zeros = 0
+        
         max_val = w.amax(dim=1, keepdim=True)
         min_val = w.amin(dim=1, keepdim=True)
         max_int = 2 ** self.w_bit - 1

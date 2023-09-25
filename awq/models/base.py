@@ -44,7 +44,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
-            quant_config["version"], calib_data, split, text_column
+            quant_config["version"], quant_config["zero_point"], calib_data, split, text_column
         )
         quantizer.quantize()
         self.is_quantized = True
