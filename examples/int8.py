@@ -3,7 +3,7 @@ from transformers import AutoTokenizer
 
 model_path = 'lmsys/vicuna-7b-v1.5'
 quant_path = 'vicuna-7b-v1.5-awq'
-quant_config = { "zero_point": True, "q_group_size": 0, "w_bit": 8, "version": "SmoothQuant" }
+quant_config = { "zero_point": False, "q_group_size": 0, "w_bit": 8, "version": "SmoothQuant" }
 
 # Load model
 # NOTE: pass safetensors=True to load safetensors
