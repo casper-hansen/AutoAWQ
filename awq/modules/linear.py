@@ -3,8 +3,6 @@ import torch
 import int8_engine
 import torch.nn as nn
 import awq_inference_engine
-from functools import partial
-from awq.quantize.quantizer import quantize_per_tensor_absmax
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
