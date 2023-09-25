@@ -7,6 +7,7 @@ from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
+from awq.quantize.inputs import ActivationStatCollector
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_INT8
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
@@ -34,6 +35,9 @@ class AwqQuantizer:
         self.split = split
         self.text_column = text_column
         self.modules, self.module_kwargs, self.inps = self.init_quant()
+        self.collector = ActivationStatCollector(
+            self.model, self.tokenizer, self.calib_data
+        )
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
         org_w_shape = w.shape
@@ -70,6 +74,12 @@ class AwqQuantizer:
             named_linears = get_named_linears(self.modules[i])
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
+
+            # [STEP 1.1] (Optional): Generate scales for inputs to linear layers
+            if self.version == 'SmoothQuant':
+                self.collector.register_hooks(named_linears)
+                self.collector.forward()
+                self.collector.remove_hooks()
 
             # [STEP 2]: Compute and apply scale list
             module_config: list[dict] = self.awq_model.get_layers_for_scaling(
@@ -147,10 +157,7 @@ class AwqQuantizer:
         # Put x on the right device
         inp = inp.to(next(module2inspect.parameters()).device)
 
-        # TODO: [STEP 1a] (Optional): Compute activation scales
-        pass
-
-        # [STEP 1b]: Compute maximum of weight
+        # [STEP 1]: Compute maximum of weight
         weight = torch.cat([_m.weight for _m in layers], dim=0)
         org_shape = weight.shape
         weight = weight.view(-1, self.group_size)
