@@ -36,7 +36,8 @@ class AwqQuantizer:
         self.text_column = text_column
         self.modules, self.module_kwargs, self.inps = self.init_quant()
         self.collector = ActivationStatCollector(
-            self.model, self.tokenizer, self.calib_data
+            model=self.model, tokenizer=self.tokenizer, calib_data=self.calib_data,
+            split=split, text_column=text_column
         )
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
@@ -68,19 +69,19 @@ class AwqQuantizer:
             return w
     
     def quantize(self):
+        # [STEP 0] (Optional): Generate scales for inputs to linear layers
+        if self.version == 'SmoothQuant':
+            self.collector.register_hooks()
+            self.collector.forward()
+            self.collector.remove_hooks()
+
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # [STEP 1]: Get layer, extract linear modules, extract input features
             self.modules[i] = self.modules[i].cuda()
             named_linears = get_named_linears(self.modules[i])
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
-
-            # [STEP 1.1] (Optional): Generate scales for inputs to linear layers
-            if self.version == 'SmoothQuant':
-                self.collector.register_hooks(named_linears)
-                self.collector.forward()
-                self.collector.remove_hooks()
-
+            
             # [STEP 2]: Compute and apply scale list
             module_config: list[dict] = self.awq_model.get_layers_for_scaling(
                 self.modules[i], input_feat, self.module_kwargs

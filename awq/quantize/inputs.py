@@ -1,26 +1,32 @@
 import torch
 import functools
 import torch.nn as nn
-from typing import List
+from tqdm import tqdm
+from typing import List, Union
+from awq.utils.calib_data import get_calib_dataset
 from transformers import PreTrainedTokenizer, PreTrainedModel
 
 class ActivationStatCollector:
     def __init__(self, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, 
-                       dataset, num_samples=512, seq_len=512):
+                       calib_data: Union[str, List[str]]="pileval",
+                       num_samples=512, seq_len=512, split="train", text_column="text"):
         self.act_scales = {}
         self.hooks = []
         self.model = model
         self.tokenizer = tokenizer
-        self.dataset = dataset
         self.num_samples = num_samples
         self.seq_len = seq_len
+        self.samples = get_calib_dataset(
+            data=calib_data, tokenizer=self.tokenizer, n_samples=num_samples, 
+            block_size=seq_len, split=split, text_column=text_column
+        )
     
     def forward(self):
-        for i in range(self.num_samples):
+        for i in tqdm(range(self.num_samples), desc="SmoothQuant"):
             device = next(self.model.parameters()).device
 
             input_ids = self.tokenizer(
-                self.dataset[i]["text"], return_tensors="pt",
+                self.samples[i]["text"], return_tensors="pt",
                 max_length=self.seq_len, truncation=True
             ).input_ids.to(device)
 
@@ -40,12 +46,13 @@ class ActivationStatCollector:
             x = x[0]
         self.stat_tensor(name, x)
     
-    def register_hooks(self, layers: List[nn.Linear]):
-        for linear in layers:
-            hook = linear.register_forward_hook(
-                functools.partial(self.stat_input_hook, name=linear._get_name())
-            )
-            self.hooks.append(hook)
+    def register_hooks(self):
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Linear):
+                hook = module.register_forward_hook(
+                    functools.partial(self.stat_input_hook, name=name)
+                )
+                self.hooks.append(hook)
             
     def remove_hooks(self):
         for hook in self.hooks:
