@@ -156,7 +156,7 @@ class BaseAWQForCausalLM(nn.Module):
             no_split_module_classes=[self.layer_type], 
             max_memory=max_memory,
             dtype=torch_dtype
-            )
+        )
 
         # Load checkpoint
         load_checkpoint_in_model(
@@ -183,7 +183,6 @@ class BaseAWQForCausalLM(nn.Module):
             model = dispatch_model(
                 model,
                 device_map=device_map,
-                # offload_buffers=offload_folder is not None,
                 offload_dir=offload_folder
             )
         
