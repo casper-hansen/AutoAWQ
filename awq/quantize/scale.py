@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Tuple
+from typing import Tuple, List
 from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
@@ -62,7 +62,7 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         scales.cpu()
 
 @torch.no_grad()
-def scale_ln_fcs(ln: nn.Linear, fcs: list[nn.Linear], scales: torch.Tensor):
+def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
     if not isinstance(fcs, list):
         fcs = [fcs]
     

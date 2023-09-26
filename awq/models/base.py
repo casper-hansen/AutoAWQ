@@ -4,7 +4,7 @@ import json
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import List, Union
+from typing import List, Union, Dict
 from safetensors.torch import save_file
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
@@ -23,7 +23,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.model_type:str = model_type
         self.is_quantized:bool = is_quantized
         self.search_result = None
-        self.quant_config:dict = quant_config
+        self.quant_config: Dict = quant_config
     
     def to(self, device: str):
         return self.model.to(device)
