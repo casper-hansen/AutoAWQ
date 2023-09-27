@@ -18,3 +18,4 @@ cp -r ../include/cutlass /usr/local/include/
 mkdir -p /usr/local/include/cutlass/util
 cp -r ../tools/util/include/cutlass/util/* /usr/local/include/cutlass/util/
 ldconfig
+rm -rf cutlass
