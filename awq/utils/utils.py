@@ -60,3 +60,8 @@ def clear_memory(weight=None):
         del weight
     gc.collect()
     torch.cuda.empty_cache()
+
+def compute_memory_used_pct(device):
+    memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+    memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
+    return memory_pct
