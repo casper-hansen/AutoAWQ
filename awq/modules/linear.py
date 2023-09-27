@@ -224,7 +224,7 @@ class WQLinear_INT8(torch.nn.Module):
         self.register_buffer('beta', torch.tensor(beta))
 
         if quantize_input:
-            self.register_buffer('input_scale', torch.tensor(input_scale))
+            self.register_buffer('input_scale', input_scale.clone().detach())
     
     @staticmethod
     def quantize_inputs(x, input_scale):
@@ -237,13 +237,14 @@ class WQLinear_INT8(torch.nn.Module):
         input_scale: used to scale the inputs (x) in layers with quantize_input=True
         """
         int8_module = WQLinear_INT8(
-            linear.in_features, linear.out_features, input_scale=input_scale, 
+            in_features=linear.in_features, out_features=linear.out_features, 
+            alpha=1.0, beta=1.0, input_scale=input_scale, 
             quantize_input=quantize_input, device=linear.weight.device
         )
 
         if init_only:
             return int8_module
-
+        
         int8_module.weight = linear.weight.to(torch.int8)
         int8_module.alpha = input_scale * (linear.weight.abs().max() / 127)
         int8_module.bias = torch.zeros(
