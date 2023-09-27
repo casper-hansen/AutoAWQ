@@ -1,8 +1,8 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 
-model_path = 'lmsys/vicuna-7b-v1.5'
-quant_path = 'vicuna-7b-v1.5-awq'
+model_path = 'PY007/TinyLlama-1.1B-Chat-v0.2'
+quant_path = 'tinyllama-chat-awq'
 quant_config = { "zero_point": False, "q_group_size": 0, "w_bit": 8, "version": "SmoothQuant" }
 
 # Load model
