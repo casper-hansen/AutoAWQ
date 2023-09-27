@@ -225,6 +225,14 @@ class BaseAWQForCausalLM(nn.Module):
             # Replace activation functions
             self._scale_activations(self, layer)
 
+            # from awq.modules.norm import RMSNormInt8
+            # from transformers.models.llama.modeling_llama import LlamaRMSNorm            
+
+            # for name, module in layer.named_modules():
+            #     if isinstance(module, LlamaRMSNorm):
+            #         norm = RMSNormInt8(model.config.hidden_size, module.variance_epsilon)
+            #         set_op_by_name(layer, name, norm)
+
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
                 if version == 'GEMM':
