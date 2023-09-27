@@ -1,11 +1,9 @@
 import os
 import math
 import torch
-import logging
 import torch.nn as nn
 import awq_inference_engine
 from torch.nn import functional as F
-from awq.utils.utils import compute_memory_used_pct
 
 try:
     import ft_inference_engine
