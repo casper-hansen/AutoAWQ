@@ -2,6 +2,18 @@
 
 <p align="center">
 | <a href="https://github.com/casper-hansen/AutoAWQ/issues/32"><b>Roadmap</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/tree/main/examples"><b>Examples</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22"><b>Issues: Help Wanted</b></a> |
+
+</p>
+<p align="center">
+    <a href="https://huggingface.co/models?search=awq">
+        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_400+_models_available-8A2BE2">
+    </a>
+    <a href="https://github.com/casper-hansen/AutoAWQ/releases">
+        <img alt="GitHub - Releases" src="https://img.shields.io/github/release/casper-hansen/AutoAWQ.svg">
+    </a>
+    <a href="https://pypi.org/project/autoawq/">
+        <img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dd/autoawq">
+    </a>
 </p>
 
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
