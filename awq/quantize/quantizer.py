@@ -86,6 +86,7 @@ class AwqQuantizer:
             self.collector.register_hooks()
             self.collector.forward()
             self.collector.remove_hooks()
+            self.collector.compute_mean_scale_per_layer()
 
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # [STEP 1]: Get layer, extract linear modules, extract input features
@@ -146,7 +147,7 @@ class AwqQuantizer:
             elif self.version == 'SmoothQuant':
                 quantize_input = name in self.awq_model.int8_scale_inputs
                 linear_layer_name = get_op_name(self.model, linear_layer)
-                input_scale = self.collector.act_scales[linear_layer_name]
+                input_scale = self.collector.mean_scale[linear_layer_name]
 
                 q_linear = WQLinear_INT8.from_linear(
                     linear=linear_layer,
@@ -172,7 +173,20 @@ class AwqQuantizer:
         # Put x on the right device
         inp = inp.to(next(module2inspect.parameters()).device)
 
-        # [STEP 1]: Compute maximum of weight
+        # [STEP 1]: Compute output of module in FP16
+        with torch.no_grad():
+            fp16_output = module2inspect(inp, **kwargs)
+            if isinstance(fp16_output, tuple):
+                fp16_output = fp16_output[0]
+
+        # TODO: Figure out if we should scale to INT8
+        # Scales the inputs to INT8 if the first layer should have scaled inputs
+        # if self.version == 'SmoothQuant':
+        #     first_layer_name = get_op_name(self.model, layers[0])
+        #     if first_layer_name in self.awq_model.int8_scale_inputs:
+        #         WQLinear_INT8.quantize_inputs(inp, self.collector.act_scales[first_layer_name])
+
+        # [STEP 2]: Compute maximum of weight
         weight = torch.cat([_m.weight for _m in layers], dim=0)
         org_shape = weight.shape
         
@@ -184,14 +198,8 @@ class AwqQuantizer:
         w_max = w_scale.mean(0)
         clear_memory(weight)
 
-        # [STEP 2]: Compute maximum of x (activation awareness)
+        # [STEP 3]: Compute maximum of x (activation awareness)
         x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
-
-        # [STEP 3]: Compute output of module
-        with torch.no_grad():
-            fp16_output = module2inspect(inp, **kwargs)
-            if isinstance(fp16_output, tuple):
-                fp16_output = fp16_output[0]
         
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
