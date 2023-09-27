@@ -190,15 +190,8 @@ class QuantAttentionFused(nn.Module):
                 .contiguous()
             )
             
-            try:
-                self.cache_v[:bsz, :, self.start_pos : self.start_pos + seqlen, :] = values_store
-                self.cache_k[:bsz, :, :, self.start_pos : self.start_pos + seqlen, :] = keys_store
-            except Exception as ex:
-                print(seqlen, self.max_seq_len)
-                print(self.cache_v.shape, self.cache_v[:bsz, :, self.start_pos : self.start_pos + seqlen, :].shape, values_store.shape)
-                print(self.cache_k.shape, self.cache_k[:bsz, :, :, self.start_pos : self.start_pos + seqlen, :].shape, keys_store.shape)
-                print(ex)
-                exit(0)
+            self.cache_v[:bsz, :, self.start_pos : self.start_pos + seqlen, :] = values_store
+            self.cache_k[:bsz, :, :, self.start_pos : self.start_pos + seqlen, :] = keys_store
 
             if seqlen == 1:
                 xv = self.cache_v[:bsz, :, : self.start_pos + seqlen, :].transpose(1, 2).contiguous()
