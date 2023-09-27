@@ -160,7 +160,8 @@ class BaseAWQForCausalLM(nn.Module):
         load_checkpoint_in_model(
             model,
             checkpoint=model_weights_path,
-            device_map=device_map
+            device_map=device_map,
+            dtype=torch_dtype
         )
         
         # Dispath to devices
