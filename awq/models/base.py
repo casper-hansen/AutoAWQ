@@ -213,9 +213,6 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(self, model, quant_config, version):
-        # Real quantization of weights
-        assert quant_config["zero_point"], "We only support zero_point quantization now."
-        
         # Get blocks of model
         layers = self.get_model_layers(model)
 
@@ -250,7 +247,7 @@ class BaseAWQForCausalLM(nn.Module):
 
                     q_linear = WQLinear_INT8.from_linear(
                         linear=module,
-                        input_scale=None,
+                        input_scale=torch.empty([], device="meta"),
                         quantize_input=quantize_input,
                         init_only=True
                     )
