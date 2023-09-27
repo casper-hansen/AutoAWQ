@@ -168,23 +168,16 @@ class BaseAWQForCausalLM(nn.Module):
         )
         
         # Dispath to devices
-        if max_memory is None:
-            # VRAM only
-            model = simple_dispatch_model(model, device_map)
+        if fuse_layers:
+            self.fuse_layers(model, quant_config)
 
-            if fuse_layers:
-                self.fuse_layers(model, quant_config)
-        else:
-            if fuse_layers:
-                self.fuse_layers(model, quant_config)
-
-            # Offloading dispatch
-            from accelerate import dispatch_model
-            model = dispatch_model(
-                model,
-                device_map=device_map,
-                offload_dir=offload_folder
-            )
+        # Offloading dispatch
+        from accelerate import dispatch_model
+        model = dispatch_model(
+            model,
+            device_map=device_map,
+            offload_dir=offload_folder
+        )
         
 
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
