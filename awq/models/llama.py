@@ -1,4 +1,5 @@
 from .base import BaseAWQForCausalLM
+from typing import Dict
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
@@ -7,7 +8,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     int8_scale_inputs = ["self_attn.o_proj", "self_attn.down_proj"]
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM, quant_config: dict):
+    def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):
         fuser = LlamaFuser(model, quant_config)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()

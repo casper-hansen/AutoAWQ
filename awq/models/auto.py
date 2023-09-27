@@ -11,7 +11,9 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "RefinedWebModel": FalconAWQForCausalLM,
     "falcon": FalconAWQForCausalLM,
     "bloom": BloomAWQForCausalLM,
-    "gptj": GPTJAWQForCausalLM
+    "gptj": GPTJAWQForCausalLM,
+    "gpt_bigcode": GptBigCodeAWQForCausalLM,
+    "mistral": MistralAWQForCausalLM
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
@@ -39,11 +41,13 @@ class AutoAWQForCausalLM:
     @classmethod
     def from_quantized(self, quant_path, quant_filename='', max_new_tokens=None,
                        trust_remote_code=True, fuse_layers=True,
-                       batch_size=1, safetensors=False) -> BaseAWQForCausalLM:
+                       batch_size=1, safetensors=False,
+                       max_memory=None, offload_folder=None) -> BaseAWQForCausalLM:
         os.environ["AWQ_BATCH_SIZE"] = str(batch_size)
         model_type = check_and_get_model_type(quant_path, trust_remote_code)
 
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_quantized(
             quant_path, model_type, quant_filename, max_new_tokens, trust_remote_code=trust_remote_code, 
-            fuse_layers=fuse_layers, safetensors=safetensors
+            fuse_layers=fuse_layers, safetensors=safetensors, 
+            max_memory=max_memory, offload_folder=offload_folder
         )

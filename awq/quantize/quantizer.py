@@ -3,6 +3,7 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
+from typing import Dict, List
 from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
@@ -96,7 +97,7 @@ class AwqQuantizer:
             clear_memory()
             
             # [STEP 2]: Compute and apply scale list
-            module_config: list[dict] = self.awq_model.get_layers_for_scaling(
+            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
                 self.modules[i], input_feat, self.module_kwargs
             )
             scales_list = [self._search_best_scale(self.modules[i], **layer) for layer in module_config]
@@ -112,7 +113,7 @@ class AwqQuantizer:
             self._apply_quant(self.modules[i], named_linears)
             clear_memory()
     
-    def _apply_quant(self, module, named_linears: dict[str, nn.Linear]):
+    def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
         for name, linear_layer in named_linears.items():
             # NOTE: small regression in perplexity if linear layer uses .cpu().float()
             linear_layer = linear_layer.cuda().half()
@@ -162,7 +163,7 @@ class AwqQuantizer:
             clear_memory()
 
     @torch.no_grad()
-    def _search_best_scale(self, module, prev_op, layers: list[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
+    def _search_best_scale(self, module, prev_op, layers: List[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
         if module2inspect is None:
             assert len(layers) == 1
             module2inspect = layers[0]
@@ -209,7 +210,7 @@ class AwqQuantizer:
         
         return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
 
-    def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: list[nn.Linear], 
+    def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: List[nn.Linear],
                                   fp16_output, kwargs={}):
         """
         Compute loss and select best scales
