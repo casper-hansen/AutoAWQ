@@ -223,9 +223,7 @@ class CustomLinear(nn.Module):
             self.register_parameter('bias', None)
 
     def forward(self, x):
-        x = x.to(torch.float32)
         self.weight.data = self.weight.data.to(torch.float32)
-        if self.has_bias: self.bias.data = self.bias.data.to(torch.float32)
         return nn.functional.linear(x, self.weight, self.bias)
 
 class WQLinear_INT8(torch.nn.Module):
@@ -287,10 +285,6 @@ class WQLinear_INT8(torch.nn.Module):
 
         if self.quantize_input:
             x = WQLinear_INT8.quantize_inputs(x, self.inscale)
-        
-        # TODO: REMOVE THIS
-        x = x.to(torch.int8)
-        # print(x.dtype, self.weight.dtype, self.bias.dtype, self.a.item(), self.b.item())
 
         y = int8_engine.linear_a8_w8_bfp32_ofp32(
             x, self.weight, self.bias, self.a.item(), 1
