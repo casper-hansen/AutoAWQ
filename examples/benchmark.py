@@ -39,10 +39,11 @@ def generate(model, input_ids, n_generate):
     
     return context_time, generate_time
 
-def run_round(model_path, quant_file, n_generate, input_ids, batch_size):
+def run_round(model_path, quant_file, n_generate, input_ids, batch_size, disable_fused):
     print(f" -- Loading model...")
+    fuse_layers = not disable_fused
     model = AutoAWQForCausalLM.from_quantized(
-        model_path, quant_file, fuse_layers=True,
+        model_path, quant_file, fuse_layers=fuse_layers,
         max_new_tokens=n_generate, batch_size=batch_size
     )
 
@@ -108,7 +109,8 @@ def main(args):
             args.quant_file,
             settings["n_generate"],
             input_ids,
-            args.batch_size
+            args.batch_size,
+            args.disable_fused
         )
         
         all_stats.append(stats)
@@ -124,9 +126,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="casperhansen/vicuna-7b-v1.5-awq", help="path to the model")
-    parser.add_argument("--quant_file", type=str, default="awq_model_w4_g128.pt", help="weights filename")
+    parser.add_argument("--model_path", type=str, default="casperhansen/llama-2-7b-chat-smoothquant", help="path to the model")
+    parser.add_argument("--quant_file", type=str, default="", help="weights filename")
     parser.add_argument("--batch_size", type=int, default=1, help="weights filename")
+    parser.add_argument("--disable_fused", default=False, action="store_true")
     args = parser.parse_args()
 
     main(args)
