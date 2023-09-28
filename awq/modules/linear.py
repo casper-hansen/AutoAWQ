@@ -209,6 +209,25 @@ class WQLinear_GEMV(nn.Module):
             self.in_features, self.out_features, self.bias is not None, self.w_bit, self.group_size
         )
 
+class CustomLinear(nn.Module):
+    def __init__(self, existing_linear: nn.Linear):
+        super(CustomLinear, self).__init__()
+        self.in_features = existing_linear.in_features
+        self.out_features = existing_linear.out_features
+        self.has_bias = existing_linear.bias is not None
+
+        self.weight = nn.Parameter(existing_linear.weight.data.clone())
+        if existing_linear.bias is not None:
+            self.bias = nn.Parameter(existing_linear.bias.data.clone())
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, x):
+        x = x.to(torch.float32)
+        self.weight.data = self.weight.data.to(torch.float32)
+        if self.has_bias: self.bias.data = self.bias.data.to(torch.float32)
+        return nn.functional.linear(x, self.weight, self.bias)
+
 class WQLinear_INT8(torch.nn.Module):
     def __init__(self, in_features, out_features, alpha=1.0, beta=1.0, input_scale=1.0, quantize_input=False, device="cuda"):
         super().__init__()
@@ -272,7 +291,7 @@ class WQLinear_INT8(torch.nn.Module):
         
         # TODO: REMOVE THIS
         x = x.to(torch.int8)
-        print(x.dtype, self.weight.dtype, self.bias.dtype, self.a.item(), self.b.item())
+        # print(x.dtype, self.weight.dtype, self.bias.dtype, self.a.item(), self.b.item())
 
         y = int8_engine.linear_a8_w8_bfp32_ofp32(
             x, self.weight, self.bias, self.a.item(), self.b.item()
