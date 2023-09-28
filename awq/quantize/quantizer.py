@@ -146,14 +146,13 @@ class AwqQuantizer:
                 )
             
             elif self.version == 'SmoothQuant':
-                quantize_input = name in self.awq_model.int8_scale_inputs
                 linear_layer_name = get_op_name(self.model, linear_layer)
                 input_scale = self.collector.mean_scale[linear_layer_name]
 
                 q_linear = WQLinear_INT8.from_linear(
                     linear=linear_layer,
                     input_scale=input_scale,
-                    quantize_input=quantize_input,
+                    quantize_input=True,
                     init_only=False
                 )
 
@@ -179,13 +178,6 @@ class AwqQuantizer:
             fp16_output = module2inspect(inp, **kwargs)
             if isinstance(fp16_output, tuple):
                 fp16_output = fp16_output[0]
-
-        # TODO: Figure out if we should scale to INT8
-        # Scales the inputs to INT8 if the first layer should have scaled inputs
-        # if self.version == 'SmoothQuant':
-        #     first_layer_name = get_op_name(self.model, layers[0])
-        #     if first_layer_name in self.awq_model.int8_scale_inputs:
-        #         WQLinear_INT8.quantize_inputs(inp, self.collector.act_scales[first_layer_name])
 
         # [STEP 2]: Compute maximum of weight
         weight = torch.cat([_m.weight for _m in layers], dim=0)
