@@ -21,6 +21,7 @@ class ActivationStatCollector:
             block_size=seq_len, split=split, text_column=text_column
         )
     
+    @torch.no_grad()
     def forward(self):
         self.model.cuda()
 
@@ -31,7 +32,6 @@ class ActivationStatCollector:
     
     def compute_mean_scale_per_layer(self):
         self.mean_scale = {k:torch.mean(v) for k, v in self.act_scales.items()}
-        del self.act_scales
         
     def stat_tensor(self, name: str, tensor: torch.Tensor):
         hidden_dim = tensor.shape[-1]
