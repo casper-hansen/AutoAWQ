@@ -229,7 +229,7 @@ class CustomLinear(nn.Module):
         return nn.functional.linear(x, self.weight, self.bias)
 
 class WQLinear_INT8(torch.nn.Module):
-    def __init__(self, in_features, out_features, alpha=1.0, beta=1.0, input_scale=1.0, quantize_input=False, device="cuda"):
+    def __init__(self, in_features, out_features, alpha=1.0, input_scale=1.0, quantize_input=False, device="cuda"):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -240,7 +240,6 @@ class WQLinear_INT8(torch.nn.Module):
             dtype=torch.int8, requires_grad=False, device=device))
         self.register_buffer('bias', torch.zeros((1, self.out_features), dtype=torch.float32, requires_grad=False))
         self.register_buffer('a', torch.tensor(alpha))
-        self.register_buffer('b', torch.tensor(beta))
 
         if quantize_input:
             self.register_buffer('inscale', input_scale.clone().detach())
@@ -256,9 +255,9 @@ class WQLinear_INT8(torch.nn.Module):
         input_scale: used to scale the inputs (x) in layers with quantize_input=True
         """
         int8_module = WQLinear_INT8(
-            in_features=linear.in_features, out_features=linear.out_features, 
-            alpha=1.0, beta=1.0, input_scale=input_scale, 
-            quantize_input=quantize_input, device=linear.weight.device
+            in_features=linear.in_features, out_features=linear.out_features,
+            alpha=1.0, input_scale=input_scale, quantize_input=quantize_input,
+            device=linear.weight.device
         )
 
         if init_only:
@@ -294,7 +293,7 @@ class WQLinear_INT8(torch.nn.Module):
         # print(x.dtype, self.weight.dtype, self.bias.dtype, self.a.item(), self.b.item())
 
         y = int8_engine.linear_a8_w8_bfp32_ofp32(
-            x, self.weight, self.bias, self.a.item(), self.b.item()
+            x, self.weight, self.bias, self.a.item(), 1
         )
         y = y.view(*x_shape[:-1], -1)
         return y
