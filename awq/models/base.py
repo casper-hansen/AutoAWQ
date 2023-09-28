@@ -261,13 +261,10 @@ class BaseAWQForCausalLM(nn.Module):
                         init_only=True
                     )
                 elif version == 'SmoothQuant':
-                    # inputs to these layers are converted from FP16/FP32 to INT8
-                    quantize_input = name in self.int8_scale_inputs
-
                     q_linear = WQLinear_INT8.from_linear(
                         linear=module,
                         input_scale=torch.empty([], device="meta"),
-                        quantize_input=quantize_input,
+                        quantize_input=True,
                         init_only=True
                     )
                 
