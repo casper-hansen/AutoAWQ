@@ -13,7 +13,7 @@ from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_INT8
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_INT8, CustomLinear
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 
 class BaseAWQForCausalLM(nn.Module):
@@ -237,7 +237,7 @@ class BaseAWQForCausalLM(nn.Module):
             self._scale_activations(self, layer)
 
             # from awq.modules.norm import RMSNormInt8
-            # from transformers.models.llama.modeling_llama import LlamaRMSNorm            
+            # from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
             # for name, module in layer.named_modules():
             #     if isinstance(module, LlamaRMSNorm):
@@ -276,6 +276,8 @@ class BaseAWQForCausalLM(nn.Module):
             
             torch.cuda.empty_cache()
             gc.collect()
+        
+        model.lm_head = CustomLinear(model.lm_head)
     
     @staticmethod
     def _scale_activations(self, layer):
