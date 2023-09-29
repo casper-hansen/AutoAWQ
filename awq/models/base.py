@@ -134,11 +134,13 @@ class BaseAWQForCausalLM(nn.Module):
                              max_new_tokens=None, torch_dtype=torch.float16, 
                              trust_remote_code=True, safetensors=False, is_quantized=True, 
                              fuse_layers=False, version='GEMM',
-                             max_memory=None, offload_folder=None):
+                             max_memory=None, offload_folder=None,
+                             **config_kwargs):
         # [STEP 1-2] Load weights path and configs
         model_weights_path, config, quant_config = self._load_config(
             self, model_path, model_filename, safetensors, version, 
-            trust_remote_code, max_new_tokens=max_new_tokens
+            trust_remote_code, max_new_tokens=max_new_tokens,
+            **config_kwargs
         )
         
         # [STEP 3] Load model
@@ -183,7 +185,8 @@ class BaseAWQForCausalLM(nn.Module):
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 
     def _load_config(self, model_path, model_filename, safetensors=False, 
-                           version="GEMM", trust_remote_code=True, max_new_tokens=4096):
+                           version="GEMM", trust_remote_code=True, max_new_tokens=4096,
+                           **config_kwargs):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*"]
@@ -214,11 +217,11 @@ class BaseAWQForCausalLM(nn.Module):
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
             config.max_new_tokens = getattr(config, self.max_new_tokens_key)
         else:
             max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
             config.max_new_tokens = max_new_tokens
         
         return model_weights_path, config, quant_config
