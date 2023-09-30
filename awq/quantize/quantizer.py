@@ -12,17 +12,6 @@ from awq.quantize.inputs import ActivationStatCollector
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_INT8
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
-@torch.no_grad()
-def quantize_per_tensor_absmax(t):
-    scale = t.abs().max() / 127
-    if not t.is_cuda:
-        # half rounding is not supported on CPU
-        t = t.float()
-    # use inplace operation to save memory
-    t.div_(scale).round_()
-    t_q = t.to(torch.int8)
-    return t_q, scale
-
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
                        zero_point, calib_data, split, text_column) -> None:
@@ -42,16 +31,25 @@ class AwqQuantizer:
             split=split, text_column=text_column
         )
     
-    def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
+    def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False, per_channel=True):
         org_w_shape = w.shape
         if self.group_size > 0:
             assert org_w_shape[-1] % self.group_size == 0
             w = w.reshape(-1, self.group_size)
         assert w.dim() == 2
 
+        if per_channel:
+            w_max_zp = lambda w: w.amax(dim=1, keepdim=True)
+            w_min_zp = lambda w: w.amin(dim=1, keepdim=True)
+            w_max_no_zp = lambda w: w.abs().amax(dim=1, keepdim=True)
+        else: # per tensor
+            w_max_zp = lambda w: w.amax()
+            w_min_zp = lambda w: w.amin()
+            w_max_no_zp = lambda w: w.abs().amax()
+
         if self.zero_point:
-            max_val = w.amax(dim=1, keepdim=True)
-            min_val = w.amin(dim=1, keepdim=True)
+            max_val = w_max_zp(w)
+            min_val = w_min_zp(w)
             max_int = 2 ** self.w_bit - 1
             min_int = 0
             scales = (max_val - min_val).clamp(min=1e-5) / max_int
@@ -60,7 +58,7 @@ class AwqQuantizer:
             if self.w_bit != 8:
                 raise Exception("zero_point=False is only supported when w_bit=8")
             
-            max_val = w.abs().amax(dim=1, keepdim=True)
+            max_val = w_max_no_zp(w)
             max_val = max_val.clamp(min=1e-5)
             max_int = 2 ** (self.w_bit - 1) - 1
             min_int = - 2 ** (self.w_bit - 1)
@@ -76,8 +74,11 @@ class AwqQuantizer:
         w = w.reshape(org_w_shape)
 
         if get_scale_zp:
-            zeros = zeros.view(w.shape[0], -1) if type(zeros) != int else zeros
-            return w, scales.view(w.shape[0], -1), zeros
+            if per_channel:
+                zeros = zeros.view(w.shape[0], -1) if type(zeros) != int else zeros
+                return w, scales.view(w.shape[0], -1), zeros
+            else:
+                return w, scales, zeros
         else:
             return w
     
