@@ -38,7 +38,7 @@ class FalconDecoderLayer(nn.Module):
                        input_layernorm=None, ln_attn=None, ln_mlp=None, new_decoder_arch=True):
         super().__init__()
         self.n_heads = n_heads
-        self.n_kv_heads = 8
+        self.n_kv_heads = 8 if new_decoder_arch else 0
         self.hidden_size = hidden_size
         self.new_decoder_arch = new_decoder_arch
 
