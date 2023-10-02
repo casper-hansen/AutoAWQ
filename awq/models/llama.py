@@ -70,8 +70,8 @@ import torch
 from typing import List, Tuple, Union
 from awq.utils.utils import set_module_name
 from awq.modules.fused.mlp import QuantLlamaMLP
-from awq.modules.fused.norm import FTLlamaRMSNorm
 from awq.modules.fused.attn import QuantAttentionFused
+from awq.modules.fused.norm import FasterTransformerRMSNorm
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
@@ -143,7 +143,7 @@ class LlamaFuser:
 
     def fuse_rmsnorm(self):
         for name, module in self.rmsnorm_modules:
-            norm = FTLlamaRMSNorm(module.weight, module.variance_epsilon)
+            norm = FasterTransformerRMSNorm(module.weight, module.variance_epsilon)
             set_module_name(self.model, name, norm)
 
     def fuse_mlp(self):
