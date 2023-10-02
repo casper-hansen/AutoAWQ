@@ -2,11 +2,8 @@ import torch
 from torch import nn
 import awq_inference_engine
 
-class FTLlamaRMSNorm(nn.Module):
+class FasterTransformerRMSNorm(nn.Module):
     def __init__(self, weight, eps=1e-6):
-        """
-        LlamaRMSNorm is equivalent to T5LayerNorm
-        """
         super().__init__()
         self.weight = weight
         self.variance_epsilon = eps
