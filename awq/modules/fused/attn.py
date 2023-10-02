@@ -146,7 +146,8 @@ class QuantAttentionFused(nn.Module):
     
     def forward(
         self,
-        hidden_states:torch.Tensor, past_key_value=None, attention_mask=None, position_ids=None, output_attentions=False, use_cache=False
+        hidden_states:torch.Tensor, past_key_value=None, attention_mask=None, position_ids=None, 
+        output_attentions=False, use_cache=False, *args, **kwargs
     ):
         bsz, seqlen, _ = hidden_states.shape
         if bsz != self.cache_batch_size:
