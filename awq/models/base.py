@@ -15,6 +15,8 @@ from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
+from awq.quantize.quant_config import QuantConfig
+
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
@@ -23,7 +25,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.model_type:str = model_type
         self.is_quantized:bool = is_quantized
         self.search_result = None
-        self.quant_config: Dict = quant_config
+        self.quant_config: QuantConfig = quant_config
     
     def to(self, device: str):
         return self.model.to(device)
@@ -36,12 +38,10 @@ class BaseAWQForCausalLM(nn.Module):
             return self.model.generate(*args, **kwargs)
 
     @torch.no_grad()
-    def quantize(self, tokenizer=None, quant_config={},
+    def quantize(self, tokenizer=None, quant_config=QuantConfig(),
                        calib_data: Union[str, List[str]]="pileval", 
                        split="train", text_column="text"):
         self.quant_config = quant_config
-        quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
-
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
             quant_config["version"], calib_data, split, text_column
@@ -50,7 +50,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.is_quantized = True
     
     @staticmethod
-    def fuse_layers(model, quant_config):
+    def fuse_layers(model, quant_config: QuantConfig):
         pass
 
     def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
@@ -91,8 +91,7 @@ class BaseAWQForCausalLM(nn.Module):
                 file.write(json.dumps(index, indent=4))
 
         # Save config
-        with open(f'{save_dir}/quant_config.json', 'w+') as file:
-            file.write(json.dumps(self.quant_config, indent=4))
+        self.quant_config.save_pretrained(save_dir)
         
         
     @classmethod
@@ -200,17 +199,16 @@ class BaseAWQForCausalLM(nn.Module):
             model_weights_path = model_path
 
         # [STEP 2] Load config and set sequence length
-        # TODO: Create BaseAWQConfig class
-        quant_config_path = f'{model_path}/quant_config.json'
-        if os.path.exists(quant_config_path):
-            with open(quant_config_path, 'r') as file:
-                quant_config = json.loads(file.read())
-            
-            if "version" not in quant_config.keys():
-                quant_config["version"] = version
+        if os.path.exists(f'{model_path}/{QuantConfig.config_file_name}'):
+            quant_config = QuantConfig.from_pretrained(model_path)
+
         else:
             # Default config that works for most models
-            quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": version}
+            quant_config = QuantConfig(
+                zero_point=True, 
+                q_group_size=128, 
+                w_bit=4, 
+                version=version)
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
@@ -223,7 +221,7 @@ class BaseAWQForCausalLM(nn.Module):
         
         return model_weights_path, config, quant_config
 
-    def _load_quantized_modules(self, model, quant_config, version):
+    def _load_quantized_modules(self, model, quant_config: QuantConfig, version: str):
         # Real quantization of weights
         assert quant_config["zero_point"], "We only support zero_point quantization now."
         

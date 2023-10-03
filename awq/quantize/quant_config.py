@@ -1,7 +1,6 @@
 import json
 import os
 from dataclasses import dataclass, field, fields
-from typing import Dict, List, Optional, Union
 from transformers.utils.hub import PushToHubMixin, cached_file
 from logging import getLogger
 
@@ -16,10 +15,12 @@ class QuantConfig(PushToHubMixin):
     zero_point: bool = field(default=True)
     q_group_size: int = field(default=128)
     w_bit: int = field(default=4)
+    version: str = field(default="GEMM")
+    config_file_name = "quant_config.json"
 
     def save_pretrained(self, save_dir: str, **kwargs):
-        with open(os.path.join(save_dir, "quantize_config.json"), "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
+        with open(os.path.join(save_dir, self.config_file_name), "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=4)
 
     @classmethod
     def from_pretrained(cls, save_dir: str, **kwargs):
@@ -42,13 +43,12 @@ class QuantConfig(PushToHubMixin):
         subfolder = kwargs.pop("subfolder", None)
         commit_hash = kwargs.pop("_commit_hash", None)
 
-        quantize_config_filename = "quantize_config.json"
         if os.path.isdir(save_dir):  # Local
-            resolved_config_file = os.path.join(save_dir, quantize_config_filename)
+            resolved_config_file = os.path.join(save_dir, cls.config_file_name)
         else: # Remote
             resolved_config_file = cached_file(
                 save_dir,
-                quantize_config_filename,
+                cls.config_file_name,
                 cache_dir=cache_dir,
                 force_download=force_download,
                 resume_download=resume_download,
@@ -70,12 +70,13 @@ class QuantConfig(PushToHubMixin):
                 if key in field_names:
                     filtered_args[key] = val
                 else:
-                    logger.warning(f"ignoring unknown parameter in {quantize_config_filename}: {key}.")
+                    logger.warning(f"ignoring unknown parameter in {cls.config_file_name}: {key}.")
             return cls(**filtered_args)
 
     def to_dict(self):
         return {
             "zero_point": self.zero_point,
             "q_group_size": self.q_group_size,
-            "w_bit": self.w_bit
+            "w_bit": self.w_bit,
+            "version": self.version
         }
