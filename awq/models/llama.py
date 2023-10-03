@@ -1,14 +1,15 @@
 from .base import BaseAWQForCausalLM
 from typing import Dict
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
+from awq.quantize.quant_config import QuantConfig
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):
-        fuser = LlamaFuser(model, quant_config)
+    def fuse_layers(model: LlamaForCausalLM, quant_config: QuantConfig):
+        fuser = LlamaFuser(model, quant_config.to_dict())
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -76,7 +77,7 @@ from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class LlamaFuser:
-    def __init__(self, model, quant_config):
+    def __init__(self, model, quant_config: dict):
         self.model = model
         self.quant_config = quant_config
 

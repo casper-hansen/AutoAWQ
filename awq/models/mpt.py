@@ -1,13 +1,14 @@
 from .base import BaseAWQForCausalLM
 from typing import Dict
 from transformers.models.mpt.modeling_mpt import MptBlock as OldMptBlock, MptForCausalLM
+from awq.quantize.quant_config import QuantConfig
 
 class MptAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MPTBlock"
     max_new_tokens_key = "max_seq_len"
 
     @staticmethod
-    def fuse_layers(model: MptForCausalLM, quant_config: Dict):
+    def fuse_layers(model: MptForCausalLM, quant_config: QuantConfig):
         fuser = MptFuser(model)
         fuser.fuse_transformer()
 

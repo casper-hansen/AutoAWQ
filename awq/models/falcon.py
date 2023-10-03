@@ -1,12 +1,14 @@
 from .base import BaseAWQForCausalLM
 from typing import Dict
 from transformers.models.falcon.modeling_falcon import FalconDecoderLayer as OldFalconDecoderLayer, FalconForCausalLM, FalconAttention
+from awq.quantize.quant_config import QuantConfig
+
 
 class FalconAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "FalconDecoderLayer"
 
     @staticmethod
-    def fuse_layers(model: FalconForCausalLM, quant_config: Dict):
+    def fuse_layers(model: FalconForCausalLM, quant_config: QuantConfig):
         fuser = FalconFuser(model)
 
         # TODO: Implement correctly fused modules for Falcon 40B and Falcon 180B
