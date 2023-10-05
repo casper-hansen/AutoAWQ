@@ -1,14 +1,6 @@
-import logging
 from typing import Dict
 from .base import BaseAWQForCausalLM
-
-try:
-    from transformers.models.mistral.modeling_mistral import MistralDecoderLayer, MistralForCausalLM
-except:
-    # TODO: Remove once released on PyPi
-    logging.warning("You need the latest transformers 4.34.0.dev0: pip install -U git+https://github.com/huggingface/transformers.git")
-    MistralForCausalLM = None
-    MistralDecoderLayer = None
+from transformers.models.mistral.modeling_mistral import MistralDecoderLayer, MistralForCausalLM
 
 class MistralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MistralDecoderLayer"
