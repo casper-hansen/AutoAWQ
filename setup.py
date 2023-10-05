@@ -74,15 +74,15 @@ def check_dependencies():
 
 def get_compute_capabilities():
     # Collect the compute capabilities of all available GPUs.
-    compute_capabilities = set()
     for i in range(torch.cuda.device_count()):
         major, minor = torch.cuda.get_device_capability(i)
-        if major < 8:
-            raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
-        compute_capabilities.add(major * 10 + minor)
+        cc = major * 10 + minor
+
+        if cc < 75:
+            raise RuntimeError("GPUs with compute capability less than 7.5 are not supported.")
 
     # figure out compute capability
-    compute_capabilities = {80, 86, 89, 90}
+    compute_capabilities = {75, 80, 86, 89, 90}
 
     capability_flags = []
     for cap in compute_capabilities:
