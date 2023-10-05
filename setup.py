@@ -9,7 +9,7 @@ os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
 
 common_setup_kwargs = {
-    "version": "0.1.2",
+    "version": "0.1.3",
     "name": "autoawq",
     "author": "Casper Hansen",
     "license": "MIT",
