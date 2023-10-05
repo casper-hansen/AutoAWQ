@@ -19,6 +19,7 @@
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
 - [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon).
 - [2023/09] Multi-GPU support, bug fixes, and better benchmark scripts available
 - [2023/08] PyPi package released and AutoModel class available
