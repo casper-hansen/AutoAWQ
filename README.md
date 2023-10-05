@@ -27,7 +27,7 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
 ## Install
 
 Requirements: 
-- Compute Capability 8.0 (sm80). Ampere and later architectures are supported.
+- Compute Capability 7.5 (sm75). Turing and later architectures are supported.
 - CUDA Toolkit 11.8 and later.
 
 ---
