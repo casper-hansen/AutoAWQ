@@ -37,29 +37,38 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
     xk_out = torch.view_as_real(xk_ * freqs_cis).transpose(-2, -1).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
-def gen_slopes(n_heads, alibi_bias_max=8):
-    _n_heads = 2 ** math.ceil(math.log2(n_heads))
-    m = torch.arange(1, _n_heads + 1, dtype=torch.float32)
-    m = m.mul(alibi_bias_max / _n_heads)
-    slopes = 1.0 / torch.pow(2, m)
-    if _n_heads != n_heads:
-        slopes = torch.concat([slopes[1::2], slopes[::2]])[:n_heads]
-    return slopes.view(1, n_heads, 1, 1)
+class ALiBi(nn.Module):
+    def __init__(self, n_heads, max_seq_len, device, alibi_bias_max=8):
+        super(ALiBi, self).__init__()
+        
+        # Initialize ALiBi slopes and bias
+        slopes, bias = self.build_alibi_bias(n_heads, max_seq_len, alibi_bias_max=alibi_bias_max)
+        self.slopes = nn.Parameter(slopes.float().to(device), requires_grad=False)
+        self.bias = nn.Parameter(bias.float().to(device), requires_grad=False)
 
+    @staticmethod
+    def gen_slopes(n_heads, alibi_bias_max=8):
+        _n_heads = 2 ** math.ceil(math.log2(n_heads))
+        m = torch.arange(1, _n_heads + 1, dtype=torch.float32)
+        m = m.mul(alibi_bias_max / _n_heads)
+        slopes = 1.0 / torch.pow(2, m)
+        
+        if _n_heads != n_heads:
+            slopes = torch.cat([slopes[1::2], slopes[::2]])[:n_heads]
+            
+        return slopes.view(1, n_heads, 1, 1)
 
-def build_alibi_bias(
-    n_heads, seq_len, full=False, alibi_bias_max=8, dtype=torch.float32
-):
-    alibi_bias = torch.arange(1 - seq_len, 1, dtype=torch.int32).view(1, 1, 1, seq_len)
-    if full:
-        alibi_bias = alibi_bias - torch.arange(1 - seq_len, 1, dtype=torch.int32).view(
-            1, 1, seq_len, 1
-        )
-        alibi_bias = alibi_bias.abs().mul(-1)
-    slopes = gen_slopes(n_heads, alibi_bias_max)
-    alibi_bias = alibi_bias * slopes
-    slopes = slopes.squeeze(0).squeeze(-1).squeeze(-1)
-    return slopes.to(dtype=dtype), alibi_bias.to(dtype=dtype)
+    @staticmethod
+    def build_alibi_bias(n_heads, seq_len, alibi_bias_max=8, dtype=torch.float32):
+        alibi_bias = torch.arange(1 - seq_len, 1, dtype=torch.int32).view(1, 1, 1, seq_len)
+        slopes = ALiBi.gen_slopes(n_heads, alibi_bias_max)
+        alibi_bias = alibi_bias * slopes
+        slopes = slopes.squeeze(0).squeeze(-1).squeeze(-1)
+        return slopes.to(dtype=dtype), alibi_bias.to(dtype=dtype)
+    
+    def forward(self, scores, seqlen):
+        scores += self.bias[..., :seqlen]
+        return scores
 
 def get_attention_shapes(attention_shapes, max_seq_len, cache_batch_size, n_heads, n_kv_heads, head_dim):
     if attention_shapes is not None:
@@ -131,9 +140,7 @@ class QuantAttentionFused(nn.Module):
         )
 
         if use_alibi:
-            alibi_slopes, alibi_bias = build_alibi_bias(self.n_heads, max_seq_len)
-            self.alibi_slopes = alibi_slopes.float().to(dev)
-            self.alibi_bias = alibi_bias.float().to(dev)
+            self.alibi = ALiBi(n_heads, max_seq_len, dev)
             self.rotary_dim = 0
             self.is_neox = False
         else:
@@ -199,7 +206,7 @@ class QuantAttentionFused(nn.Module):
             scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
 
             if self.use_alibi:
-                scores += self.alibi_bias[..., :seqlen]
+                scores = self.alibi.forward(scores, seqlen)
 
             if attention_mask is not None:
                 scores = scores + attention_mask  # (bs, n_local_heads, slen, cache_len + slen)
@@ -219,7 +226,7 @@ class QuantAttentionFused(nn.Module):
                 self.cache.k, # key cache
                 self.cache.v, # value cache
                 None, # length per sample
-                self.alibi_slopes, # alibi slopes
+                self.alibi.slopes, # alibi slopes
                 self.start_pos, # timestep
                 self.rotary_dim, # rotary embedding dimension
                 10000, # rotary embedding base
