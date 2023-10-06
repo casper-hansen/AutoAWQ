@@ -26,8 +26,10 @@ class WindowedCache:
     
     def roll_kv(self, roll_len, start_pos):
         """
-        For example, with roll_len=3 and [A,B,C,D,E] we get [D,E,F,G,H]
+        With sink=0, roll_len=3, and [A,B,C,D,E] we get [D,E,F,G,H]
         With sink=1, roll_len=3, and [A,B,C,D,E] we get [A,E,F,G,H]
+        With sink=2, roll_len=3, and [A,B,C,D,E] we get [A,B,F,G,H]
+        With sink=3, roll_len=3, and [A,B,C,D,E] we get [A,B,C,G,H]
         """
         # Roll only the necessary part of the cache to the left
         self.v[:, :, self.attention_sinks:-roll_len+self.attention_sinks, :] = self.v[:, :, roll_len:, :]
