@@ -276,7 +276,8 @@ class WQLinear_W8A8(nn.Module):
         self.register_buffer('beta', torch.tensor(beta))
     
     @staticmethod
-    def from_linear(module: nn.Linear, weight_quant, output_scale=None, fp32_in=None, fp32_out=False, alpha=1.0, init_only=False):
+    def from_linear(module: nn.Linear, weight_quant, input_scale=None, output_scale=None, 
+                    fp32_in=None, fp32_out=False, alpha=1.0, init_only=False):
         # fp32_in is layers like q_proj and gate_proj (first layer)
         # fp32_out is layers like o_proj and down_proj (last layer)
         linear = WQLinear_W8A8(
@@ -301,10 +302,10 @@ class WQLinear_W8A8(nn.Module):
         bias = torch.zeros((1, linear.out_features), dtype=torch.float32, requires_grad=False)
         if fp32_out:
             linear.bias = bias
-            linear.alpha = alpha * weight_scales
+            linear.alpha = input_scale * weight_scales
         else:
             linear.bias, bias_scales = quant_function(bias, n_bits=8, get_scale=True)
-            linear.alpha = alpha * weight_scales / output_scale
+            linear.alpha = input_scale * weight_scales / output_scale
             linear.beta = bias_scales / output_scale
 
         return linear
