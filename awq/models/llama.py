@@ -5,6 +5,7 @@ from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaFor
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
+    quantize_output = ["q_proj", "k_proj", "v_proj"]
 
     @staticmethod
     def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):
@@ -37,6 +38,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
             layers=[module.self_attn.q_proj,
                     module.self_attn.k_proj, module.self_attn.v_proj],
             inp=input_feat['self_attn.q_proj'],
+            inp_name='self_attn.q_proj',
             module2inspect=module.self_attn, kwargs=module_kwargs,
         ))
 
@@ -47,6 +49,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=module.self_attn.v_proj,
                 layers=[module.self_attn.o_proj],
                 inp=input_feat['self_attn.o_proj'],
+                inp_name='self_attn.o_proj',
             ))
         
         # linear 1
@@ -54,6 +57,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
             prev_op=module.post_attention_layernorm,
             layers=[module.mlp.gate_proj, module.mlp.up_proj],
             inp=input_feat['mlp.gate_proj'],
+            inp_name='mlp.gate_proj',
             module2inspect=module.mlp,
         ))
 
@@ -62,6 +66,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
             prev_op=module.mlp.up_proj,
             layers=[module.mlp.down_proj],
             inp=input_feat['mlp.down_proj'],
+            inp_name='mlp.down_proj',
         ))
 
         return layers

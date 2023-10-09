@@ -4,11 +4,13 @@ import functools
 import torch.nn as nn
 from tqdm import tqdm
 from typing import Dict, List
+from datasets import load_dataset
 from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_W8A8
+from awq.quantize.scale import allowed_norms, scale_ln_fcs, scale_fc_fcs, extract_scales
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
 
@@ -343,3 +345,100 @@ class AwqQuantizer:
         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
         
         return input_feat
+
+class SmoothQuantizer:
+    def __init__(self, awq_model, model, tokenizer, w_bit, version, 
+                    calib_data, split, text_column) -> None:
+        self.awq_model = awq_model
+        self.model = model
+        self.tokenizer = tokenizer
+        self.w_bit = w_bit
+        self.version = version
+        self.calib_data = "mit-han-lab/pile-val-backup" if calib_data == 'pileval' else calib_data
+        self.split = split
+        self.text_column = text_column
+        self.alpha = 0.8
+        self.weight_quant = "per_channel"
+        self.act_quant = "per_token"
+    
+    def quantize(self):
+        self.model.cuda()
+        act_scales = self._get_act_scales()
+        modules = self.awq_model.get_model_layers(self.model)
+        
+        for i in tqdm(range(len(modules)), desc="SmoothQuant"):
+            module = modules[i]
+            named_linears = get_named_linears(module)
+            input_feat = {name: None for name in named_linears}
+
+            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
+                module, input_feat, {}
+            )
+
+            # smooth model
+            _ = [self.smooth_model(module, act_scales, **layer) for layer in module_config]
+
+            # apply quantization
+            for name, linear_layer in named_linears.items():
+                linear_layer = linear_layer.cuda()
+
+                quantize_output = name in self.awq_model.quantize_output
+                q_linear = WQLinear_W8A8.from_float(
+                    linear_layer, self.weight_quant, self.act_quant, quantize_output=quantize_output
+                )
+
+                linear_layer.cpu()
+                q_linear.to(next(module.parameters()).device)
+                set_op_by_name(module, name, q_linear)
+
+    def smooth_model(self, module, act_scales, prev_op, layers: List[nn.Linear], inp: torch.Tensor, inp_name: str, module2inspect=None, kwargs={}):
+        name = get_op_name(self.model, module)
+        input_scale = act_scales[f"{name}.{inp_name}"]
+        scales = extract_scales(layers, input_scale, self.alpha)
+
+        if any(isinstance(prev_op, op) for op in allowed_norms) \
+           or 'rmsnorm' in str(prev_op.__class__).lower():
+            scale_ln_fcs(prev_op, layers, scales)
+
+        elif isinstance(prev_op, nn.Linear):
+            scale_fc_fcs(prev_op, layers, scales)
+    
+    def _get_act_scales(self, num_samples=512, seq_len=512):
+        self.model.eval()
+        device = next(self.model.parameters()).device
+        act_scales = {}
+
+        def stat_tensor(name, tensor: torch.Tensor):
+            hidden_dim = tensor.shape[-1]
+            tensor = tensor.view(-1, hidden_dim).abs().detach()
+            comming_max = torch.max(tensor, dim=0)[0].float().cpu()
+            if name in act_scales:
+                act_scales[name] = torch.max(act_scales[name], comming_max)
+            else:
+                act_scales[name] = comming_max
+
+        def stat_input_hook(m, x, y, name):
+            if isinstance(x, tuple):
+                x = x[0]
+            stat_tensor(name, x)
+
+        hooks = []
+        for name, m in self.model.named_modules():
+            if isinstance(m, nn.Linear):
+                hooks.append(
+                    m.register_forward_hook(
+                        functools.partial(stat_input_hook, name=name))
+                )
+
+        dataset = load_dataset(self.calib_data, split="validation")
+        dataset = dataset.shuffle(seed=42)
+
+        for i in tqdm(range(num_samples), desc="Computing activation scales"):
+            input_ids = self.tokenizer(dataset[i]["text"], return_tensors="pt",
+                                max_length=seq_len, truncation=True).input_ids.to(device)
+            self.model(input_ids)
+
+        for h in hooks:
+            h.remove()
+
+        return act_scales

@@ -62,6 +62,19 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         scales.cpu()
 
 @torch.no_grad()
+def extract_scales(fcs: List[nn.Linear], act_scales, alpha):
+    device, dtype = fcs[0].weight.device, fcs[0].weight.dtype
+    act_scales = act_scales.to(device=device, dtype=dtype)
+    weight_scales = torch.cat([fc.weight.abs().max(dim=0, keepdim=True)[0] for fc in fcs], dim=0)
+    weight_scales = weight_scales.max(dim=0)[0].clamp(min=1e-5)
+
+    scales = (
+        act_scales.pow(alpha) / weight_scales.pow(1-alpha)
+    ).clamp(min=1e-5).to(device).to(dtype)
+
+    return scales
+
+@torch.no_grad()
 def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
     if not isinstance(fcs, list):
         fcs = [fcs]
@@ -99,6 +112,14 @@ def scale_fc_fc(fc1: nn.Linear, fc2: nn.Linear, scales: torch.Tensor):
     for p in fc2.parameters():
         assert torch.isnan(p).sum() == 0
 
+@torch.no_grad()
+def scale_fc_fcs(fc, fcs: List[nn.Linear], scales):
+    if not isinstance(fcs, list):
+        fcs = [fcs]
+
+    fc.weight[-scales.size(0):].div_(scales.view(-1, 1))
+    for fc in fcs:
+        fc.weight.mul_(scales.view(1, -1))
 
 @torch.no_grad()
 def scale_gelu_fc(gelu: allowed_act_fns, fc: nn.Linear, scales: torch.Tensor):

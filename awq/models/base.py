@@ -8,11 +8,11 @@ from typing import List, Union, Dict
 from safetensors.torch import save_file
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
-from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
+from awq.quantize.quantizer import AwqQuantizer, SmoothQuantizer
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 
@@ -42,10 +42,17 @@ class BaseAWQForCausalLM(nn.Module):
         self.quant_config = quant_config
         quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
 
-        quantizer = AwqQuantizer(
-            self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
-            quant_config["version"], calib_data, split, text_column
-        )
+        if quant_config["version"] == "SmoothQuant":
+            quantizer = SmoothQuantizer(
+                self, self.model, tokenizer, quant_config["w_bit"],
+                quant_config["version"], calib_data, split, text_column
+            )
+        else:
+            quantizer = AwqQuantizer(
+                self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
+                quant_config["version"], calib_data, split, text_column
+            )
+        
         quantizer.quantize()
         self.is_quantized = True
     
