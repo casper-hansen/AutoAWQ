@@ -75,10 +75,6 @@ def extract_scales(fcs: List[nn.Linear], act_scales, alpha):
     return scales
 
 @torch.no_grad()
-def scale_inputs(x, input_scale):
-    return (x / input_scale).round().clamp(-128, 127).to(torch.int8)
-
-@torch.no_grad()
 def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
     if not isinstance(fcs, list):
         fcs = [fcs]

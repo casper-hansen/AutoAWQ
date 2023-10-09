@@ -1,9 +1,11 @@
 import math
 import torch
+import int8_engine
 import torch.nn as nn
 import awq_inference_engine
 from functools import partial
 from awq.quantize.apply_quant import *
+from awq.quantize.scale import scale_inputs
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
@@ -256,3 +258,78 @@ class WQLinear_FakeW8A8(nn.Module):
         output = torch.functional.F.linear(x_quantized, self.weight)
         output_quantized = self.quant_output_function(output)
         return output_quantized
+
+class WQLinear_W8A8(nn.Module):
+    def __init__(self, in_features, out_features, fp32_in=False, fp32_out=False, alpha=1.0, beta=1.0, device="cuda"):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.fp32_in = fp32_in
+        self.fp32_out = fp32_out
+        self.dtype = torch.float32 if fp32_out else torch.int8
+
+        weight_shape = torch.randint(-127, 127, (self.out_features, self.in_features), dtype=torch.int8, requires_grad=False, device=device)
+        bias_shape = torch.zeros((1, self.out_features), dtype=self.dtype, requires_grad=False, device=device)
+        self.register_buffer('weight', weight_shape)
+        self.register_buffer('bias', bias_shape)
+        self.register_buffer('alpha', torch.tensor(alpha))
+        self.register_buffer('beta', torch.tensor(beta))
+    
+    @staticmethod
+    def from_linear(module: nn.Linear, weight_quant, output_scale=None, fp32_in=None, fp32_out=False, alpha=1.0, init_only=False):
+        # fp32_in is layers like q_proj and gate_proj (first layer)
+        # fp32_out is layers like o_proj and down_proj (last layer)
+        linear = WQLinear_W8A8(
+            module.in_features, module.out_features,
+            fp32_in=fp32_in, fp32_out=fp32_out, alpha=alpha,
+            device=module.device
+        )
+
+        if init_only:
+            return linear
+        
+        # set the weight
+        if weight_quant == 'per_channel':
+            quant_function = quantize_weight_per_channel_absmax
+        elif weight_quant == 'per_tensor':
+            quant_function = quantize_weight_per_tensor_absmax
+
+        linear.weight, weight_scales = quant_function(module.weight, n_bits=8, get_scale=True)
+        
+        # TODO: Remove bias and beta
+        # set bias, alpha, and beta
+        bias = torch.zeros((1, linear.out_features), dtype=torch.float32, requires_grad=False)
+        if fp32_out:
+            linear.bias = bias
+            linear.alpha = alpha * weight_scales
+        else:
+            linear.bias, bias_scales = quant_function(bias, n_bits=8, get_scale=True)
+            linear.alpha = alpha * weight_scales / output_scale
+            linear.beta = bias_scales / output_scale
+
+        return linear
+
+    @torch.no_grad()
+    def forward(self, x):
+        x_shape = x.shape
+        x = x.view(-1, x_shape[-1])
+
+        # fp32 -> int8 if self_attn.q_proj or mlp.gate_proj
+        if self.fp32_in:
+            x = x.round().clamp(-128, 127).to(torch.int8)
+
+        # get fp32 output when last part of module
+        if self.fp32_out:
+            # in: INT8, INT8, FP32, FP32, FP32
+            out = int8_engine.linear_a8_w8_bfp32_ofp32(
+                x, self.weight, self.bias.to(torch.float32), self.a.item(), 1
+            )
+        else:
+            # in: INT8, INT8, INT8, FP32, FP32
+            out = int8_engine.linear_a8_w8_b8_o8(
+                x, self.weight, self.bias, self.a.item(), 1
+            )
+        
+        out = out.view(*x_shape[:-1], -1)
+
+        return out
