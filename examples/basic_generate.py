@@ -1,23 +1,27 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "casperhansen/vicuna-7b-v1.5-awq"
-quant_file = "awq_model_w4_g128.pt"
+quant_path = "TheBloke/Mistral-7B-OpenOrca-AWQ"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file, fuse_layers=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True, safetensors=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
-streamer = TextStreamer(tokenizer, skip_special_tokens=True)
+streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
 # Convert prompt to tokens
 prompt_template = """\
-A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+<|im_start|>system
+You are MistralOrca, a large language model trained by Alignment Lab AI. Write out your reasoning step-by-step to be sure you get the right answers!<|im_end|>
+<|im_start|>user
+{prompt}<|im_end|>
+<|im_start|>assistant"""
 
-USER: {prompt}
-ASSISTANT:"""
+prompt = "You're standing on the surface of the Earth. "\
+        "You walk one mile south, one mile west and one mile north. "\
+        "You end up exactly where you started. Where are you?"
 
 tokens = tokenizer(
-    prompt_template.format(prompt="How are you today?"), 
+    prompt_template.format(prompt=prompt), 
     return_tensors='pt'
 ).input_ids.cuda()
 
