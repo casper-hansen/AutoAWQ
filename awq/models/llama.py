@@ -5,7 +5,8 @@ from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaFor
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
-    quantize_output = ["q_proj", "k_proj", "v_proj"]
+    fp32_in = ["self_attn.q_proj", "mlp.gate_proj"]
+    fp32_out = ["self_attn.o_proj", "mlp.down_proj"]
 
     @staticmethod
     def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):

@@ -3,13 +3,14 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
+from functools import partial
 from typing import Dict, List
 from datasets import load_dataset
 from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_FakeW8A8
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_W8A8
 from awq.quantize.scale import allowed_norms, scale_ln_fcs, scale_fc_fcs, extract_scales
 from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
 
@@ -358,39 +359,50 @@ class SmoothQuantizer:
         self.split = split
         self.text_column = text_column
         self.alpha = 0.8
-        self.weight_quant = "per_channel"
+        self.weight_quant = "per_tensor"
         self.act_quant = "per_token"
     
     def quantize(self):
         self.model.cuda()
-        act_scales = self._get_act_scales()
+        act_scales = self._get_smooth_scales()
         modules = self.awq_model.get_model_layers(self.model)
         
-        for i in tqdm(range(len(modules)), desc="SmoothQuant"):
-            module = modules[i]
+        # smooth model
+        for module in modules:
             named_linears = get_named_linears(module)
             input_feat = {name: None for name in named_linears}
+            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(module, input_feat, {})
 
-            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
-                module, input_feat, {}
+            _ = [self.smooth_model(module, act_scales, **layer) for layer in module_config]
+        
+        # scale model
+        static_scales = self._get_static_scales()
+
+        for module in modules:
+            named_linears = get_named_linears(module)
+            input_feat = {name: None for name in named_linears}
+            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(module, input_feat, {})
+
+            _ = [self.apply_quantization(module, named_linears, static_scales, **layer) for layer in module_config]
+    
+    def apply_quantization(self, module, named_linears, static_scales, prev_op, layers: List[nn.Linear], inp: torch.Tensor, inp_name: str, module2inspect=None, kwargs={}):
+        for name, linear_layer in named_linears.items():
+            fp32_in = name in self.awq_model.fp32_in
+            fp32_out = name in self.awq_model.fp32_out
+            full_name = f"{get_op_name(self.model, module)}.{inp_name}"
+            
+            q_linear = WQLinear_W8A8.from_linear(
+                module=linear_layer,
+                weight_quant=self.weight_quant,
+                input_scale=static_scales[full_name]["input"],
+                output_scale=static_scales[full_name]["output"],
+                fp32_in=fp32_in,
+                fp32_out=fp32_out,
+                alpha=self.alpha
             )
 
-            # smooth model
-            _ = [self.smooth_model(module, act_scales, **layer) for layer in module_config]
+            set_op_by_name(module, name, q_linear)
 
-            # apply quantization
-            for name, linear_layer in named_linears.items():
-                linear_layer = linear_layer.cuda()
-
-                quantize_output = name in self.awq_model.quantize_output
-                q_linear = WQLinear_FakeW8A8.from_linear(
-                    linear_layer, self.weight_quant, self.act_quant, 
-                    quantize_output=quantize_output, w_bit=self.w_bit
-                )
-
-                linear_layer.cpu()
-                q_linear.to(next(module.parameters()).device)
-                set_op_by_name(module, name, q_linear)
 
     def smooth_model(self, module, act_scales, prev_op, layers: List[nn.Linear], inp: torch.Tensor, inp_name: str, module2inspect=None, kwargs={}):
         name = get_op_name(self.model, module)
@@ -404,15 +416,16 @@ class SmoothQuantizer:
         elif isinstance(prev_op, nn.Linear):
             scale_fc_fcs(prev_op, layers, scales)
     
-    def _get_act_scales(self, num_samples=512, seq_len=512):
+    @torch.no_grad()
+    def _get_smooth_scales(self, num_samples=512, seq_len=512):
         self.model.eval()
         device = next(self.model.parameters()).device
         act_scales = {}
 
         def stat_tensor(name, tensor: torch.Tensor):
             hidden_dim = tensor.shape[-1]
-            tensor = tensor.view(-1, hidden_dim).abs().detach()
-            comming_max = torch.max(tensor, dim=0)[0].float().cpu()
+            tensor = tensor.view(-1, hidden_dim).abs()
+            comming_max = torch.max(tensor, dim=0)[0].float()
             if name in act_scales:
                 act_scales[name] = torch.max(act_scales[name], comming_max)
             else:
@@ -443,3 +456,54 @@ class SmoothQuantizer:
             h.remove()
 
         return act_scales
+    
+    @torch.no_grad()
+    def _get_static_scales(self, num_samples=512, seq_len=512):
+        self.model.cuda()
+        self.model.eval()
+        device = next(self.model.parameters()).device
+
+        act_dict = defaultdict(dict)
+
+        def absmax(value):
+            return value.abs().max().item()
+    
+        def absmax_compare_max(curr_max, value):
+            return max(curr_max, absmax(value))
+
+        def stat_io_hook(m, x, y, name):
+            if isinstance(x, tuple):
+                x = x[0]
+            
+            if name not in act_dict or "input" not in act_dict[name]:
+                act_dict[name]["input"] = absmax(x)
+            else:
+                act_dict[name]["input"] = absmax_compare_max(act_dict[name]["input"], x)
+
+            if isinstance(y, tuple):
+                y = y[0]
+
+            if name not in act_dict or "output" not in act_dict[name]:
+                act_dict[name]["output"] = absmax(y)
+            else:
+                act_dict[name]["output"] = absmax_compare_max(act_dict[name]["output"], y)
+
+        hooks = []
+        for name, m in self.model.named_modules():
+            if isinstance(m, torch.nn.Linear):
+                hooks.append(m.register_forward_hook(
+                    partial(stat_io_hook, name=name)))
+
+        dataset = load_dataset(self.calib_data, split="validation")
+        dataset = dataset.shuffle(seed=42)
+        for i in tqdm(range(num_samples), desc="Computing static scales"):
+            input_ids = self.tokenizer(dataset[i]["text"], return_tensors="pt",
+                                max_length=seq_len, truncation=True).input_ids.to(device)
+            self.model(input_ids)
+        for hook in hooks:
+            hook.remove()
+        
+        # convert to int8
+        act_dict = {key: {"input": value["input"] / 127, "output": value["output"] / 127} for key, value in act_dict.items()}
+        
+        return act_dict

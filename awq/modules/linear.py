@@ -5,7 +5,6 @@ import torch.nn as nn
 import awq_inference_engine
 from functools import partial
 from awq.quantize.apply_quant import *
-from awq.quantize.scale import scale_inputs
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
@@ -212,53 +211,6 @@ class WQLinear_GEMV(nn.Module):
             self.in_features, self.out_features, self.bias is not None, self.w_bit, self.group_size
         )
 
-class WQLinear_FakeW8A8(nn.Module):
-    def __init__(self, in_features, out_features, act_quant='per_token', quantize_output=False, w_bit=8):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.w_bit = w_bit
-
-        self.register_buffer('weight', torch.randn(
-            self.out_features, self.in_features, dtype=torch.float16, requires_grad=False)
-        )
-
-        if act_quant == 'per_token':
-            self.quant_function = partial(quantize_activation_per_token_absmax, n_bits=self.w_bit)
-        elif act_quant == 'per_tensor':
-            self.quant_function = partial(quantize_activation_per_tensor_absmax, n_bits=self.w_bit)
-
-        if quantize_output:
-            self.quant_output_function = self.quant_function
-        else:
-            self.quant_output_function = lambda x: x
-
-    def to(self, *args, **kwargs):
-        super(WQLinear_FakeW8A8, self).to(*args, **kwargs)
-        self.weight = self.weight.to(*args, **kwargs)
-        return self
-    
-    @staticmethod
-    def from_linear(module: nn.Linear, weight_quant='per_channel', act_quant='per_token', quantize_output=False, w_bit=8):
-        new_module = WQLinear_FakeW8A8(
-            module.in_features, module.out_features, act_quant=act_quant,
-            quantize_output=quantize_output, w_bit=w_bit
-        )
-        
-        if weight_quant == 'per_channel':
-            new_module.weight = quantize_weight_per_channel_absmax(module.weight, n_bits=8)
-        elif weight_quant == 'per_tensor':
-            new_module.weight = quantize_weight_per_tensor_absmax(module.weight, n_bits=8)
-        
-        return new_module
-
-    @torch.no_grad()
-    def forward(self, x):
-        x_quantized = self.quant_function(x)
-        output = torch.functional.F.linear(x_quantized, self.weight)
-        output_quantized = self.quant_output_function(output)
-        return output_quantized
-
 class WQLinear_W8A8(nn.Module):
     def __init__(self, in_features, out_features, fp32_in=False, fp32_out=False, alpha=1.0, beta=1.0, device="cuda"):
         super().__init__()
@@ -275,15 +227,28 @@ class WQLinear_W8A8(nn.Module):
         self.register_buffer('alpha', torch.tensor(alpha))
         self.register_buffer('beta', torch.tensor(beta))
     
+    def _apply(self, fn):
+        # prevent the bias from being converted to half
+        super()._apply(fn)
+        self.bias = self.bias.to(torch.float32)
+        return self
+
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        # self.weight = self.weight.to(*args, **kwargs)
+        self.bias = self.bias.to(*args, **kwargs)
+        self.bias = self.bias.to(torch.float32)
+        return self
+    
     @staticmethod
     def from_linear(module: nn.Linear, weight_quant, input_scale=None, output_scale=None, 
-                    fp32_in=None, fp32_out=False, alpha=1.0, init_only=False):
+                    fp32_in=False, fp32_out=False, alpha=1.0, init_only=False):
         # fp32_in is layers like q_proj and gate_proj (first layer)
         # fp32_out is layers like o_proj and down_proj (last layer)
         linear = WQLinear_W8A8(
             module.in_features, module.out_features,
             fp32_in=fp32_in, fp32_out=fp32_out, alpha=alpha,
-            device=module.device
+            device=module.weight.device
         )
 
         if init_only:
@@ -311,7 +276,7 @@ class WQLinear_W8A8(nn.Module):
         return linear
 
     @torch.no_grad()
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         x_shape = x.shape
         x = x.view(-1, x_shape[-1])
 
@@ -323,12 +288,12 @@ class WQLinear_W8A8(nn.Module):
         if self.fp32_out:
             # in: INT8, INT8, FP32, FP32, FP32
             out = int8_engine.linear_a8_w8_bfp32_ofp32(
-                x, self.weight, self.bias.to(torch.float32), self.a.item(), 1
+                x, self.weight.to(torch.int8), self.bias.to(torch.int8), self.alpha.item(), self.beta.item()
             )
         else:
             # in: INT8, INT8, INT8, FP32, FP32
             out = int8_engine.linear_a8_w8_b8_o8(
-                x, self.weight, self.bias, self.a.item(), 1
+                x, self.weight.to(torch.int8), self.bias.to(torch.int8), self.alpha.item(), self.beta.item()
             )
         
         out = out.view(*x_shape[:-1], -1)

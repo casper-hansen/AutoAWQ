@@ -9,7 +9,5 @@ model = AutoAWQForCausalLM.from_pretrained(model_path, **{"low_cpu_mem_usage": T
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 model.quantize(tokenizer, quant_config=quant_config)
 
-model.model.cuda()
-
 ppl = Perplexity(model.model, tokenizer)
 out = ppl.calculate_perplexity()
