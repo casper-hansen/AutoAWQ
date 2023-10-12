@@ -387,7 +387,6 @@ class SmoothQuantizer:
     
     def apply_quantization(self, module, named_linears, static_scales, prev_op, layers: List[nn.Linear], inp: torch.Tensor, inp_name: str, module2inspect=None, kwargs={}):
         for name, linear_layer in named_linears.items():
-            fp32_in = name in self.awq_model.fp32_in
             fp32_out = name in self.awq_model.fp32_out
             full_name = f"{get_op_name(self.model, module)}.{inp_name}"
             
@@ -396,7 +395,6 @@ class SmoothQuantizer:
                 weight_quant=self.weight_quant,
                 input_scale=static_scales[full_name]["input"],
                 output_scale=static_scales[full_name]["output"],
-                fp32_in=fp32_in,
                 fp32_out=fp32_out,
                 alpha=self.alpha
             )
