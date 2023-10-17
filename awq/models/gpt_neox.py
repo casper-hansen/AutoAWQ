@@ -1,5 +1,4 @@
 from .base import BaseAWQForCausalLM
-from typing import Dict
 from transformers.models.gpt_neox.modeling_gpt_neox import GPTNeoXLayer, GPTNeoXForCausalLM
 
 class GPTNeoXAWQForCausalLM(BaseAWQForCausalLM):
@@ -34,14 +33,16 @@ class GPTNeoXAWQForCausalLM(BaseAWQForCausalLM):
             inp=input_feat['attention.query_key_value'],
         ))
 
-        # # attention out
-        # layers.append(dict(
-        #     prev_op=module.attention.query_key_value,
-        #     layers=[module.attention.dense],
-        #     inp=input_feat['attention.dense'],
-        # ))
-        
-        # NOTE: assumes "use_parallel_residual": false
+        # attention out
+        # Please refer to https://github.com/mit-han-lab/llm-awq/issues/2#issuecomment-1606297469
+        """
+        layers.append(dict(
+            prev_op=module.attention.query_key_value,
+            layers=[module.attention.dense],
+            inp=input_feat['attention.dense'],
+        ))
+        """
+
         # linear 1
         layers.append(dict(
             prev_op=module.post_attention_layernorm,
