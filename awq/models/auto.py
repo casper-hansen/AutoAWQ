@@ -13,7 +13,8 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "bloom": BloomAWQForCausalLM,
     "gptj": GPTJAWQForCausalLM,
     "gpt_bigcode": GptBigCodeAWQForCausalLM,
-    "mistral": MistralAWQForCausalLM
+    "mistral": MistralAWQForCausalLM,
+    "gpt_neox": GPTNeoXAWQForCausalLM,
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
