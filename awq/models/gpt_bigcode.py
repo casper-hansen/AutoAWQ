@@ -20,7 +20,7 @@ class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def move_embed(model: GPTBigCodeForCausalLM, device):
-        model.transformer.wte = model.transformer.wte.to(device        
+        model.transformer.wte = model.transformer.wte.to(device)
         model.transformer.wpe = model.transformer.wpe.to(device)
         model.transformer.drop = model.transformer.drop.to(device)
 
