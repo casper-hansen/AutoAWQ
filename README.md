@@ -12,7 +12,7 @@
         <img alt="GitHub - Releases" src="https://img.shields.io/github/release/casper-hansen/AutoAWQ.svg">
     </a>
     <a href="https://pypi.org/project/autoawq/">
-        <img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dd/autoawq">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/autoawq/month">
     </a>
 </p>
 
