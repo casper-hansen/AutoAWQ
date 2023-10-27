@@ -80,6 +80,8 @@ The detailed support list:
 | OPT      | 125m/1.3B/2.7B/6.7B/13B/30B |
 | Bloom    | 560m/3B/7B/                 |
 | GPTJ     | 6.7B                        |
+| Aquila   | 7B                          |
+| Aquila2  | 7B/34B                      |
 
 ## Usage
 

@@ -15,6 +15,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gpt_bigcode": GptBigCodeAWQForCausalLM,
     "mistral": MistralAWQForCausalLM,
     "gpt_neox": GPTNeoXAWQForCausalLM,
+    "aquila": LlamaAWQForCausalLM,
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
