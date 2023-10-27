@@ -6,7 +6,7 @@
 </p>
 <p align="center">
     <a href="https://huggingface.co/models?search=awq">
-        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_400+_models_available-8A2BE2">
+        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_600+_models_available-8A2BE2">
     </a>
     <a href="https://github.com/casper-hansen/AutoAWQ/releases">
         <img alt="GitHub - Releases" src="https://img.shields.io/github/release/casper-hansen/AutoAWQ.svg">
