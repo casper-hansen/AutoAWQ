@@ -318,6 +318,9 @@ class AwqQuantizer:
         self.awq_model.move_embed(self.model, "cpu")
         
         clear_memory()
+        
+        if "attention_mask" in layer_kwargs.keys():
+            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to("cuda")
 
         return modules, layer_kwargs, inps
     
