@@ -88,17 +88,17 @@ class AquilaFuser:
 
         self.attention_modules: List[Tuple[str, AquilaAttention]] = [
             (name, module) for name, module in self.model.named_modules()
-            if "AquilaAttention" in name
+            if "AquilaAttention".lower() in module.__class__.__name__.lower()
         ]
 
         self.rmsnorm_modules: List[Tuple[str, AquilaRMSNorm]] = [
             (name, module) for name, module in self.model.named_modules()
-            if "AquilaRMSNorm" in name
+            if "AquilaRMSNorm".lower() in module.__class__.__name__.lower()
         ]
         
         self.mlp_modules: List[Tuple[str, AquilaMLP]] = [
             (name, module) for name, module in self.model.named_modules()
-            if "AquilaMLP" in name
+            if "AquilaMLP".lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_attention(self):
