@@ -1,35 +1,41 @@
 ## Reference from llama.py
 from .base import BaseAWQForCausalLM
 from typing import Dict
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
+from transformers.models.llama.modeling_llama import (
+    LlamaDecoderLayer as AquilaDecoderLayer,
+    LlamaForCausalLM as AquilaForCausalLM,
+    LlamaAttention as AquilaAttention,
+    LlamaRMSNorm as AquilaRMSNorm,
+    LlamaMLP as AquilaMLP
+)
 
 class AquilaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM, quant_config: Dict):
+    def fuse_layers(model: AquilaForCausalLM, quant_config: Dict):
         fuser = AquilaFuser(model, quant_config)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
 
     @staticmethod
-    def get_model_layers(model: LlamaForCausalLM):
+    def get_model_layers(model: AquilaForCausalLM):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: LlamaDecoderLayer):
+    def get_act_for_scaling(module: AquilaDecoderLayer):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: LlamaForCausalLM, device: str):
+    def move_embed(model: AquilaForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: LlamaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: AquilaDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -74,26 +80,25 @@ from awq.modules.fused.mlp import QuantLlamaMLP
 from awq.modules.fused.attn import QuantAttentionFused
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
 class AquilaFuser:
     def __init__(self, model, quant_config):
         self.model = model
         self.quant_config = quant_config
 
-        self.attention_modules: List[Tuple[str, LlamaAttention]] = [
+        self.attention_modules: List[Tuple[str, AquilaAttention]] = [
             (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaAttention)
+            if "AquilaAttention" in name
         ]
 
-        self.rmsnorm_modules: List[Tuple[str, LlamaRMSNorm]] = [
+        self.rmsnorm_modules: List[Tuple[str, AquilaRMSNorm]] = [
             (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaRMSNorm)
+            if "AquilaRMSNorm" in name
         ]
         
-        self.mlp_modules: List[Tuple[str, LlamaMLP]] = [
+        self.mlp_modules: List[Tuple[str, AquilaMLP]] = [
             (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaMLP)
+            if "AquilaMLP" in name
         ]
     
     def fuse_attention(self):
@@ -110,7 +115,7 @@ class AquilaFuser:
             )
             set_module_name(self.model, name, attn)
     
-    def _fuse_qkv(self, module: LlamaAttention):
+    def _fuse_qkv(self, module: AquilaAttention):
         q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
