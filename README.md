@@ -258,6 +258,24 @@ generation_output = model.generate(
 |            1 |             1024 |            1024 |           2256.22  |           94.0237 | 4.69 GB (19.78%) |
 |            1 |             2048 |            2048 |           1831.71  |           94.2032 | 6.83 GB (28.83%) |
 
+### Aquila2 34B
+
+- Note: Fast generation, fast context processing
+- GPU: NVIDIA A100-SXM4-40GB
+- Command: `python examples/benchmark.py --model_path casperhansen/aquilachat2-34b-awq --quant_file pytorch_model.bin.index.json`
+- Version: GEMM
+
+|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)     |
+|-------------:|-----------------:|----------------:|-------------------:|------------------:|:------------------|
+|            1 |               32 |              32 |            36.7505 |           23.423  | 18.26 GB (46.12%) |
+|            1 |               64 |              64 |           516.544  |           23.3536 | 18.26 GB (46.12%) |
+|            1 |              128 |             128 |           643.968  |           23.3803 | 18.26 GB (46.12%) |
+|            1 |              256 |             256 |           736.236  |           23.389  | 18.34 GB (46.32%) |
+|            1 |              512 |             512 |           829.405  |           23.3889 | 18.54 GB (46.84%) |
+|            1 |             1024 |            1024 |           836.023  |           23.3757 | 18.95 GB (47.87%) |
+|            1 |             2048 |            2048 |           802.632  |           23.3777 | 20.25 GB (51.15%) |
+|            1 |             4096 |            4096 |           722.49   |           23.4252 | 25.38 GB (64.12%) |
+
 ## Reference
 
 If you find AWQ useful or relevant to your research, you can cite their [paper](https://arxiv.org/abs/2306.00978):
