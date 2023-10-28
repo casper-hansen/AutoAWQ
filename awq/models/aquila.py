@@ -10,7 +10,7 @@ from transformers.models.llama.modeling_llama import (
 )
 
 class AquilaAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "LlamaDecoderLayer"
+    layer_type = "AquilaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
