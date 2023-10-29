@@ -89,7 +89,8 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          python -m pip install --upgrade --no-cache-dir torch==2.0.1+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
+          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.1.0" } else {$pytorchVersion = "torch==2.0.1"}
+          python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install build setuptools wheel ninja
 
           # Print version information
