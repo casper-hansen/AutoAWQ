@@ -54,6 +54,19 @@ class AwqQuantizer:
         else:
             return w
     
+    def pseudo_dequantize_tensor(self, w: nn.Linear, scales: torch.Tensor, zeros: torch.Tensor):
+        # get repeated count
+        repeat_count = w.weight.data.shape[-1] // zeros.shape[-1]
+
+        # get zeros and scales in correct shape
+        zeros = zeros.repeat(1, repeat_count).reshape(w.weight.data.shape)
+        scales = scales.repeat(1, repeat_count).reshape(w.weight.data.shape)
+
+        # dequantize
+        w = (w.weight.data - zeros) * scales
+
+        return w
+    
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # [STEP 1]: Get layer, extract linear modules, extract input features
