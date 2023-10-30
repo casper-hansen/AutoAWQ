@@ -16,6 +16,8 @@ from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 
+from awq.models._config import AwqConfig
+
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
         super().__init__()
@@ -23,7 +25,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.model_type:str = model_type
         self.is_quantized:bool = is_quantized
         self.search_result = None
-        self.quant_config: Dict = quant_config
+        self.quant_config: AwqConfig = quant_config
     
     def to(self, device: str):
         return self.model.to(device)
@@ -39,8 +41,7 @@ class BaseAWQForCausalLM(nn.Module):
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
                        split="train", text_column="text"):
-        self.quant_config = quant_config
-        quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
+        self.quant_config = AwqConfig.from_dict(quant_config)
 
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
@@ -90,9 +91,8 @@ class BaseAWQForCausalLM(nn.Module):
             with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
                 file.write(json.dumps(index, indent=4))
 
-        # Save config
-        with open(f'{save_dir}/quant_config.json', 'w+') as file:
-            file.write(json.dumps(self.quant_config, indent=4))
+        # NOTE: Must run after saving model.
+        self.quant_config.save_pretrained(save_dir)
         
         
     @classmethod
@@ -201,16 +201,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         # [STEP 2] Load config and set sequence length
         # TODO: Create BaseAWQConfig class
-        quant_config_path = f'{model_path}/quant_config.json'
-        if os.path.exists(quant_config_path):
-            with open(quant_config_path, 'r') as file:
-                quant_config = json.loads(file.read())
-            
-            if "version" not in quant_config.keys():
-                quant_config["version"] = version
-        else:
-            # Default config that works for most models
-            quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": version}
+        quant_config = AwqConfig.from_pretrained(model_path)
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
