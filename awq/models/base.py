@@ -51,7 +51,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.is_quantized = True
     
     @staticmethod
-    def fuse_layers(model, quant_config):
+    def fuse_layers(model):
         pass
 
     def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
@@ -169,7 +169,7 @@ class BaseAWQForCausalLM(nn.Module):
         
         # Dispath to devices
         if fuse_layers:
-            self.fuse_layers(model, quant_config)
+            self.fuse_layers(model)
 
         # Offloading dispatch
         from accelerate import dispatch_model

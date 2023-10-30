@@ -1,4 +1,3 @@
-from typing import Dict
 from .base import BaseAWQForCausalLM
 from transformers.models.mistral.modeling_mistral import MistralDecoderLayer, MistralForCausalLM
 
@@ -7,8 +6,8 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: MistralForCausalLM, quant_config: Dict):
-        fuser = MistralFuser(model, quant_config)
+    def fuse_layers(model: MistralForCausalLM):
+        fuser = MistralFuser(model)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -76,9 +75,8 @@ from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.mistral.modeling_mistral import MistralAttention, MistralRMSNorm, MistralMLP
 
 class MistralFuser:
-    def __init__(self, model, quant_config):
+    def __init__(self, model):
         self.model = model
-        self.quant_config = quant_config
 
         self.attention_modules: List[Tuple[str, MistralAttention]] = [
             (name, module) for name, module in self.model.named_modules()
