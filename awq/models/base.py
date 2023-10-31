@@ -4,19 +4,18 @@ import json
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import List, Union, Dict
+from typing import List, Union
 from safetensors.torch import save_file
+from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
 from awq.quantize.quantizer import AwqQuantizer
-from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
 
-from awq.models._config import AwqConfig
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
@@ -41,11 +40,11 @@ class BaseAWQForCausalLM(nn.Module):
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
                        split="train", text_column="text"):
-        self.quant_config = AwqConfig.from_dict(quant_config)
+        self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
 
         quantizer = AwqQuantizer(
-            self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
-            quant_config["version"], calib_data, split, text_column
+            self, self.model, tokenizer, self.quant_config.w_bit, self.quant_config.q_group_size,
+            self.quant_config.version, calib_data, split, text_column
         )
         quantizer.quantize()
         self.is_quantized = True
@@ -145,7 +144,7 @@ class BaseAWQForCausalLM(nn.Module):
             model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
         
         # Prepare WQLinear layers, replace nn.Linear
-        self._load_quantized_modules(self, model, quant_config, quant_config["version"])
+        self._load_quantized_modules(self, model, quant_config, quant_config.version)
         
         model.tie_weights()
 
@@ -215,7 +214,7 @@ class BaseAWQForCausalLM(nn.Module):
 
     def _load_quantized_modules(self, model, quant_config, version):
         # Real quantization of weights
-        assert quant_config["zero_point"], "We only support zero_point quantization now."
+        assert quant_config.zero_point, "We only support zero_point quantization now."
         
         # Get blocks of model
         layers = self.get_model_layers(model)
@@ -238,8 +237,8 @@ class BaseAWQForCausalLM(nn.Module):
                 
                 q_linear = q_linear_module.from_linear(
                     module,
-                    quant_config['w_bit'],
-                    quant_config['q_group_size'],
+                    quant_config.w_bit,
+                    quant_config.q_group_size,
                     True
                 )
                 q_linear.to(next(layer.parameters()).device)
