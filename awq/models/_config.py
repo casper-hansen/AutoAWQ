@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Dict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from transformers.utils.hub import PushToHubMixin, cached_file
 
 @dataclass
@@ -32,10 +32,9 @@ class AwqConfig(PushToHubMixin):
     @classmethod
     def from_dict(cls, quant_config: Dict={}):
         if not quant_config:
-            quant_config = cls.to_dict(cls)
-
-        if "version" not in quant_config.keys():
-            quant_config["version"] = cls.version
+            quant_config = cls()
+        else:
+            quant_config = cls(**quant_config)
         
         return quant_config
 
@@ -70,11 +69,12 @@ class AwqConfig(PushToHubMixin):
                 _commit_hash=commit_hash,
             )
         
-        with open(resolved_config_file, 'r', encoding="utf-8") as file:
-            quant_config = json.loads(file.read())
-
-        if "version" not in quant_config.keys():
-            quant_config["version"] = cls.version
+        if os.path.exists(resolved_config_file):
+            with open(resolved_config_file, 'r', encoding="utf-8") as file:
+                loaded_config = json.loads(file.read())
+                quant_config = cls(**loaded_config)
+        else:
+            quant_config = cls()
         
         return quant_config
 
