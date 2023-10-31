@@ -74,6 +74,7 @@ The detailed support list:
 | ---------| ----------------------------|
 | LLaMA-2  | 7B/13B/70B                  |
 | LLaMA    | 7B/13B/30B/65B              |
+| Mistral  | 7B                          |
 | Vicuna   | 7B/13B                      |
 | MPT      | 7B/30B                      |
 | Falcon   | 7B/40B                      |
@@ -97,6 +98,8 @@ There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix mu
 
 ### Examples
 
+More examples can be found in the [examples directory](examples).
+
 <details>
 
 <summary>Quantization</summary>
@@ -109,7 +112,7 @@ from transformers import AutoTokenizer
 
 model_path = 'lmsys/vicuna-7b-v1.5'
 quant_path = 'vicuna-7b-v1.5-awq'
-quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4 }
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(model_path)
@@ -134,10 +137,9 @@ from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
 quant_path = "casperhansen/vicuna-7b-v1.5-awq"
-quant_file = "awq_model_w4_g128.pt"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file, fuse_layers=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_special_tokens=True)
 

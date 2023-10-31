@@ -1,6 +1,5 @@
 ## Reference from llama.py
 from .base import BaseAWQForCausalLM
-from typing import Dict
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as AquilaDecoderLayer,
     LlamaForCausalLM as AquilaForCausalLM,
@@ -14,8 +13,8 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: AquilaForCausalLM, quant_config: Dict):
-        fuser = AquilaFuser(model, quant_config)
+    def fuse_layers(model: AquilaForCausalLM):
+        fuser = AquilaFuser(model)
         fuser.fuse_attention()
         fuser.fuse_rmsnorm()
         fuser.fuse_mlp()
@@ -82,9 +81,8 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
 class AquilaFuser:
-    def __init__(self, model, quant_config):
+    def __init__(self, model):
         self.model = model
-        self.quant_config = quant_config
 
         self.attention_modules: List[Tuple[str, AquilaAttention]] = [
             (name, module) for name, module in self.model.named_modules()

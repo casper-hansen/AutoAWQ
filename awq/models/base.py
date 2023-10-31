@@ -4,17 +4,18 @@ import json
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import List, Union, Dict
+from typing import List, Union
 from safetensors.torch import save_file
+from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from huggingface_hub import snapshot_download
 from awq.quantize.quantizer import AwqQuantizer
-from awq.utils.utils import simple_dispatch_model
 from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
 from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
+
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
@@ -23,7 +24,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.model_type:str = model_type
         self.is_quantized:bool = is_quantized
         self.search_result = None
-        self.quant_config: Dict = quant_config
+        self.quant_config: AwqConfig = quant_config
     
     def to(self, device: str):
         return self.model.to(device)
@@ -39,18 +40,17 @@ class BaseAWQForCausalLM(nn.Module):
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
                        split="train", text_column="text"):
-        self.quant_config = quant_config
-        quant_config["version"] = "GEMM" if 'version' not in quant_config.keys() else quant_config["version"]
+        self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
 
         quantizer = AwqQuantizer(
-            self, self.model, tokenizer, quant_config["w_bit"], quant_config["q_group_size"],
-            quant_config["version"], calib_data, split, text_column
+            self, self.model, tokenizer, self.quant_config.w_bit, self.quant_config.q_group_size,
+            self.quant_config.version, calib_data, split, text_column
         )
         quantizer.quantize()
         self.is_quantized = True
     
     @staticmethod
-    def fuse_layers(model, quant_config):
+    def fuse_layers(model):
         pass
 
     def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
@@ -61,8 +61,10 @@ class BaseAWQForCausalLM(nn.Module):
             def __init__(self): super(EmptyModule, self).__init__()
             def forward(self, x): return x
 
-        # Save model files with empty state dict
+        # Save model and config files with empty state dict
+        self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
+        self.quant_config.save_pretrained(save_dir)
 
         # Remove empty state dict
         os.remove(f'{save_dir}/pytorch_model.bin')
@@ -89,10 +91,6 @@ class BaseAWQForCausalLM(nn.Module):
         if index is not None:
             with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
                 file.write(json.dumps(index, indent=4))
-
-        # Save config
-        with open(f'{save_dir}/quant_config.json', 'w+') as file:
-            file.write(json.dumps(self.quant_config, indent=4))
         
         
     @classmethod
@@ -146,7 +144,7 @@ class BaseAWQForCausalLM(nn.Module):
             model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
         
         # Prepare WQLinear layers, replace nn.Linear
-        self._load_quantized_modules(self, model, quant_config, quant_config["version"])
+        self._load_quantized_modules(self, model, quant_config, quant_config.version)
         
         model.tie_weights()
 
@@ -169,7 +167,7 @@ class BaseAWQForCausalLM(nn.Module):
         
         # Dispath to devices
         if fuse_layers:
-            self.fuse_layers(model, quant_config)
+            self.fuse_layers(model)
 
         # Offloading dispatch
         from accelerate import dispatch_model
@@ -201,16 +199,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         # [STEP 2] Load config and set sequence length
         # TODO: Create BaseAWQConfig class
-        quant_config_path = f'{model_path}/quant_config.json'
-        if os.path.exists(quant_config_path):
-            with open(quant_config_path, 'r') as file:
-                quant_config = json.loads(file.read())
-            
-            if "version" not in quant_config.keys():
-                quant_config["version"] = version
-        else:
-            # Default config that works for most models
-            quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": version}
+        quant_config = AwqConfig.from_pretrained(model_path)
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
@@ -225,7 +214,7 @@ class BaseAWQForCausalLM(nn.Module):
 
     def _load_quantized_modules(self, model, quant_config, version):
         # Real quantization of weights
-        assert quant_config["zero_point"], "We only support zero_point quantization now."
+        assert quant_config.zero_point, "We only support zero_point quantization now."
         
         # Get blocks of model
         layers = self.get_model_layers(model)
@@ -248,8 +237,8 @@ class BaseAWQForCausalLM(nn.Module):
                 
                 q_linear = q_linear_module.from_linear(
                     module,
-                    quant_config['w_bit'],
-                    quant_config['q_group_size'],
+                    quant_config.w_bit,
+                    quant_config.q_group_size,
                     True
                 )
                 q_linear.to(next(layer.parameters()).device)

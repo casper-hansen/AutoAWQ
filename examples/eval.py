@@ -33,7 +33,7 @@ def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot
 if __name__ == '__main__':
     """
     - Run perplexity of quantized model:
-    python examples/eval.py --model_path vicuna-7b-v1.5-awq --quant_file awq_model_w4_g128.pt
+    python examples/eval.py --model_path casperhansen/mistral-7b-instruct-v0.1-awq
 
     - Run perplexity unquantized FP16 model:
     python examples/eval.py --use_pretrained --model_path lmsys/vicuna-7b-v1.5
