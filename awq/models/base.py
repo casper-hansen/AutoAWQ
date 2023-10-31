@@ -62,8 +62,10 @@ class BaseAWQForCausalLM(nn.Module):
             def __init__(self): super(EmptyModule, self).__init__()
             def forward(self, x): return x
 
-        # Save model files with empty state dict
+        # Save model and config files with empty state dict
+        self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
+        self.quant_config.save_pretrained(save_dir)
 
         # Remove empty state dict
         os.remove(f'{save_dir}/pytorch_model.bin')
@@ -90,9 +92,6 @@ class BaseAWQForCausalLM(nn.Module):
         if index is not None:
             with open(f'{save_dir}/{model_name}.index.json', 'w+') as file:
                 file.write(json.dumps(index, indent=4))
-
-        # NOTE: Must run after saving model.
-        self.quant_config.save_pretrained(save_dir)
         
         
     @classmethod

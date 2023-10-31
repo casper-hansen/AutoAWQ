@@ -14,20 +14,8 @@ class AwqConfig(PushToHubMixin):
     config_file_name = "quant_config.json"
 
     def save_pretrained(self, save_dir: str, **kwargs):
-        # quant_config.json
-        quant_config = self.to_dict()
         with open(os.path.join(save_dir, self.config_file_name), "w+", encoding="utf-8") as file:
-            file.write(json.dumps(quant_config, indent=4))
-        
-        # config.json: quantization_config
-        config_filepath = os.path.join(save_dir, "config.json")
-        with open(config_filepath, 'r', encoding="utf-8") as file:
-            model_config = json.loads(file.read())
-        
-        model_config["quantization_config"] = self.to_transformers_dict()
-
-        with open(config_filepath, "w+", encoding="utf-8") as file:
-            file.write(json.dumps(model_config, indent=4))
+            file.write(json.dumps(self.to_dict(), indent=4))
     
     @classmethod
     def from_dict(cls, quant_config: Dict={}):
