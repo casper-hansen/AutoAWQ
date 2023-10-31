@@ -9,8 +9,9 @@ tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id, 
     torch_dtype=torch.float16, 
-    low_cpu_mem_usage=True
-).cuda()
+    low_cpu_mem_usage=True,
+    device_map="cuda:0"
+)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
 # Convert prompt to tokens
