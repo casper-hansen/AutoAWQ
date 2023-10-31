@@ -126,8 +126,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="casperhansen/vicuna-7b-v1.5-awq", help="path to the model")
-    parser.add_argument("--quant_file", type=str, default="awq_model_w4_g128.pt", help="weights filename")
+    parser.add_argument("--model_path", type=str, default="casperhansen/mistral-7b-instruct-v0.1-awq", help="path to the model")
+    parser.add_argument("--quant_file", type=str, default="", help="weights filename")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size for cache and generation")
     parser.add_argument("--safetensors", default=False, action="store_true", help="Use for enabling safetensors")
     args = parser.parse_args()
