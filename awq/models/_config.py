@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from typing import Dict
 from dataclasses import dataclass, field, fields
 from transformers.utils.hub import PushToHubMixin, cached_file
@@ -14,6 +15,10 @@ class AwqConfig(PushToHubMixin):
     config_file_name = "quant_config.json"
 
     def save_pretrained(self, save_dir: str, **kwargs):
+        logging.warning(
+            "`quant_config.json` is being deprecated in the future"
+            " in favor of quantization_config in config.json."
+        )
         with open(os.path.join(save_dir, self.config_file_name), "w+", encoding="utf-8") as file:
             file.write(json.dumps(self.to_dict(), indent=4))
     
