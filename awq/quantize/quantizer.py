@@ -332,7 +332,7 @@ class AwqQuantizer:
         
         clear_memory()
         
-        if "attention_mask" in layer_kwargs.keys():
+        if layer_kwargs.get("attention_mask") is not None:
             layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to("cuda")
 
         return modules, layer_kwargs, inps
