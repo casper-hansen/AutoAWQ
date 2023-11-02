@@ -19,6 +19,7 @@
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2023/11] AutoAWQ has been merged into 🤗 transformers. Example found in: `examples/basic_transformers`.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
 - [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon).
 - [2023/09] Multi-GPU support, bug fixes, and better benchmark scripts available
@@ -92,9 +93,9 @@ Under examples, you can find examples of how to quantize, run inference, and ben
 
 There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix multiplication runs under the hood. We suggest the following:
 
-- GEMV (quantized): Best for small context, batch size 1, highest number of tokens/s.
-- GEMM (quantized): Best for larger context, up to batch size 8, faster than GEMV on batch size > 1, slower than GEMV on batch size = 1.
-- FP16 (non-quantized): Best for large batch sizes of 8 or larger, highest throughput. We recommend [TGI](https://github.com/huggingface/text-generation-inference) or [vLLM](https://github.com/vllm-project/vllm).
+- GEMV (quantized): 20% faster than GEMM for small batch sizes (max batch size 4 / small context).
+- GEMM (quantized): Much faster than FP16 at batch sizes below 8 (good with large contexts).
+- FP16 (non-quantized): Recommended for highest throughput: [vLLM](https://github.com/vllm-project/vllm).
 
 ### Examples
 
