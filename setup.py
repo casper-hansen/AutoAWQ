@@ -14,7 +14,7 @@ except Exception as ex:
     raise RuntimeError("Your system must have an Nvidia GPU for installing AutoAWQ")
 
 common_setup_kwargs = {
-    "version": f"0.1.5+cu{CUDA_VERSION}",
+    "version": f"0.1.6+cu{CUDA_VERSION}",
     "name": "autoawq",
     "author": "Casper Hansen",
     "license": "MIT",
