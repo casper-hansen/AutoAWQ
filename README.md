@@ -97,6 +97,12 @@ There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix mu
 - GEMM (quantized): Much faster than FP16 at batch sizes below 8 (good with large contexts).
 - FP16 (non-quantized): Recommended for highest throughput: [vLLM](https://github.com/vllm-project/vllm).
 
+#### Compute-bound vs Memory-bound
+
+At small batch sizes with small 7B models, we are memory-bound. This means we are bound by the bandwidth our GPU has to push around the weights in memory, and this is essentially what limits how many tokens per second we can generate. Being memory-bound is what makes quantized models faster because your weights are 3x smaller and can therefore be pushed around in memory much faster. This is different from being compute-bound where the main time spent during generation is doing matrix multiplication. 
+
+In the scenario of being compute-bound, which happens at higher batch sizes, you will not gain a speed-up using a W4A16 quantized model because the overhead of dequantization will slow down the overall generation. This happens because AWQ quantized models only store the weights in INT4 but perform FP16 operations during inference, so we are essentially converting INT4 -> FP16 during inference.
+
 ### Fused modules
 
 Fused modules are a large part of the speedup you get from AutoAWQ. The idea is to combine multiple layers into a single operation, thus becoming more efficient. Fused modules represent a set of custom modules that work separately from Huggingface models. They are compatible with `model.generate()` and other Huggingface methods, which comes with some inflexibility in how you can use your model if you activate fused modules:
