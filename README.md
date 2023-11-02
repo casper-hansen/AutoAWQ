@@ -197,6 +197,9 @@ generation_output = model.generate(
 
 ## Benchmarks
 
+- GPU: RTX 3090
+- Command: `python examples/benchmark --model_path <hf_model>`
+
 | Model Name    | Version | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
 |---------------|---------|------------|----------------|---------------|------------------|-----------------|------------------|
 | Vicuna 7B     | GEMM    | 1          | 64             | 64            | 2618.88          | 125.428         | 4.57 GB (19.31%) |
