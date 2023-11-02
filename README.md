@@ -197,8 +197,8 @@ generation_output = model.generate(
 
 ## Benchmarks
 
-GPU: RTX 3090
-Command: `python examples/benchmark --model_path <hf_model>`
+- GPU: RTX 3090
+- Command: `python examples/benchmark --model_path <hf_model>`
 
 | Model Name    | Version | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
 |---------------|---------|------------|----------------|---------------|------------------|-----------------|------------------|
