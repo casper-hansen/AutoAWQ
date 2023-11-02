@@ -85,7 +85,7 @@ def run_round(model_path, quant_file, n_generate, input_ids, batch_size, safeten
         "Prefill tokens/s": prefill_tokens_per_second,
         "Decode tokens/s": decode_tokens_per_second,
         "Memory (VRAM)": f"{memory_used:.2f} GB ({memory_pct:.2f}%)"
-    }, model.quant_config.version
+    }, model.quant_config["version"]
 
 def main(args):
     rounds = [
