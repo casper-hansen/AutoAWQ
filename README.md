@@ -97,6 +97,17 @@ There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix mu
 - GEMM (quantized): Much faster than FP16 at batch sizes below 8 (good with large contexts).
 - FP16 (non-quantized): Recommended for highest throughput: [vLLM](https://github.com/vllm-project/vllm).
 
+### Fused modules
+
+Fused modules are a large part of the speedup you get from AutoAWQ. The idea is to combine multiple layers into a single operation, thus becoming more efficient. Fused modules represent a set of custom modules that work separately from Huggingface models. They are compatible with `model.generate()` and other Huggingface methods, which comes with some inflexibility in how you can use your model if you activate fused modules:
+
+- Fused modules are activated when you use `fuse_layers=True`.
+- A custom cache is implemented. It preallocates based on batch size and sequence length.
+    - You cannot change the sequence length or batch size after you have created your model.
+    - Reference: `AutoAWQForCausalLM.from_quantized(max_new_tokens=seq_len, batch_size=batch_size)`
+- The main accelerator in the fused modules comes from FasterTransformer, which is only compatible with Linux.
+- The `past_key_values` from `model.generate()` are only dummy values, so they cannot be used after generation.
+
 ### Examples
 
 More examples can be found in the [examples directory](examples).
