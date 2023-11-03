@@ -129,11 +129,11 @@ class QuantAttentionFused(nn.Module):
             )
 
         will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
-        
+
         # Reset and avoid retaining state when processing context
         if will_cache_be_exceeded:
             self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=self.start_pos)
-        # Slowly roll out old tokens if exceeded during decoding without performance hit
+        # Slowly roll out old tokens without performance hit if exceeded during decoding 
         elif will_cache_be_exceeded and seqlen == 1:
             self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=100)
             
