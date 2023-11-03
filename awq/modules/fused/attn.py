@@ -122,6 +122,18 @@ class QuantAttentionFused(nn.Module):
     
     def forward(self, hidden_states:torch.Tensor, attention_mask=None, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
+
+        # Check if we are under transformers caching regime
+        has_past_key_value = kwargs is not None and "past_key_value" in kwargs and kwargs["past_key_value"] is not None
+
+        if has_past_key_value:
+            # In newest transformers version, when using caching the input hidden states do not consist of 
+            # the last generated token only, but of the whole sequence - past-kvlength. We need to slice the last token
+            # and set `seqlen=1`
+            if seqlen > 1:
+                seqlen = 1
+                hidden_states = hidden_states[:, -1:]
+
         if bsz != self.cache_batch_size:
             raise RuntimeError(
                 f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
@@ -159,7 +171,7 @@ class QuantAttentionFused(nn.Module):
             self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
 
             if seqlen == 1:
-                xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
+                xv, xk = self.cache.get_kv(bsz, self.start_pos, past_kv_len, self.head_dim)
             
             keys = xk
             values = xv
@@ -178,8 +190,8 @@ class QuantAttentionFused(nn.Module):
 
             # When seqlen is 1, there is nothing else to attend to
             if attention_mask is not None and seqlen > 1:
+                # scores = scores + attention_mask[:, :, :, :scores.shape[-1]]  # (bs, n_local_heads, slen, cache_len + slen)
                 scores = scores + attention_mask  # (bs, n_local_heads, slen, cache_len + slen)
-                
             scores = F.softmax(scores.float(), dim=-1).type_as(xq)
             output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
             attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
