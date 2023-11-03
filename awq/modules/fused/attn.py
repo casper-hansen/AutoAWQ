@@ -171,7 +171,8 @@ class QuantAttentionFused(nn.Module):
             self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
 
             if seqlen == 1:
-                xv, xk = self.cache.get_kv(bsz, self.start_pos, past_kv_len, self.head_dim)
+                xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
+
             
             keys = xk
             values = xv
