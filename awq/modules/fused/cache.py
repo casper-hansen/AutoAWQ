@@ -1,7 +1,7 @@
 import torch
 
 class WindowedCache:
-    def __init__(self, cache_v_shape, cache_k_shape, device):
+    def __init__(self, cache_v_shape, cache_k_shape, max_seq_len, device):
         """
         The window size is the same as the max_new_tokens. The window will
         automatically roll once max_new_tokens is exceeded.
@@ -10,6 +10,7 @@ class WindowedCache:
         self.v = torch.zeros(cache_v_shape).to(device).half()
         # [batch_size, n_kv_heads, head_dim // pack_factor, max_seq_len, pack_factor]
         self.k = torch.zeros(cache_k_shape).to(device).half()
+        self.max_seq_len = max_seq_len
     
     def get_kv(self, batch_size, start_pos, seqlen, head_dim):
         """
@@ -27,34 +28,21 @@ class WindowedCache:
         """
         self.v[:batch_size, :, start_pos : start_pos + seqlen, :] = values_store
         self.k[:batch_size, :, :, start_pos : start_pos + seqlen, :] = keys_store
-    
-    def roll_kv_full(self, start_pos):
+
+    def roll_kv_n_steps(self, start_pos, n=100):
         """
-        Full reset of cache.
+        Roll cache n to the left.
         """
+        n = min(n, self.max_seq_len)
         # Roll cache to the left
-        self.v = torch.roll(self.v, shifts=-start_pos, dims=2)
-        self.k = torch.roll(self.k, shifts=-start_pos, dims=3)
+        self.v = torch.roll(self.v, shifts=-n, dims=2)
+        self.k = torch.roll(self.k, shifts=-n, dims=3)
 
         # Zero out the new part
-        self.v[:, :, -start_pos:, :] = 0
-        self.k[:, :, :, -start_pos:, :] = 0
+        self.v[:, :, -n:, :] = 0
+        self.k[:, :, :, -n:, :] = 0
         
-        return 0
-
-    def roll_kv_step(self, start_pos):
-        """
-        Roll cache one index to the left.
-        """
-        # Roll cache to the left
-        self.v = torch.roll(self.v, shifts=-1, dims=2)
-        self.k = torch.roll(self.k, shifts=-1, dims=3)
-
-        # Zero out the new part
-        self.v[:, :, -1:, :] = 0
-        self.k[:, :, :, -1:, :] = 0
-        
-        return start_pos - 1
+        return start_pos - n
     
     def to(self, device):
         self.k = self.k.to(device)
