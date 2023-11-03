@@ -107,7 +107,7 @@ class QuantAttentionFused(nn.Module):
         )
         # cache store that rolls cache
         self.cache = WindowedCache(
-            self.attention_shapes["cache_v"], self.attention_shapes["cache_k"], dev
+            self.attention_shapes["cache_v"], self.attention_shapes["cache_k"], self.max_seq_len, dev
         )
 
         if use_alibi:
@@ -128,9 +128,14 @@ class QuantAttentionFused(nn.Module):
                 f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
             )
 
-        if self.start_pos > self.max_seq_len or self.start_pos + seqlen > self.max_seq_len:
-            excess_length = self.start_pos + seqlen - self.max_seq_len
-            self.start_pos = self.cache.roll_kv(excess_length, self.start_pos)
+        will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
+
+        # Reset and avoid retaining state when processing context
+        if will_cache_be_exceeded:
+            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=self.start_pos)
+        # Slowly roll out old tokens without performance hit if exceeded during decoding 
+        elif will_cache_be_exceeded and seqlen == 1:
+            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=100)
             
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
@@ -158,6 +163,7 @@ class QuantAttentionFused(nn.Module):
             
             self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
 
+            # Only necessary to retrieve from cache when we are not processing context
             if seqlen == 1:
                 xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
             
