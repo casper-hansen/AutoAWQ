@@ -12,6 +12,9 @@ class WindowedCache:
         self.k = torch.zeros(cache_k_shape).to(device).half()
     
     def get_kv(self, batch_size, start_pos, seqlen, head_dim):
+        """
+        Gets the key-value store in correct shapes.
+        """
         xv = self.v[:batch_size, :, : start_pos + seqlen, :].transpose(1, 2).contiguous()
         xk = self.k[:batch_size, :, :, : start_pos + seqlen, :].transpose(2, 3).contiguous()
         xk = xk.reshape(xk.shape[:-2] + (head_dim,)).transpose(1, 2).contiguous()
@@ -19,19 +22,39 @@ class WindowedCache:
         return xv, xk
     
     def update_kv(self, values_store, keys_store, batch_size, start_pos, seqlen):
+        """
+        Updates the values in the key-value store.
+        """
         self.v[:batch_size, :, start_pos : start_pos + seqlen, :] = values_store
         self.k[:batch_size, :, :, start_pos : start_pos + seqlen, :] = keys_store
     
-    def roll_kv(self, roll_len, start_pos):
-        # Roll only the necessary part of the cache to the left
-        self.v[:, :, :-roll_len, :] = self.v[:, :, roll_len:, :]
-        self.k[:, :, :, :-roll_len, :] = self.k[:, :, :, roll_len:, :]
+    def roll_kv_full(self, start_pos):
+        """
+        Full reset of cache.
+        """
+        # Roll cache to the left
+        self.v = torch.roll(self.v, shifts=-start_pos, dims=2)
+        self.k = torch.roll(self.k, shifts=-start_pos, dims=3)
 
         # Zero out the new part
-        self.v[:, :, -roll_len:, :] = 0
-        self.k[:, :, :, -roll_len:, :] = 0
+        self.v[:, :, -start_pos:, :] = 0
+        self.k[:, :, :, -start_pos:, :] = 0
+        
+        return 0
 
-        return start_pos - roll_len
+    def roll_kv_step(self, start_pos):
+        """
+        Roll cache one index to the left.
+        """
+        # Roll cache to the left
+        self.v = torch.roll(self.v, shifts=-1, dims=2)
+        self.k = torch.roll(self.k, shifts=-1, dims=3)
+
+        # Zero out the new part
+        self.v[:, :, -1:, :] = 0
+        self.k[:, :, :, -1:, :] = 0
+        
+        return start_pos - 1
     
     def to(self, device):
         self.k = self.k.to(device)
