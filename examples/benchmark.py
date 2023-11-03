@@ -112,7 +112,6 @@ def main(args):
             args.batch_size,
             args.safetensors
         )
-        break
         
         all_stats.append(stats)
 
