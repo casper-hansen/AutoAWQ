@@ -44,7 +44,7 @@ common_setup_kwargs = {
 
 requirements = [
     "torch>=2.1.0",
-    "transformers>=4.34.0",
+    "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "accelerate",
     "sentencepiece",

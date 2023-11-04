@@ -14,7 +14,6 @@ tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 model.quantize(tokenizer, quant_config=quant_config)
 
 # Save quantized model
-# NOTE: pass safetensors=True to save quantized model weights as safetensors
 model.save_quantized(quant_path)
 tokenizer.save_pretrained(quant_path)
 
