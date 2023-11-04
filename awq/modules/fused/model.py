@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from typing import List
-from awq.utils.fused_utils import prepare_attention_mask
 from transformers.modeling_outputs import BaseModelOutputWithPast
+from awq.utils.fused_utils import prepare_attention_mask, prepare_input_ids
 from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, LlamaLikeBlock
 
 class LlamaLikeModel(nn.Module):
@@ -16,13 +16,14 @@ class LlamaLikeModel(nn.Module):
         self.embedding = embedding
         self.blocks: List[LlamaLikeBlock] = blocks
         self.norm = norm
+        self.last_forward_num_tokens = 0
     
     @torch.inference_mode()
-    def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
-        # NOTE: new transformers caching includes input ids with full context
-        # after context is processed, slice to latest token
-        if self.blocks[0].attn.start_pos != 0 and input_ids.shape[-1] != 1:
-            input_ids = input_ids[:, -1:]
+    def forward(self, input_ids: torch.Tensor, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
         
         _bsz, seqlen = input_ids.shape
         h = self.embedding(input_ids)
@@ -49,9 +50,15 @@ class MPTModel(nn.Module):
         self.norm_f = norm_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False
+        self.last_forward_num_tokens = 0
 
     @torch.inference_mode()
     def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
+
         _bsz, seqlen = input_ids.shape
         h = self.wte(input_ids)
 
@@ -77,14 +84,15 @@ class FalconModel(nn.Module):
         self.ln_f = ln_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False
+        self.last_forward_num_tokens = 0
 
     @torch.inference_mode()
     def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
-        # NOTE: falcon input ids contain full context
-        # after context is processed, slice to latest token
-        if self.blocks[0].attn.start_pos != 0 and input_ids.shape[-1] != 1:
-            input_ids = input_ids[:, self.blocks[0].attn.start_pos:]
-
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
+        
         _bsz, seqlen = input_ids.shape
         h = self.word_embeddings(input_ids)
 

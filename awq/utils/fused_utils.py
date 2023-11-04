@@ -1,6 +1,17 @@
 import torch
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
+def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
+    # NOTE: new transformers caching includes input ids with full context
+    if input_ids.shape[-1] != 1:
+        num_new_tokens = input_ids.shape[-1] - last_forward_num_tokens
+        
+        # after context is processed, slice to latest token
+        if num_new_tokens in [0,1]:
+            input_ids = input_ids[:, -1:]
+
+    return input_ids, last_forward_num_tokens + num_new_tokens
+
 def prepare_attention_mask(seqlen, start_pos, device, type_as: torch.Tensor):
     mask = None
     if seqlen > 1:
