@@ -2,7 +2,7 @@ import torch
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
 def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
-    # NOTE: new transformers caching includes input ids with full context
+    # NOTE: from transformers 4.35.0, input_ids includes full context during decoding
     num_input_tokens = input_ids.shape[-1]
     num_new_tokens = num_input_tokens
 
