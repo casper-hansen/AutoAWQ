@@ -15,6 +15,11 @@ class LlamaLikeModel(nn.Module):
     
     @torch.inference_mode()
     def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
+        # NOTE: new transformers caching includes input ids with full context
+        # after context is processed, slice to latest token
+        if self.blocks[0].attn.start_pos != 0 and input_ids.shape[-1] != 1:
+            input_ids = input_ids[:, -1:]
+        
         _bsz, seqlen = input_ids.shape
         h = self.embedding(input_ids)
 
