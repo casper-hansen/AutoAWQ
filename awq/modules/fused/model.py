@@ -6,6 +6,10 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, LlamaLikeBlock
 
 class LlamaLikeModel(nn.Module):
+    """
+    LlamaLikeModel is intended to be reused across models that have
+    an architecture that closely resembles Llama, e.g. Mistral and Aquila.
+    """
     def __init__(self, vocab_size, blocks, embedding, norm):
         super().__init__()
         self.vocab_size = vocab_size

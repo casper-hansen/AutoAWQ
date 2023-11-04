@@ -3,6 +3,10 @@ import torch.nn as nn
 from awq.modules.fused.attn import QuantAttentionFused
 
 class LlamaLikeBlock(nn.Module):
+    """
+    LlamaLikeBlock is intended to be reused across blocks that have
+    an architecture that closely resembles Llama, e.g. Mistral and Aquila.
+    """
     def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, mlp, norm_1, norm_2, dev, max_seq_len):
         super().__init__()
         self.n_heads = n_heads
