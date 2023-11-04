@@ -186,7 +186,7 @@ class BaseAWQForCausalLM(nn.Module):
                            version="GEMM", trust_remote_code=True, max_new_tokens=4096):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
-            ignore_patterns = ["*msgpack*", "*h5*"]
+            ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt"]
             if safetensors:
                 ignore_patterns.extend(["*.pt*", "*.bin*"])
             else:
