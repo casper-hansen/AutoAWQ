@@ -17,7 +17,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = NewLlamaFuser(model)
+        fuser = LlamaFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
@@ -74,7 +74,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class NewLlamaFuser:
+class LlamaFuser:
     def __init__(self, model: OldLlamaForCausalLM):
         self.model = model
 
