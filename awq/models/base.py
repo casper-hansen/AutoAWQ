@@ -53,7 +53,7 @@ class BaseAWQForCausalLM(nn.Module):
     def fuse_layers(model):
         pass
 
-    def save_quantized(self, save_dir, safetensors=False, shard_size="10GB"):
+    def save_quantized(self, save_dir, safetensors=True, shard_size="10GB"):
         save_dir = save_dir[:-1] if save_dir[-1] == '/' else save_dir
 
         # Save model
@@ -67,7 +67,9 @@ class BaseAWQForCausalLM(nn.Module):
         self.quant_config.save_pretrained(save_dir)
 
         # Remove empty state dict
-        os.remove(f'{save_dir}/pytorch_model.bin')
+        default_path = f'{save_dir}/model.safetensors'
+        if os.path.exists(default_path):
+            os.remove(default_path)
 
         # model_name has no extension, add it when saving state_dict
         model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
@@ -130,7 +132,7 @@ class BaseAWQForCausalLM(nn.Module):
     @classmethod
     def from_quantized(self, model_path, model_type, model_filename='', 
                              max_new_tokens=None, torch_dtype=torch.float16, 
-                             trust_remote_code=True, safetensors=False, is_quantized=True, 
+                             trust_remote_code=True, safetensors=True, is_quantized=True, 
                              fuse_layers=False, version='GEMM',
                              max_memory=None, offload_folder=None):
         # [STEP 1-2] Load weights path and configs
@@ -180,7 +182,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 
-    def _load_config(self, model_path, model_filename, safetensors=False, 
+    def _load_config(self, model_path, model_filename, safetensors=True, 
                            version="GEMM", trust_remote_code=True, max_new_tokens=4096):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
