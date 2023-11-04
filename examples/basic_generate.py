@@ -1,7 +1,7 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "TheBloke/Mistral-7B-OpenOrca-AWQ"
+quant_path = "TheBloke/zephyr-7B-beta-AWQ"
 
 # Load model
 model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
@@ -10,11 +10,11 @@ streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
 # Convert prompt to tokens
 prompt_template = """\
-<|im_start|>system
-You are MistralOrca, a large language model trained by Alignment Lab AI. Write out your reasoning step-by-step to be sure you get the right answers!<|im_end|>
-<|im_start|>user
-{prompt}<|im_end|>
-<|im_start|>assistant"""
+<|system|>
+</s>
+<|user|>
+{prompt}</s>
+<|assistant|>"""
 
 prompt = "You're standing on the surface of the Earth. "\
         "You walk one mile south, one mile west and one mile north. "\

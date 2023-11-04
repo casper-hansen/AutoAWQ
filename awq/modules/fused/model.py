@@ -1,8 +1,45 @@
 import torch
 import torch.nn as nn
 from typing import List
-from awq.modules.fused.block import MPTBlock, FalconDecoderLayer
 from transformers.modeling_outputs import BaseModelOutputWithPast
+from awq.utils.fused_utils import prepare_attention_mask, prepare_input_ids
+from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, LlamaLikeBlock
+
+class LlamaLikeModel(nn.Module):
+    """
+    LlamaLikeModel is intended to be reused across models that have
+    an architecture that closely resembles Llama, e.g. Mistral and Aquila.
+    """
+    def __init__(self, vocab_size, blocks, embedding, norm):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.embedding = embedding
+        self.blocks: List[LlamaLikeBlock] = blocks
+        self.norm = norm
+        self.last_forward_num_tokens = 0
+    
+    @torch.inference_mode()
+    def forward(self, input_ids: torch.Tensor, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
+        
+        _bsz, seqlen = input_ids.shape
+        h = self.embedding(input_ids)
+
+        mask = prepare_attention_mask(
+            seqlen=seqlen,
+            start_pos=self.blocks[0].attn.start_pos,
+            device=input_ids.device,
+            type_as=h
+        )
+
+        for layer in self.blocks:
+            h, _, past_key_value = layer(h, None, attention_mask=mask, is_causal=is_causal)
+        h = self.norm(h)
+
+        return BaseModelOutputWithPast(last_hidden_state=h, past_key_values=past_key_value, hidden_states=(), attentions=())
 
 class MPTModel(nn.Module):
     def __init__(self, vocab_size, blocks, wte, norm_f):
@@ -13,18 +50,24 @@ class MPTModel(nn.Module):
         self.norm_f = norm_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False
+        self.last_forward_num_tokens = 0
 
     @torch.inference_mode()
     def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
+
         _bsz, seqlen = input_ids.shape
         h = self.wte(input_ids)
 
-        mask = None
-        if seqlen > 1:
-            mask = torch.full(
-                (1, 1, seqlen, seqlen), float("-inf"), device=input_ids.device
-            )
-            mask = torch.triu(mask, diagonal=self.blocks[0].attn.start_pos + 1).type_as(h)
+        mask = prepare_attention_mask(
+            seqlen=seqlen,
+            start_pos=self.blocks[0].attn.start_pos,
+            device=input_ids.device,
+            type_as=h
+        )
 
         for layer in self.blocks:
             h, _, past_key_value = layer(h, None, attention_mask=mask, is_causal=is_causal)
@@ -41,23 +84,24 @@ class FalconModel(nn.Module):
         self.ln_f = ln_f
         self.attn_uses_sequence_id = False
         self.prefix_lm = False
+        self.last_forward_num_tokens = 0
 
     @torch.inference_mode()
     def forward(self, input_ids, attn_bias=None, attention_mask=None, is_causal=None, *args, **kwargs):
-        # NOTE: falcon input ids contain full context
-        # after context is processed, slice to latest token
-        if self.blocks[0].attn.start_pos != 0 and input_ids.shape[-1] != 1:
-            input_ids = input_ids[:, self.blocks[0].attn.start_pos:]
-
+        input_ids, self.last_forward_num_tokens = prepare_input_ids(
+            input_ids,
+            self.last_forward_num_tokens
+        )
+        
         _bsz, seqlen = input_ids.shape
         h = self.word_embeddings(input_ids)
 
-        mask = None
-        if seqlen > 1:
-            mask = torch.full(
-                (1, 1, seqlen, seqlen), float("-inf"), device=input_ids.device
-            )
-            mask = torch.triu(mask, diagonal=self.blocks[0].attn.start_pos + 1).type_as(h)
+        mask = prepare_attention_mask(
+            seqlen=seqlen,
+            start_pos=self.blocks[0].attn.start_pos,
+            device=input_ids.device,
+            type_as=h
+        )
 
         for layer in self.blocks:
             h, _, past_key_value = layer(h, None, attention_mask=mask, is_causal=is_causal)

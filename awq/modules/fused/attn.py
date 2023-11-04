@@ -123,17 +123,6 @@ class QuantAttentionFused(nn.Module):
     def forward(self, hidden_states:torch.Tensor, attention_mask=None, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
 
-        # Check if we are under transformers caching regime
-        has_past_key_value = kwargs is not None and "past_key_value" in kwargs and kwargs["past_key_value"] is not None
-
-        if has_past_key_value:
-            # In newest transformers version, when using caching the input hidden states do not consist of 
-            # the last generated token only, but of the whole sequence - past-kvlength. We need to slice the last token
-            # and set `seqlen=1`
-            if seqlen > 1:
-                seqlen = 1
-                hidden_states = hidden_states[:, -1:]
-
         if bsz != self.cache_batch_size:
             raise RuntimeError(
                 f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
