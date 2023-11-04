@@ -8,20 +8,20 @@ class LlamaLikeBlock(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.hidden_size = hidden_size
-        self.norm_1 = norm_1
+        self.norm_1 = norm_1.to(dev)
         self.attn = QuantAttentionFused(
             self.hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj,
             dev=dev, max_seq_len=max_seq_len, use_alibi=False
         ).to(dev)
-        self.norm_2 = norm_2
-        self.mlp = mlp
+        self.norm_2 = norm_2.to(dev)
+        self.mlp = mlp.to(dev)
 
     def forward(
         self, hidden_states, past_key_value, attn_bias=None, attention_mask=None, is_causal=None
     ):
         norm_out = self.norm_1(hidden_states)
         attn_output, _, past_key_value = self.attn.forward(
-            hdiden_states=norm_out,
+            hidden_states=norm_out,
             past_key_value=past_key_value,
             attention_mask=attention_mask
         )

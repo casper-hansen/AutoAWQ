@@ -1,8 +1,15 @@
+import tqdm
+from typing import List, Tuple
 from .base import BaseAWQForCausalLM
+from awq.utils.fused_utils import fuse_qkv
+from awq.modules.fused.block import LlamaLikeBlock
+from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
     LlamaForCausalLM as OldLlamaForCausalLM
 )
+from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
@@ -66,33 +73,21 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
 
         return layers
 
-import torch
-from typing import List, Tuple, Union
-from awq.utils.utils import set_module_name
-from awq.modules.fused.mlp import QuantLlamaMLP
-from awq.modules.fused.attn import QuantAttentionFused
-from awq.modules.fused.norm import FasterTransformerRMSNorm
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
-
-from awq.modules.fused.block import LlamaLikeBlock
-from awq.modules.fused.model import LlamaLikeModel
-from awq.utils.fused_utils import fuse_qkv
 
 class NewLlamaFuser:
     def __init__(self, model: OldLlamaForCausalLM):
         self.model = model
 
-        self.llama_blocks = List[Tuple[str, OldLlamaDecoderLayer]] = [
+        self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
-            if 'llamadecoderlayer' in module.__class__.__name__.lower()
+            if 'LlamaDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_transformer(self):
         blocks = []
 
         module: OldLlamaDecoderLayer
-        for module in self.model.model.layers:
+        for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
                 module,
@@ -100,15 +95,28 @@ class NewLlamaFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
+            mlp = QuantLlamaMLP(
+                module.mlp.gate_proj,
+                module.mlp.down_proj,
+                module.mlp.up_proj
+            )
+            norm_1 = FasterTransformerRMSNorm(
+                module.input_layernorm.weight,
+                module.input_layernorm.variance_epsilon
+            )
+            norm_2 = FasterTransformerRMSNorm(
+                module.post_attention_layernorm.weight,
+                module.post_attention_layernorm.variance_epsilon
+            )
             blocks.append(LlamaLikeBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                mlp=module.mlp,
-                norm_1=module.input_layernorm,
-                norm_2=module.post_attention_layernorm,
+                mlp=mlp,
+                norm_1=norm_1,
+                norm_2=norm_2,
                 dev=device,
                 max_seq_len=self.model.config.max_new_tokens
             ))
@@ -119,46 +127,3 @@ class NewLlamaFuser:
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
-
-class LlamaFuser:
-    def __init__(self, model):
-        self.model = model
-
-        self.attention_modules: List[Tuple[str, LlamaAttention]] = [
-            (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaAttention)
-        ]
-
-        self.rmsnorm_modules: List[Tuple[str, LlamaRMSNorm]] = [
-            (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaRMSNorm)
-        ]
-        
-        self.mlp_modules: List[Tuple[str, LlamaMLP]] = [
-            (name, module) for name, module in self.model.named_modules()
-            if isinstance(module, LlamaMLP)
-        ]
-    
-    def fuse_attention(self):
-        for name, module in self.attention_modules:
-            qkv_layer: Union[WQLinear_GEMM, WQLinear_GEMV] = self._fuse_qkv(module)
-            attn = QuantAttentionFused(
-                module.hidden_size,
-                module.num_heads,
-                module.num_key_value_heads,
-                qkv_layer, 
-                module.o_proj,
-                next(iter(qkv_layer.state_dict().values())).device,
-                self.model.config.max_new_tokens
-            )
-            set_module_name(self.model, name, attn)
-
-    def fuse_rmsnorm(self):
-        for name, module in self.rmsnorm_modules:
-            norm = FasterTransformerRMSNorm(module.weight, module.variance_epsilon)
-            set_module_name(self.model, name, norm)
-
-    def fuse_mlp(self):
-        for name, module in self.mlp_modules:
-            mlp = QuantLlamaMLP(module.gate_proj, module.down_proj, module.up_proj)
-            set_module_name(self.model, name, mlp)

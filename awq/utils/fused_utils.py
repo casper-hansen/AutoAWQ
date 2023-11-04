@@ -8,6 +8,8 @@ def prepare_attention_mask(seqlen, start_pos, device, type_as: torch.Tensor):
             (1, 1, seqlen, seqlen), float("-inf"), device=device
         )
         mask = torch.triu(mask, diagonal=start_pos+ 1).type_as(type_as)
+    
+    return mask
 
 def fuse_qkv(module, q_proj, k_proj, v_proj):
     bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None

@@ -7,6 +7,7 @@ from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, LlamaLikeBlock
 
 class LlamaLikeModel(nn.Module):
     def __init__(self, vocab_size, blocks, embedding, norm):
+        super().__init__()
         self.vocab_size = vocab_size
         self.embedding = embedding
         self.blocks: List[LlamaLikeBlock] = blocks
