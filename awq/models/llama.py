@@ -1,33 +1,34 @@
 from .base import BaseAWQForCausalLM
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaForCausalLM
+from transformers.models.llama.modeling_llama import (
+    LlamaDecoderLayer as OldLlamaDecoderLayer,
+    LlamaForCausalLM as OldLlamaForCausalLM
+)
 
 class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: LlamaForCausalLM):
-        fuser = LlamaFuser(model)
-        fuser.fuse_attention()
-        fuser.fuse_rmsnorm()
-        fuser.fuse_mlp()
+    def fuse_layers(model: OldLlamaForCausalLM):
+        fuser = NewLlamaFuser(model)
+        fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: LlamaForCausalLM):
+    def get_model_layers(model: OldLlamaForCausalLM):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: LlamaDecoderLayer):
+    def get_act_for_scaling(module: OldLlamaDecoderLayer):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: LlamaForCausalLM, device: str):
+    def move_embed(model: OldLlamaForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: LlamaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -74,6 +75,51 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRMSNorm, LlamaMLP
 
+from awq.modules.fused.block import LlamaLikeBlock
+from awq.modules.fused.model import LlamaLikeModel
+from awq.utils.fused_utils import fuse_qkv
+
+class NewLlamaFuser:
+    def __init__(self, model: OldLlamaForCausalLM):
+        self.model = model
+
+        self.llama_blocks = List[Tuple[str, OldLlamaDecoderLayer]] = [
+            (name, module) for name, module in self.model.named_modules()
+            if 'llamadecoderlayer' in module.__class__.__name__.lower()
+        ]
+    
+    def fuse_transformer(self):
+        blocks = []
+
+        module: OldLlamaDecoderLayer
+        for module in self.model.model.layers:
+            device = next(iter(module.state_dict().values())).device
+            qkv = fuse_qkv(
+                module,
+                module.self_attn.q_proj,
+                module.self_attn.k_proj,
+                module.self_attn.v_proj
+            )
+            blocks.append(LlamaLikeBlock(
+                hidden_size=self.model.config.hidden_size,
+                n_heads=self.model.config.num_attention_heads,
+                n_kv_heads=self.model.config.num_key_value_heads,
+                qkv_layer=qkv,
+                o_proj=module.self_attn.o_proj,
+                mlp=module.mlp,
+                norm_1=module.input_layernorm,
+                norm_2=module.post_attention_layernorm,
+                dev=device,
+                max_seq_len=self.model.config.max_new_tokens
+            ))
+        
+        self.model.model = LlamaLikeModel(
+            self.model.config.vocab_size,
+            blocks,
+            self.model.model.embed_tokens,
+            self.model.model.norm,
+        )
+
 class LlamaFuser:
     def __init__(self, model):
         self.model = model
@@ -106,38 +152,6 @@ class LlamaFuser:
                 self.model.config.max_new_tokens
             )
             set_module_name(self.model, name, attn)
-    
-    def _fuse_qkv(self, module: LlamaAttention):
-        q_proj, k_proj, v_proj = module.q_proj, module.k_proj, module.v_proj
-        bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
-
-        if isinstance(q_proj, WQLinear_GEMV):
-            q_linear = WQLinear_GEMV
-        else:
-            q_linear = WQLinear_GEMM
-
-        qkv_layer = q_linear(
-            q_proj.w_bit,
-            q_proj.group_size,
-            q_proj.in_features,
-            q_proj.out_features + k_proj.out_features + v_proj.out_features,
-            q_proj.bias is not None,
-            next(iter(module.state_dict().values())).device
-        )
-
-        if isinstance(qkv_layer, WQLinear_GEMV):
-            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
-            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
-            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
-            qkv_layer.split_k_iters = q_proj.split_k_iters
-        else:
-            qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
-            qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
-            qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
-        
-        qkv_layer.bias = bias
-
-        return qkv_layer
 
     def fuse_rmsnorm(self):
         for name, module in self.rmsnorm_modules:
