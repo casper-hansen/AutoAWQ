@@ -3,10 +3,11 @@ from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
 def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
     # NOTE: new transformers caching includes input ids with full context
-    num_new_tokens = 1
-    
-    if input_ids.shape[-1] != 1:
-        num_new_tokens = input_ids.shape[-1] - last_forward_num_tokens
+    num_input_tokens = input_ids.shape[-1]
+    num_new_tokens = num_input_tokens
+
+    if num_input_tokens != 1:
+        num_new_tokens = num_input_tokens - last_forward_num_tokens
         
         # after context is processed, slice to latest token
         if num_new_tokens in [0,1]:
