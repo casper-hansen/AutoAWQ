@@ -39,12 +39,12 @@ def generate(model, input_ids, n_generate):
     
     return context_time, generate_time
 
-def run_round(model_path, quant_file, n_generate, input_ids, batch_size, safetensors):
+def run_round(model_path, quant_file, n_generate, input_ids, batch_size, no_safetensors):
     print(f" -- Loading model...")
     model = AutoAWQForCausalLM.from_quantized(
         model_path, quant_file, fuse_layers=True,
         max_new_tokens=n_generate, batch_size=batch_size,
-        safetensors=safetensors
+        safetensors=not no_safetensors
     )
 
     print(f" -- Warming up...")
@@ -110,7 +110,7 @@ def main(args):
             settings["n_generate"],
             input_ids,
             args.batch_size,
-            args.safetensors
+            args.no_safetensors
         )
         
         all_stats.append(stats)
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default="casperhansen/mistral-7b-instruct-v0.1-awq", help="path to the model")
     parser.add_argument("--quant_file", type=str, default="", help="weights filename")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size for cache and generation")
-    parser.add_argument("--safetensors", default=True, action="store_false", help="Use for disabling safetensors")
+    parser.add_argument("--no_safetensors", default=True, action="store_false", help="Use for disabling safetensors")
     args = parser.parse_args()
 
     main(args)
