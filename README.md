@@ -212,7 +212,7 @@ These benchmarks showcase the speed and memory usage of processing context (pref
 
 - Tested with AutoAWQ version 0.1.6
 - GPU: RTX 4090 (AMD Ryzen 9 7950X)
-- Command: `python examples/benchmark --model_path <hf_model> --batch_size 1` (`--no_safetensors` if not using safetensors)
+- Command: `python examples/benchmark --model_path <hf_model> --batch_size 1`
 - 🟢 for GEMV, 🔵 for GEMM, 🔴 for avoid using
 
 | Model Name    | Version          | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
