@@ -214,29 +214,34 @@ These benchmarks showcase the speed and memory usage of processing context (pref
 - GPU: RTX 4090 (AMD Ryzen 9 7950X)
 - Command: `python examples/benchmark --model_path <hf_model> --batch_size 1` (`--no_safetensors` if not using safetensors)
 
-| Model Name    | Version                                     | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
-|---------------|---------------------------------------------|------------|----------------|---------------|------------------|-----------------|------------------|
-| Vicuna 7B     | <font color="lime">GEMV</font>              | 1          | 64             | 64            | 639.65           | 198.848         | 4.50 GB (19.05%) |
-| Vicuna 7B     | <font color="lime">GEMV</font>              | 1          | 2048           | 2048          | 1123.63          | 133.191         | 6.15 GB (26.02%) |
-| ...           | ...                                         | ...        | ...            | ...           | ...              | ...             | ...              |
-| Mistral 7B    | <font color="aqua">GEMM</font>              | 1          | 64             | 64            | 1093.35          | 156.317         | 4.35 GB (18.41%) |
-| Mistral 7B    | <font color="aqua">GEMM</font>              | 1          | 2048           | 2048          | 3897.02          | 114.355         | 5.55 GB (23.48%) |
-| Mistral 7B    | <font color="aqua">GEMM</font>              | 8          | 64             | 64            | 4199.18          | 1185.25         | 4.35 GB (18.41%) |
-| Mistral 7B    | <font color="aqua">GEMM</font>              | 8          | 2048           | 2048          | 3661.46          | 829.754         | 16.82 GB (71.12%)|
-| ...           | ...                                         | ...        | ...            | ...           | ...              | ...             | ...              |
-| Llama 2 13B   | <font color="aqua">GEMM</font>              | 1          | 64             | 64            | 820.34           | 96.74           | 8.47 GB (35.83%) |
-| Llama 2 13B   | <font color="aqua">GEMM</font>              | 1          | 2048           | 2048          | 2279.41          | 73.8213         | 10.28 GB (43.46%)|
-| Llama 2 13B   | <font color="aqua">GEMM</font>              | 3          | 64             | 64            | 1593.88          | 286.249         | 8.57 GB (36.24%) |
-| Llama 2 13B   | <font color="aqua">GEMM</font>              | 3          | 2048           | 2048          | 2226.7           | 189.573         | 16.90 GB (71.47%)|
-| ...           | ...                                         | ...        | ...            | ...           | ...              | ...             | ...              |
-| MPT 7B        | <font color="aqua">GEMM</font>              | 1          | 64             | 64            | 1079.06          | 161.344         | 3.67 GB (15.51%) |
-| MPT 7B        | <font color="aqua">GEMM</font>              | 1          | 2048           | 2048          | 4069.78          | 114.982         | 5.87 GB (24.82%) |
-| ...           | ...                                         | ...        | ...            | ...           | ...              | ...             | ...              |
-| Falcon 7B     | <font color="aqua">GEMM</font>              | 1          | 64             | 64            | 1139.93          | 133.585         | 4.47 GB (18.92%) |
-| Falcon 7B     | <font color="aqua">GEMM</font>              | 1          | 2048           | 2048          | 2850.97          | 115.73          | 6.83 GB (28.88%) |
-| ...           | ...                                         | ...        | ...            | ...           | ...              | ...             | ...              |
-| CodeLlama 34B | <font color="aqua">GEMM</font>              | 1          | 64             | 64            | 681.74           | 41.01           | 19.05 GB (80.57%)|
-| CodeLlama 34B | <font color="aqua">GEMM</font>              | 1          | 2048           | 2048          | 1072.36          | 35.8316         | 20.26 GB (85.68%)|
+| Model Name    | Version          | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
+|---------------|------------------|------------|----------------|---------------|------------------|-----------------|------------------|
+| Vicuna 7B     | 🟢 GEMV          | 1          | 64             | 64            | 639.65           | 198.848         | 4.50 GB (19.05%) |
+| Vicuna 7B     | 🟢 GEMV          | 1          | 2048           | 2048          | 1123.63          | 133.191         | 6.15 GB (26.02%) |
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral 7B    | 🔵 GEMM          | 1          | 64             | 64            | 1093.35          | 156.317         | 4.35 GB (18.41%) |
+| Mistral 7B    | 🔵 GEMM          | 1          | 2048           | 2048          | 3897.02          | 114.355         | 5.55 GB (23.48%) |
+| Mistral 7B    | 🔵 GEMM          | 8          | 64             | 64            | 4199.18          | 1185.25         | 4.35 GB (18.41%) |
+| Mistral 7B    | 🔵 GEMM          | 8          | 2048           | 2048          | 3661.46          | 829.754         | 16.82 GB (71.12%)|
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral 7B    | 🟢 GEMV          | 1          | 64             | 64            | 531.99           | 188.29          | 4.28 GB (18.08%) |
+| Mistral 7B    | 🟢 GEMV          | 1          | 2048           | 2048          | 903.83           | 130.66          | 5.55 GB (23.48%) |
+| Mistral 7B    | 🟢 GEMV          | 8          | 64             | 64            | 897.87           | 486.46          | 4.33 GB (18.31%) |
+| Mistral 7B    | 🟢 GEMV          | 8          | 2048           | 2048          | 884.22           | 411.893         | 16.82 GB (71.12%)|
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Llama 2 13B   | 🔵 GEMM          | 1          | 64             | 64            | 820.34           | 96.74           | 8.47 GB (35.83%) |
+| Llama 2 13B   | 🔵 GEMM          | 1          | 2048           | 2048          | 2279.41          | 73.8213         | 10.28 GB (43.46%)|
+| Llama 2 13B   | 🔵 GEMM          | 3          | 64             | 64            | 1593.88          | 286.249         | 8.57 GB (36.24%) |
+| Llama 2 13B   | 🔵 GEMM          | 3          | 2048           | 2048          | 2226.7           | 189.573         | 16.90 GB (71.47%)|
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| MPT 7B        | 🔵 GEMM          | 1          | 64             | 64            | 1079.06          | 161.344         | 3.67 GB (15.51%) |
+| MPT 7B        | 🔵 GEMM          | 1          | 2048           | 2048          | 4069.78          | 114.982         | 5.87 GB (24.82%) |
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Falcon 7B     | 🔵 GEMM          | 1          | 64             | 64            | 1139.93          | 133.585         | 4.47 GB (18.92%) |
+| Falcon 7B     | 🔵 GEMM          | 1          | 2048           | 2048          | 2850.97          | 115.73          | 6.83 GB (28.88%) |
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| CodeLlama 34B | 🔵 GEMM          | 1          | 64             | 64            | 681.74           | 41.01           | 19.05 GB (80.57%)|
+| CodeLlama 34B | 🔵 GEMM          | 1          | 2048           | 2048          | 1072.36          | 35.8316         | 20.26 GB (85.68%)|
 
 ## Reference
 
