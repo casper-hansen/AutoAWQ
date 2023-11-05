@@ -104,7 +104,7 @@ Under examples, you can find examples of how to quantize, run inference, and ben
 
 There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix multiplication runs under the hood. We suggest the following:
 
-- GEMV (quantized): 20% faster than GEMM for small batch sizes (max batch size 4 / small context).
+- GEMV (quantized): 20% faster than GEMM, only batch size 1 (not good for large context).
 - GEMM (quantized): Much faster than FP16 at batch sizes below 8 (good with large contexts).
 - FP16 (non-quantized): Recommended for highest throughput: [vLLM](https://github.com/vllm-project/vllm).
 
@@ -208,29 +208,47 @@ generation_output = model.generate(
 
 ## Benchmarks
 
-- GPU: RTX 3090
-- Command: `python examples/benchmark --model_path <hf_model>`
+These benchmarks showcase the speed and memory usage of processing context (prefill) and generating tokens (decoding). The results include speed at various batch sizes and different versions of AWQ kernels. We have aimed to test models fairly using the same benchmarking tool that you can use to reproduce the results. Do note that speed may vary not only between GPUs but also between CPUs. What matters most is a GPU with high memory bandwidth and a CPU with high single core clock speed.
 
-| Model Name    | Version | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
-|---------------|---------|------------|----------------|---------------|------------------|-----------------|------------------|
-| Vicuna 7B     | GEMM    | 1          | 64             | 64            | 2618.88          | 125.428         | 4.57 GB (19.31%) |
-| Vicuna 7B     | GEMM    | 1          | 128            | 128           | 2808.09          | 123.865         | 4.61 GB (19.44%) |
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
-| Vicuna 7B     | GEMV    | 1          | 64             | 64            | 233.909          | 154.475         | 4.66 GB (19.68%) |
-| Vicuna 7B     | GEMV    | 1          | 128            | 128           | 233.145          | 152.133         | 4.66 GB (19.68%) |
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
-| MPT 7B        | GEMM    | 1          | 64             | 64            | 2752.9           | 120.772         | 3.67 GB (15.48%) |
-| MPT 7B        | GEMM    | 1          | 128            | 128           | 2982.67          | 119.52          | 3.70 GB (15.61%) |
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
-| MPT 7B        | GEMV    | 1          | 64             | 64            | 241.026          | 136.476         | 3.67 GB (15.48%) |
-| MPT 7B        | GEMV    | 1          | 128            | 128           | 239.44           | 137.599         | 3.70 GB (15.61%) |
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
-| Falcon 7B     | GEMM    | 1          | 64             | 64            | 1920.61          | 94.5963         | 4.48 GB (18.92%) |
-| Falcon 7B     | GEMM    | 1          | 128            | 128           | 2406.1           | 94.793          | 4.48 GB (18.92%) |
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
-| Aquila2 34B   | GEMM    | 1          | 64             | 64            | 516.544          | 23.3536         | 18.26 GB (46.12%)|
-| Aquila2 34B   | GEMM    | 1          | 128            | 128           | 643.968          | 23.3803         | 18.26 GB (46.12%)|
-| ...           | ...     | ...        | ...            | ...           | ...              | ...             | ...              |
+- Tested with AutoAWQ version 0.1.6
+- GPU: RTX 4090 (AMD Ryzen 9 7950X)
+- Command: `python examples/benchmark --model_path <hf_model> --batch_size 1`
+- 🟢 for GEMV, 🔵 for GEMM, 🔴 for avoid using
+
+| Model Name |  Size    | Version          | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
+|------------|----------|------------------|------------|----------------|---------------|------------------|-----------------|------------------|
+| Vicuna     |   7B     | 🟢GEMV           | 1          | 64             | 64            | 639.65           | 198.848         | 4.50 GB (19.05%) |
+| Vicuna     |   7B     | 🟢GEMV           | 1          | 2048           | 2048          | 1123.63          | 133.191         | 6.15 GB (26.02%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral    |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1093.35          | 156.317         | 4.35 GB (18.41%) |
+| Mistral    |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 3897.02          | 114.355         | 5.55 GB (23.48%) |
+| Mistral    |   7B     | 🔵GEMM           | 8          | 64             | 64            | 4199.18          | 1185.25         | 4.35 GB (18.41%) |
+| Mistral    |   7B     | 🔵GEMM           | 8          | 2048           | 2048          | 3661.46          | 829.754         | 16.82 GB (71.12%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral    |   7B     | 🟢GEMV           | 1          | 64             | 64            | 531.99           | 188.29          | 4.28 GB (18.08%) |
+| Mistral    |   7B     | 🟢GEMV           | 1          | 2048           | 2048          | 903.83           | 130.66          | 5.55 GB (23.48%) |
+| Mistral    |   7B     | 🔴GEMV           | 8          | 64             | 64            | 897.87           | 486.46          | 4.33 GB (18.31%) |
+| Mistral    |   7B     | 🔴GEMV           | 8          | 2048           | 2048          | 884.22           | 411.893         | 16.82 GB (71.12%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| TinyLlama  |   1B     | 🟢GEMV           | 1          | 64             | 64            | 1088.63          | 548.993         | 0.86 GB (3.62%)  |
+| TinyLlama  |   1B     | 🟢GEMV           | 1          | 2048           | 2048          | 5178.98          | 431.468         | 2.10 GB (8.89%)  |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Llama 2    |   13B    | 🔵GEMM           | 1          | 64             | 64            | 820.34           | 96.74           | 8.47 GB (35.83%) |
+| Llama 2    |   13B    | 🔵GEMM           | 1          | 2048           | 2048          | 2279.41          | 73.8213         | 10.28 GB (43.46%)|
+| Llama 2    |   13B    | 🔵GEMM           | 3          | 64             | 64            | 1593.88          | 286.249         | 8.57 GB (36.24%) |
+| Llama 2    |   13B    | 🔵GEMM           | 3          | 2048           | 2048          | 2226.7           | 189.573         | 16.90 GB (71.47%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| MPT        |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1079.06          | 161.344         | 3.67 GB (15.51%) |
+| MPT        |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 4069.78          | 114.982         | 5.87 GB (24.82%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Falcon     |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1139.93          | 133.585         | 4.47 GB (18.92%) |
+| Falcon     |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 2850.97          | 115.73          | 6.83 GB (28.88%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| CodeLlama  |   34B    | 🔵GEMM           | 1          | 64             | 64            | 681.74           | 41.01           | 19.05 GB (80.57%)|
+| CodeLlama  |   34B    | 🔵GEMM           | 1          | 2048           | 2048          | 1072.36          | 35.8316         | 20.26 GB (85.68%)|
+| ...        |  ...     | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| DeepSeek   |   33B    | 🔵GEMM           | 1          | 64             | 64            | 1160.18          | 40.29           | 18.92 GB (80.00%)|
+| DeepSeek   |   33B    | 🔵GEMM           | 1          | 2048           | 2048          | 1012.1           | 34.0093         | 19.87 GB (84.02%)|
 
 ## Reference
 
