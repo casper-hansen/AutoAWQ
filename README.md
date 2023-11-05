@@ -34,10 +34,21 @@ Requirements:
 ---
 
 Install:
-- Use pip to install awq
+
+- Install from PyPi distributed wheels (torch 2.1.0 + CUDA 12.1.1)
 
 ```
 pip install autoawq
+```
+
+- Install from GitHub a release (torch 2.0.1 + CUDA 11.8.0)
+
+Remember to grab the right link for the [latest release](https://github.com/casper-hansen/AutoAWQ/releases) that matches your environment.
+
+For example, this wheel is torch 2.0.1 with CUDA 11.8.0 and Python 3.10 for Linux:
+
+```
+pip install https://github.com/casper-hansen/AutoAWQ/releases/download/v0.1.6/autoawq-0.1.6+cu118-cp310-cp310-linux_x86_64.whl
 ```
 
 ### Using conda
