@@ -246,6 +246,9 @@ These benchmarks showcase the speed and memory usage of processing context (pref
 | ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
 | CodeLlama 34B | 🔵GEMM           | 1          | 64             | 64            | 681.74           | 41.01           | 19.05 GB (80.57%)|
 | CodeLlama 34B | 🔵GEMM           | 1          | 2048           | 2048          | 1072.36          | 35.8316         | 20.26 GB (85.68%)|
+| ...           | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| DeepSeek 33B  | 🔵GEMM           | 1          | 64             | 64            | 1160.18          | 40.29           | 18.92 GB (80.00%)|
+| DeepSeek 33B  | 🔵GEMM           | 1          | 2048           | 2048          | 1012.1          | 34.0093         | 19.87 GB (84.02%)|
 
 ## Reference
 
