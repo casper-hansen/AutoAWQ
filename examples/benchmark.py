@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default="casperhansen/mistral-7b-instruct-v0.1-awq", help="path to the model")
     parser.add_argument("--quant_file", type=str, default="", help="weights filename")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size for cache and generation")
-    parser.add_argument("--no_safetensors", default=True, action="store_false", help="Use for disabling safetensors")
+    parser.add_argument("--no_safetensors", default=False, action="store_true", help="Use for disabling safetensors")
     args = parser.parse_args()
 
     main(args)
