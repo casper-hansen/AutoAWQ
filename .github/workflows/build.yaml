@@ -108,7 +108,7 @@ jobs:
           $env:CUDA_HOME = $env:CONDA_PREFIX
 
           # Only add +cu118 to wheel if not releasing on PyPi
-          if ( env:CUDA_VERSION = env:PYPI_CUDA_VERSION ){
+          if ( $env:CUDA_VERSION = $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
 
