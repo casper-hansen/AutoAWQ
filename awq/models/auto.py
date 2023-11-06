@@ -16,6 +16,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "mistral": MistralAWQForCausalLM,
     "gpt_neox": GPTNeoXAWQForCausalLM,
     "aquila": AquilaAWQForCausalLM,
+    "Yi": YiAWQForCausalLM
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
