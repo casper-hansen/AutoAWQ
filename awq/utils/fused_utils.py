@@ -1,5 +1,19 @@
+import os
 import torch
+from transformers import PreTrainedModel
+from awq.models._const import AWQ_FUSER_MAP
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+
+
+def fuse_model(model: PreTrainedModel, batch_size=1):
+    if model.config.model_type not in AWQ_FUSER_MAP.keys():
+        raise TypeError(f"{model.config.model_type} isn't supported yet.")
+
+    os.environ["AWQ_BATCH_SIZE"] = str(batch_size)
+
+    # Get fuser and fuse model layers
+    fuser = AWQ_FUSER_MAP[model.config.model_type](model)
+    fuser.fuse()
 
 def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
     # NOTE: from transformers 4.35.0, input_ids includes full context during decoding

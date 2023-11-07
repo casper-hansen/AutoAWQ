@@ -18,7 +18,7 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: OldAquilaForCausalLM):
         fuser = AquilaFuser(model)
-        fuser.fuse_transformer()
+        fuser.fuse()
 
     @staticmethod
     def get_model_layers(model: OldAquilaForCausalLM):
@@ -83,7 +83,7 @@ class AquilaFuser:
             if 'AquilaDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
-    def fuse_transformer(self):
+    def fuse(self):
         blocks = []
 
         module: OldAquilaDecoderLayer

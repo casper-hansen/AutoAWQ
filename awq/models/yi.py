@@ -14,7 +14,7 @@ class YiAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model):
         fuser = YiFuser(model)
-        fuser.fuse_transformer()
+        fuser.fuse()
 
     @staticmethod
     def get_model_layers(model):
@@ -79,7 +79,7 @@ class YiFuser:
             if 'YiDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
-    def fuse_transformer(self):
+    def fuse(self):
         blocks = []
 
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):

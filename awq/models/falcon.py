@@ -10,7 +10,7 @@ class FalconAWQForCausalLM(BaseAWQForCausalLM):
 
         # TODO: Implement correctly fused modules for Falcon 40B and Falcon 180B
         if model.config.num_attention_heads == 71:
-            fuser.fuse_transformer()
+            fuser.fuse()
 
     @staticmethod
     def get_model_layers(model: FalconForCausalLM):
@@ -73,7 +73,7 @@ class FalconFuser:
     def __init__(self, model: FalconForCausalLM):
         self.model = model
     
-    def fuse_transformer(self):
+    def fuse(self):
         blocks = []
 
         module: OldFalconDecoderLayer

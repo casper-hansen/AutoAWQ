@@ -18,7 +18,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: OldLlamaForCausalLM):
         fuser = LlamaFuser(model)
-        fuser.fuse_transformer()
+        fuser.fuse()
 
     @staticmethod
     def get_model_layers(model: OldLlamaForCausalLM):
@@ -83,7 +83,7 @@ class LlamaFuser:
             if 'LlamaDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
-    def fuse_transformer(self):
+    def fuse(self):
         blocks = []
 
         module: OldLlamaDecoderLayer

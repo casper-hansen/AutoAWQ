@@ -18,7 +18,7 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: OldMistralForCausalLM):
         fuser = MistralFuser(model)
-        fuser.fuse_transformer()
+        fuser.fuse()
 
     @staticmethod
     def get_model_layers(model: OldMistralForCausalLM):
@@ -83,7 +83,7 @@ class MistralFuser:
             if 'MistralDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
-    def fuse_transformer(self):
+    def fuse(self):
         blocks = []
 
         module: OldMistralDecoderLayer

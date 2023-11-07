@@ -1,23 +1,7 @@
 import os
 from transformers import AutoConfig
-from awq.models import *
 from awq.models.base import BaseAWQForCausalLM
-
-AWQ_CAUSAL_LM_MODEL_MAP = {
-    "mpt": MptAWQForCausalLM,
-    "llama": LlamaAWQForCausalLM,
-    "opt": OptAWQForCausalLM,
-    "RefinedWeb": FalconAWQForCausalLM,
-    "RefinedWebModel": FalconAWQForCausalLM,
-    "falcon": FalconAWQForCausalLM,
-    "bloom": BloomAWQForCausalLM,
-    "gptj": GPTJAWQForCausalLM,
-    "gpt_bigcode": GptBigCodeAWQForCausalLM,
-    "mistral": MistralAWQForCausalLM,
-    "gpt_neox": GPTNeoXAWQForCausalLM,
-    "aquila": AquilaAWQForCausalLM,
-    "Yi": YiAWQForCausalLM
-}
+from awq.models._const import AWQ_CAUSAL_LM_MODEL_MAP
 
 def check_and_get_model_type(model_dir, trust_remote_code=True):
     config = AutoConfig.from_pretrained(model_dir, trust_remote_code=trust_remote_code)
