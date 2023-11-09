@@ -48,3 +48,12 @@ class WindowedCache:
         self.k = self.k.to(device)
         self.v = self.v.to(device)
     
+    def increase_batch_size(self, to_bsz):
+        """Dynamically allocate new kv when batch size changes."""
+        self.v = torch.zeros(to_bsz, *self.v.shape[1:], dtype=self.v.dtype, device=self.v.device)
+        self.k = torch.zeros(to_bsz, *self.k.shape[1:], dtype=self.k.dtype, device=self.k.device)
+
+    def decrease_batch_size(self, to_bsz):
+        """Dynamically remove part of cache if batch size changes."""
+        self.v = self.v[:to_bsz, :, :, :]
+        self.k = self.k[:to_bsz, :, :, :, :]

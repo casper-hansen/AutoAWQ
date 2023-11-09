@@ -1,6 +1,7 @@
 import os
 import math
 import torch
+import logging
 import torch.nn as nn
 from torch.nn import functional as F
 from awq.modules.fused.cache import WindowedCache
@@ -102,6 +103,7 @@ class QuantAttentionFused(nn.Module):
         self.max_seq_len = max_seq_len
 
         # attention shapes for self attention
+        self.last_attention_shapes = attention_shapes
         self.attention_shapes = get_attention_shapes(
             attention_shapes, max_seq_len, self.cache_batch_size, n_heads, n_kv_heads, self.head_dim
         )
@@ -124,10 +126,13 @@ class QuantAttentionFused(nn.Module):
         bsz, seqlen, _ = hidden_states.shape
 
         if bsz != self.cache_batch_size:
-            raise RuntimeError(
-                f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
-                f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
-            )
+            # logging.warning("Dynamically reallocating batch size.")
+            if bsz > self.cache_batch_size:
+                self.cache.increase_batch_size(bsz)
+                self.cache_batch_size = bsz
+            elif bsz < self.cache_batch_size:
+                self.cache.decrease_batch_size(bsz)
+                self.cache_batch_size = bsz
 
         will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
 
