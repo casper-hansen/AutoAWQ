@@ -1,7 +1,6 @@
 import os
 import math
 import torch
-import logging
 import torch.nn as nn
 from torch.nn import functional as F
 from awq.modules.fused.cache import WindowedCache
