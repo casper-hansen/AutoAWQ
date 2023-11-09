@@ -103,7 +103,6 @@ class QuantAttentionFused(nn.Module):
         self.max_seq_len = max_seq_len
 
         # attention shapes for self attention
-        self.last_attention_shapes = attention_shapes
         self.attention_shapes = get_attention_shapes(
             attention_shapes, max_seq_len, self.cache_batch_size, n_heads, n_kv_heads, self.head_dim
         )
