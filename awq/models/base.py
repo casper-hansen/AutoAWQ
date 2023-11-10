@@ -122,6 +122,7 @@ class BaseAWQForCausalLM(nn.Module):
             trust_remote_code=trust_remote_code,
             torch_dtype=torch_dtype,
             use_safetensors=safetensors,
+            device_map=device_map,
             **model_init_kwargs
         )
 
