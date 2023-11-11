@@ -7,7 +7,7 @@ def prepare_cache(blocks, seqlen: int) -> int:
         will_cache_be_exceeded = start_pos + seqlen > block.attn.max_seq_len
 
         # Reset and avoid retaining state when processing context
-        if seqlen > 1 and (will_cache_be_exceeded or start_pos > 1):
+        if seqlen > 1 and (will_cache_be_exceeded or start_pos > 0):
             block.attn.start_pos = block.attn.cache.roll_kv_n_steps(start_pos, n=start_pos)
         
         # Slowly roll out old tokens without performance hit if exceeded during decoding 
