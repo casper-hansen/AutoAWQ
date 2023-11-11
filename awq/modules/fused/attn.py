@@ -131,15 +131,6 @@ class QuantAttentionFused(nn.Module):
             elif bsz < self.cache_batch_size:
                 self.cache.decrease_batch_size(bsz)
                 self.cache_batch_size = bsz
-
-        will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
-
-        # Reset and avoid retaining state when processing context
-        if will_cache_be_exceeded and seqlen > 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=self.start_pos)
-        # Slowly roll out old tokens without performance hit if exceeded during decoding 
-        elif will_cache_be_exceeded and seqlen == 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=100)
             
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
@@ -218,5 +209,7 @@ class QuantAttentionFused(nn.Module):
         self.start_pos += seqlen
 
         # past_key_value is replaced with cache_v, cache_k, returning empty data
-        past_key_value = [torch.Tensor([ [ [[0]], [[0]], [[0]] ] ])]
+        # we pass a dummy past kv cache for transformers to be able to retrieve the correct info 
+        # about past key length
+        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)]
         return attn_output, attention_weight, past_key_value

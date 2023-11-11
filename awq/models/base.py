@@ -67,9 +67,10 @@ class BaseAWQForCausalLM(nn.Module):
         self.quant_config.save_pretrained(save_dir)
 
         # Remove empty state dict
-        default_path = f'{save_dir}/model.safetensors'
-        if os.path.exists(default_path):
-            os.remove(default_path)
+        default_paths = [f'{save_dir}/model.safetensors', f'{save_dir}/pytorch_model.bin']
+        for path in default_paths:
+            if os.path.exists(path):
+                os.remove(path)
 
         # model_name has no extension, add it when saving state_dict
         model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
