@@ -2,6 +2,39 @@ import os
 import torch.nn as nn
 from awq.modules.fused.attn import QuantAttentionFused
 
+class LlamaLikeBlock(nn.Module):
+    """
+    LlamaLikeBlock is intended to be reused across blocks that have
+    an architecture that closely resembles Llama, e.g. Mistral and Aquila.
+    """
+    def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, mlp, norm_1, norm_2, dev, max_seq_len):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.hidden_size = hidden_size
+        self.norm_1 = norm_1.to(dev)
+        self.attn = QuantAttentionFused(
+            self.hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj,
+            dev=dev, max_seq_len=max_seq_len, use_alibi=False
+        ).to(dev)
+        self.norm_2 = norm_2.to(dev)
+        self.mlp = mlp.to(dev)
+
+    def forward(
+        self, hidden_states, past_key_value, attn_bias=None, attention_mask=None, is_causal=None
+    ):
+        norm_out = self.norm_1(hidden_states)
+        attn_output, _, past_key_value = self.attn.forward(
+            hidden_states=norm_out,
+            past_key_value=past_key_value,
+            attention_mask=attention_mask
+        )
+
+        h = hidden_states + attn_output
+        out = h + self.mlp.forward(self.norm_2(h))
+
+        return out, None, past_key_value
+
 class MPTBlock(nn.Module):
     def __init__(self, hidden_size, n_heads, qkv_layer, o_proj, mpt_mlp, norm_1, norm_2, dev, max_seq_len):
         super().__init__()

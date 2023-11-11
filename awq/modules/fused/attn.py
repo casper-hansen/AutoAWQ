@@ -107,7 +107,7 @@ class QuantAttentionFused(nn.Module):
         )
         # cache store that rolls cache
         self.cache = WindowedCache(
-            self.attention_shapes["cache_v"], self.attention_shapes["cache_k"], dev
+            self.attention_shapes["cache_v"], self.attention_shapes["cache_k"], self.max_seq_len, dev
         )
 
         if use_alibi:
@@ -122,15 +122,15 @@ class QuantAttentionFused(nn.Module):
     
     def forward(self, hidden_states:torch.Tensor, attention_mask=None, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
-        if bsz != self.cache_batch_size:
-            raise RuntimeError(
-                f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
-                f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
-            )
 
-        if self.start_pos > self.max_seq_len or self.start_pos + seqlen > self.max_seq_len:
-            excess_length = self.start_pos + seqlen - self.max_seq_len
-            self.start_pos = self.cache.roll_kv(excess_length, self.start_pos)
+        # Reallocate cache if batch size changes
+        if bsz != self.cache_batch_size:
+            if bsz > self.cache_batch_size:
+                self.cache.increase_batch_size(bsz)
+                self.cache_batch_size = bsz
+            elif bsz < self.cache_batch_size:
+                self.cache.decrease_batch_size(bsz)
+                self.cache_batch_size = bsz
             
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
@@ -158,8 +158,10 @@ class QuantAttentionFused(nn.Module):
             
             self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
 
+            # Only necessary to retrieve from cache when we are not processing context
             if seqlen == 1:
                 xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
+
             
             keys = xk
             values = xv
@@ -179,7 +181,6 @@ class QuantAttentionFused(nn.Module):
             # When seqlen is 1, there is nothing else to attend to
             if attention_mask is not None and seqlen > 1:
                 scores = scores + attention_mask  # (bs, n_local_heads, slen, cache_len + slen)
-                
             scores = F.softmax(scores.float(), dim=-1).type_as(xq)
             output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
             attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
@@ -208,5 +209,7 @@ class QuantAttentionFused(nn.Module):
         self.start_pos += seqlen
 
         # past_key_value is replaced with cache_v, cache_k, returning empty data
-        past_key_value = [torch.Tensor([ [ [[0]], [[0]], [[0]] ] ])]
+        # we pass a dummy past kv cache for transformers to be able to retrieve the correct info 
+        # about past key length
+        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)]
         return attn_output, attention_weight, past_key_value

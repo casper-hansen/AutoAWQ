@@ -41,12 +41,13 @@ jobs:
       matrix:
         os: [ubuntu-20.04, windows-latest]
         pyver: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["11.8"]
+        cuda: ["11.8.0", "12.1.1"]
     defaults:
       run:
         shell: pwsh
     env:
-        CUDA_VERSION: ${{ matrix.cuda }}
+      PYPI_CUDA_VERSION: "12.1.1"  
+      CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
       - name: Free Disk Space
@@ -81,15 +82,17 @@ jobs:
       - name: Install Dependencies
         run: |
           # Install CUDA toolkit
-          mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}.0"
+          mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}"
 
           # Env variables
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
           
           # Install torch
-          $cudaVersionPytorch = $env:CUDA_VERSION.Replace('.', '')
-          python -m pip install --upgrade --no-cache-dir torch==2.0.1+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
+          $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
+          $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
+          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.1.0" } else {$pytorchVersion = "torch==2.0.1"}
+          python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install build setuptools wheel ninja
 
           # Print version information
@@ -103,6 +106,11 @@ jobs:
         run: |
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
+
+          # Only add +cu118 to wheel if not releasing on PyPi
+          if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
+            $env:PYPI_BUILD = 1
+          }
 
           python setup.py sdist bdist_wheel
       

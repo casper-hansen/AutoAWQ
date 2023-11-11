@@ -6,3 +6,6 @@ from .bloom import BloomAWQForCausalLM
 from .gptj import GPTJAWQForCausalLM
 from .gpt_bigcode import GptBigCodeAWQForCausalLM
 from .mistral import MistralAWQForCausalLM
+from .gpt_neox import GPTNeoXAWQForCausalLM
+from .aquila import AquilaAWQForCausalLM
+from .yi import YiAWQForCausalLM

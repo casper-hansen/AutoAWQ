@@ -7,9 +7,18 @@ from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
 
 os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
+AUTOAWQ_VERSION = "0.1.6"
+PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
+
+if not PYPI_BUILD:
+    try:
+        CUDA_VERSION = "".join(os.environ.get("CUDA_VERSION", torch.version.cuda).split("."))[:3]
+        AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
+    except Exception as ex:
+        raise RuntimeError("Your system must have an Nvidia GPU for installing AutoAWQ")
 
 common_setup_kwargs = {
-    "version": "0.1.4",
+    "version": AUTOAWQ_VERSION,
     "name": "autoawq",
     "author": "Casper Hansen",
     "license": "MIT",
@@ -34,8 +43,8 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "torch>=2.0.0",
-    "transformers>=4.34.0",
+    "torch>=2.0.1",
+    "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "accelerate",
     "sentencepiece",

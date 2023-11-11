@@ -6,19 +6,20 @@
 </p>
 <p align="center">
     <a href="https://huggingface.co/models?search=awq">
-        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_400+_models_available-8A2BE2">
+        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_600+_models_available-8A2BE2">
     </a>
     <a href="https://github.com/casper-hansen/AutoAWQ/releases">
         <img alt="GitHub - Releases" src="https://img.shields.io/github/release/casper-hansen/AutoAWQ.svg">
     </a>
     <a href="https://pypi.org/project/autoawq/">
-        <img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dd/autoawq">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/autoawq/month">
     </a>
 </p>
 
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2023/11] AutoAWQ has been merged into 🤗 transformers. Now includes CUDA 12.1 wheels.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
 - [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon).
 - [2023/09] Multi-GPU support, bug fixes, and better benchmark scripts available
@@ -33,10 +34,21 @@ Requirements:
 ---
 
 Install:
-- Use pip to install awq
+
+- Install from PyPi distributed wheels (torch 2.1.0 + CUDA 12.1.1)
 
 ```
 pip install autoawq
+```
+
+- Install from GitHub a release (torch 2.0.1 + CUDA 11.8.0)
+
+Remember to grab the right link for the [latest release](https://github.com/casper-hansen/AutoAWQ/releases) that matches your environment.
+
+For example, this wheel is torch 2.0.1 with CUDA 11.8.0 and Python 3.10 for Linux:
+
+```
+pip install https://github.com/casper-hansen/AutoAWQ/releases/download/v0.1.6/autoawq-0.1.6+cu118-cp310-cp310-linux_x86_64.whl
 ```
 
 ### Using conda
@@ -74,12 +86,15 @@ The detailed support list:
 | ---------| ----------------------------|
 | LLaMA-2  | 7B/13B/70B                  |
 | LLaMA    | 7B/13B/30B/65B              |
+| Mistral  | 7B                          |
 | Vicuna   | 7B/13B                      |
 | MPT      | 7B/30B                      |
 | Falcon   | 7B/40B                      |
 | OPT      | 125m/1.3B/2.7B/6.7B/13B/30B |
 | Bloom    | 560m/3B/7B/                 |
 | GPTJ     | 6.7B                        |
+| Aquila   | 7B                          |
+| Aquila2  | 7B/34B                      |
 
 ## Usage
 
@@ -89,11 +104,30 @@ Under examples, you can find examples of how to quantize, run inference, and ben
 
 There are two versions of AWQ: GEMM and GEMV. Both names relate to how matrix multiplication runs under the hood. We suggest the following:
 
-- GEMV (quantized): Best for small context, batch size 1, highest number of tokens/s.
-- GEMM (quantized): Best for larger context, up to batch size 8, faster than GEMV on batch size > 1, slower than GEMV on batch size = 1.
-- FP16 (non-quantized): Best for large batch sizes of 8 or larger, highest throughput. We recommend [TGI](https://github.com/huggingface/text-generation-inference) or [vLLM](https://github.com/vllm-project/vllm).
+- GEMV (quantized): 20% faster than GEMM, only batch size 1 (not good for large context).
+- GEMM (quantized): Much faster than FP16 at batch sizes below 8 (good with large contexts).
+- FP16 (non-quantized): Recommended for highest throughput: [vLLM](https://github.com/vllm-project/vllm).
+
+#### Compute-bound vs Memory-bound
+
+At small batch sizes with small 7B models, we are memory-bound. This means we are bound by the bandwidth our GPU has to push around the weights in memory, and this is essentially what limits how many tokens per second we can generate. Being memory-bound is what makes quantized models faster because your weights are 3x smaller and can therefore be pushed around in memory much faster. This is different from being compute-bound where the main time spent during generation is doing matrix multiplication. 
+
+In the scenario of being compute-bound, which happens at higher batch sizes, you will not gain a speed-up using a W4A16 quantized model because the overhead of dequantization will slow down the overall generation. This happens because AWQ quantized models only store the weights in INT4 but perform FP16 operations during inference, so we are essentially converting INT4 -> FP16 during inference.
+
+### Fused modules
+
+Fused modules are a large part of the speedup you get from AutoAWQ. The idea is to combine multiple layers into a single operation, thus becoming more efficient. Fused modules represent a set of custom modules that work separately from Huggingface models. They are compatible with `model.generate()` and other Huggingface methods, which comes with some inflexibility in how you can use your model if you activate fused modules:
+
+- Fused modules are activated when you use `fuse_layers=True`.
+- A custom cache is implemented. It preallocates based on batch size and sequence length.
+    - You cannot change the sequence length after you have created your model.
+    - Reference: `AutoAWQForCausalLM.from_quantized(max_new_tokens=seq_len, batch_size=batch_size)`
+- The main accelerator in the fused modules comes from FasterTransformer, which is only compatible with Linux.
+- The `past_key_values` from `model.generate()` are only dummy values, so they cannot be used after generation.
 
 ### Examples
+
+More examples can be found in the [examples directory](examples).
 
 <details>
 
@@ -107,7 +141,7 @@ from transformers import AutoTokenizer
 
 model_path = 'lmsys/vicuna-7b-v1.5'
 quant_path = 'vicuna-7b-v1.5-awq'
-quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4 }
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(model_path)
@@ -132,10 +166,9 @@ from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
 quant_path = "casperhansen/vicuna-7b-v1.5-awq"
-quant_file = "awq_model_w4_g128.pt"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, quant_file, fuse_layers=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_special_tokens=True)
 
@@ -175,86 +208,47 @@ generation_output = model.generate(
 
 ## Benchmarks
 
-### Vicuna 7B (LLaMa-2)
+These benchmarks showcase the speed and memory usage of processing context (prefill) and generating tokens (decoding). The results include speed at various batch sizes and different versions of AWQ kernels. We have aimed to test models fairly using the same benchmarking tool that you can use to reproduce the results. Do note that speed may vary not only between GPUs but also between CPUs. What matters most is a GPU with high memory bandwidth and a CPU with high single core clock speed.
 
-- Note: Blazing fast generation, slow context processing
-- GPU: NVIDIA GeForce RTX 3090
-- Version: GEMV
-- Command: `python examples/benchmark.py --model_path casperhansen/vicuna-7b-v1.5-awq-gemv`
+- Tested with AutoAWQ version 0.1.6
+- GPU: RTX 4090 (AMD Ryzen 9 7950X)
+- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
+- 🟢 for GEMV, 🔵 for GEMM, 🔴 for avoid using
 
-|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
-|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
-|            1 |               32 |              32 |           231.393  |           153.632 | 4.66 GB (19.68%) |
-|            1 |               64 |              64 |           233.909  |           154.475 | 4.66 GB (19.68%) |
-|            1 |              128 |             128 |           233.145  |           152.133 | 4.66 GB (19.68%) |
-|            1 |              256 |             256 |           228.562  |           147.692 | 4.67 GB (19.72%) |
-|            1 |              512 |             512 |           228.914  |           139.179 | 4.80 GB (20.26%) |
-|            1 |             1024 |            1024 |           227.393  |           125.058 | 5.56 GB (23.48%) |
-|            1 |             2048 |            2048 |           225.736  |           123.228 | 8.08 GB (34.09%) |
-
-- Note: Fast generation, fast context processing
-- GPU: NVIDIA GeForce RTX 3090
-- Version: GEMM
-- Command: `python examples/benchmark.py --model_path casperhansen/vicuna-7b-v1.5-awq`
-
-|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
-|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
-|            1 |               32 |              32 |            521.444 |           126.51  | 4.55 GB (19.21%) |
-|            1 |               64 |              64 |           2618.88  |           125.428 | 4.57 GB (19.31%) |
-|            1 |              128 |             128 |           2808.09  |           123.865 | 4.61 GB (19.44%) |
-|            1 |              256 |             256 |           2807.46  |           120.779 | 4.67 GB (19.72%) |
-|            1 |              512 |             512 |           2769.9   |           115.08  | 4.80 GB (20.26%) |
-|            1 |             1024 |            1024 |           2640.95  |           105.493 | 5.56 GB (23.48%) |
-|            1 |             2048 |            2048 |           2341.36  |           104.188 | 8.08 GB (34.09%) |
-
-### MPT 7B
-
-- Note: Blazing fast generation, slow context processing
-- GPU: NVIDIA GeForce RTX 3090
-- Command: `python examples/benchmark.py --model_path casperhansen/mpt-7b-8k-chat-awq-gemv`
-- Version: GEMV
-
-|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
-|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
-|            1 |               32 |              32 |            187.332 |           136.765 | 3.65 GB (15.42%) |
-|            1 |               64 |              64 |            241.026 |           136.476 | 3.67 GB (15.48%) |
-|            1 |              128 |             128 |            239.44  |           137.599 | 3.70 GB (15.61%) |
-|            1 |              256 |             256 |            233.184 |           137.02  | 3.76 GB (15.88%) |
-|            1 |              512 |             512 |            233.082 |           135.633 | 3.89 GB (16.41%) |
-|            1 |             1024 |            1024 |            231.504 |           122.197 | 4.40 GB (18.57%) |
-|            1 |             2048 |            2048 |            228.307 |           121.468 | 5.92 GB (24.98%) |
-
-- Note: Fast generation, fast context processing
-- GPU: NVIDIA GeForce RTX 3090
-- Version: GEMM
-- Command: `python examples/benchmark.py --model_path casperhansen/mpt-7b-8k-chat-awq`
-
-|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
-|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
-|            1 |               32 |              32 |            557.714 |           118.567 | 3.65 GB (15.42%) |
-|            1 |               64 |              64 |           2752.9   |           120.772 | 3.67 GB (15.48%) |
-|            1 |              128 |             128 |           2982.67  |           119.52  | 3.70 GB (15.61%) |
-|            1 |              256 |             256 |           3009.16  |           116.911 | 3.76 GB (15.88%) |
-|            1 |              512 |             512 |           2901.91  |           111.607 | 3.95 GB (16.68%) |
-|            1 |             1024 |            1024 |           2718.68  |           102.623 | 4.40 GB (18.57%) |
-|            1 |             2048 |            2048 |           2363.61  |           101.368 | 5.92 GB (24.98%) |
-
-### Falcon 7B
-
-- Note: Fast generation, fast context processing
-- GPU: NVIDIA GeForce RTX 3090
-- Command: `python examples/benchmark.py --model_path casperhansen/falcon-7b-awq --quant_file awq_model_w4_g64.pt`
-- Version: GEMM
-
-|   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)    |
-|-------------:|-----------------:|----------------:|-------------------:|------------------:|:-----------------|
-|            1 |               32 |              32 |            466.826 |           95.1413 | 4.47 GB (18.88%) |
-|            1 |               64 |              64 |           1920.61  |           94.5963 | 4.48 GB (18.92%) |
-|            1 |              128 |             128 |           2406.1   |           94.793  | 4.48 GB (18.92%) |
-|            1 |              256 |             256 |           2521.08  |           94.1144 | 4.48 GB (18.92%) |
-|            1 |              512 |             512 |           2478.28  |           93.4123 | 4.48 GB (18.92%) |
-|            1 |             1024 |            1024 |           2256.22  |           94.0237 | 4.69 GB (19.78%) |
-|            1 |             2048 |            2048 |           1831.71  |           94.2032 | 6.83 GB (28.83%) |
+| Model Name |  Size    | Version          | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM)    |
+|------------|----------|------------------|------------|----------------|---------------|------------------|-----------------|------------------|
+| Vicuna     |   7B     | 🟢GEMV           | 1          | 64             | 64            | 639.65           | 198.848         | 4.50 GB (19.05%) |
+| Vicuna     |   7B     | 🟢GEMV           | 1          | 2048           | 2048          | 1123.63          | 133.191         | 6.15 GB (26.02%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral    |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1093.35          | 156.317         | 4.35 GB (18.41%) |
+| Mistral    |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 3897.02          | 114.355         | 5.55 GB (23.48%) |
+| Mistral    |   7B     | 🔵GEMM           | 8          | 64             | 64            | 4199.18          | 1185.25         | 4.35 GB (18.41%) |
+| Mistral    |   7B     | 🔵GEMM           | 8          | 2048           | 2048          | 3661.46          | 829.754         | 16.82 GB (71.12%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Mistral    |   7B     | 🟢GEMV           | 1          | 64             | 64            | 531.99           | 188.29          | 4.28 GB (18.08%) |
+| Mistral    |   7B     | 🟢GEMV           | 1          | 2048           | 2048          | 903.83           | 130.66          | 5.55 GB (23.48%) |
+| Mistral    |   7B     | 🔴GEMV           | 8          | 64             | 64            | 897.87           | 486.46          | 4.33 GB (18.31%) |
+| Mistral    |   7B     | 🔴GEMV           | 8          | 2048           | 2048          | 884.22           | 411.893         | 16.82 GB (71.12%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| TinyLlama  |   1B     | 🟢GEMV           | 1          | 64             | 64            | 1088.63          | 548.993         | 0.86 GB (3.62%)  |
+| TinyLlama  |   1B     | 🟢GEMV           | 1          | 2048           | 2048          | 5178.98          | 431.468         | 2.10 GB (8.89%)  |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Llama 2    |   13B    | 🔵GEMM           | 1          | 64             | 64            | 820.34           | 96.74           | 8.47 GB (35.83%) |
+| Llama 2    |   13B    | 🔵GEMM           | 1          | 2048           | 2048          | 2279.41          | 73.8213         | 10.28 GB (43.46%)|
+| Llama 2    |   13B    | 🔵GEMM           | 3          | 64             | 64            | 1593.88          | 286.249         | 8.57 GB (36.24%) |
+| Llama 2    |   13B    | 🔵GEMM           | 3          | 2048           | 2048          | 2226.7           | 189.573         | 16.90 GB (71.47%)|
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| MPT        |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1079.06          | 161.344         | 3.67 GB (15.51%) |
+| MPT        |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 4069.78          | 114.982         | 5.87 GB (24.82%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| Falcon     |   7B     | 🔵GEMM           | 1          | 64             | 64            | 1139.93          | 133.585         | 4.47 GB (18.92%) |
+| Falcon     |   7B     | 🔵GEMM           | 1          | 2048           | 2048          | 2850.97          | 115.73          | 6.83 GB (28.88%) |
+| ...        |   ...    | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| CodeLlama  |   34B    | 🔵GEMM           | 1          | 64             | 64            | 681.74           | 41.01           | 19.05 GB (80.57%)|
+| CodeLlama  |   34B    | 🔵GEMM           | 1          | 2048           | 2048          | 1072.36          | 35.8316         | 20.26 GB (85.68%)|
+| ...        |  ...     | ...              | ...        | ...            | ...           | ...              | ...             | ...              |
+| DeepSeek   |   33B    | 🔵GEMM           | 1          | 64             | 64            | 1160.18          | 40.29           | 18.92 GB (80.00%)|
+| DeepSeek   |   33B    | 🔵GEMM           | 1          | 2048           | 2048          | 1012.1           | 34.0093         | 19.87 GB (84.02%)|
 
 ## Reference
 

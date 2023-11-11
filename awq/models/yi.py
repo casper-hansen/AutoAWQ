@@ -4,43 +4,39 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.mistral.modeling_mistral import (
-    MistralDecoderLayer as OldMistralDecoderLayer,
-    MistralForCausalLM as OldMistralForCausalLM
-)
 from awq.modules.fused.mlp import QuantLlamaMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
-class MistralAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "MistralDecoderLayer"
+class YiAWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "YiDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldMistralForCausalLM):
-        fuser = MistralFuser(model)
+    def fuse_layers(model):
+        fuser = YiFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldMistralForCausalLM):
+    def get_model_layers(model):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: OldMistralDecoderLayer):
+    def get_act_for_scaling(module):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: OldMistralForCausalLM, device: str):
+    def move_embed(model, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: OldMistralDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module, input_feat, module_kwargs):
         layers = []
 
         # attention input
         layers.append(dict(
-            prev_op=module.input_layernorm,
+            prev_op=module.ln1,
             layers=[module.self_attn.q_proj,
                     module.self_attn.k_proj, module.self_attn.v_proj],
             inp=input_feat['self_attn.q_proj'],
@@ -58,7 +54,7 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
         
         # linear 1
         layers.append(dict(
-            prev_op=module.post_attention_layernorm,
+            prev_op=module.ln2,
             layers=[module.mlp.gate_proj, module.mlp.up_proj],
             inp=input_feat['mlp.gate_proj'],
             module2inspect=module.mlp,
@@ -74,19 +70,18 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class MistralFuser:
-    def __init__(self, model: OldMistralForCausalLM):
+class YiFuser:
+    def __init__(self, model):
         self.model = model
 
-        self.mistral_blocks: List[Tuple[str, OldMistralDecoderLayer]] = [
+        self.yi_blocks: List[Tuple[str, object]] = [
             (name, module) for name, module in self.model.named_modules()
-            if 'MistralDecoderLayer'.lower() in module.__class__.__name__.lower()
+            if 'YiDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_transformer(self):
         blocks = []
 
-        module: OldMistralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -101,12 +96,12 @@ class MistralFuser:
                 module.mlp.up_proj
             )
             norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight,
-                module.input_layernorm.variance_epsilon
+                module.ln1.weight,
+                module.ln1.variance_epsilon
             )
             norm_2 = FasterTransformerRMSNorm(
-                module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.variance_epsilon
+                module.ln2.weight,
+                module.ln2.variance_epsilon
             )
             blocks.append(LlamaLikeBlock(
                 hidden_size=self.model.config.hidden_size,
