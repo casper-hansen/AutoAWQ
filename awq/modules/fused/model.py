@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from typing import List
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from awq.utils.fused_utils import prepare_attention_mask, prepare_input_ids
 from awq.modules.fused.block import MPTBlock, FalconDecoderLayer, LlamaLikeBlock
+from awq.utils.fused_utils import prepare_attention_mask, prepare_input_ids, prepare_cache
 
 class LlamaLikeModel(nn.Module):
     """
@@ -24,8 +24,10 @@ class LlamaLikeModel(nn.Module):
             input_ids,
             self.last_forward_num_tokens
         )
-        
         _bsz, seqlen = input_ids.shape
+
+        prepare_cache(self.blocks, seqlen)
+
         h = self.embedding(input_ids)
 
         mask = prepare_attention_mask(
@@ -58,8 +60,10 @@ class MPTModel(nn.Module):
             input_ids,
             self.last_forward_num_tokens
         )
-
         _bsz, seqlen = input_ids.shape
+
+        prepare_cache(self.blocks, seqlen)
+
         h = self.wte(input_ids)
 
         mask = prepare_attention_mask(
@@ -92,8 +96,10 @@ class FalconModel(nn.Module):
             input_ids,
             self.last_forward_num_tokens
         )
-        
         _bsz, seqlen = input_ids.shape
+
+        prepare_cache(self.blocks, seqlen)
+
         h = self.word_embeddings(input_ids)
 
         mask = prepare_attention_mask(

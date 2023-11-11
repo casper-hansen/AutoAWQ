@@ -128,15 +128,6 @@ class QuantAttentionFused(nn.Module):
                 f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
                 f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
             )
-
-        will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
-
-        # Reset and avoid retaining state when processing context
-        if will_cache_be_exceeded and seqlen > 1 or self.start_pos > 0 and seqlen > 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=self.start_pos)
-        # Slowly roll out old tokens without performance hit if exceeded during decoding 
-        elif will_cache_be_exceeded and seqlen == 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=100)
             
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
