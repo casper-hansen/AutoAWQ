@@ -123,11 +123,14 @@ class QuantAttentionFused(nn.Module):
     def forward(self, hidden_states:torch.Tensor, attention_mask=None, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
 
+        # Reallocate cache if batch size changes
         if bsz != self.cache_batch_size:
-            raise RuntimeError(
-                f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
-                f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
-            )
+            if bsz > self.cache_batch_size:
+                self.cache.increase_batch_size(bsz)
+                self.cache_batch_size = bsz
+            elif bsz < self.cache_batch_size:
+                self.cache.decrease_batch_size(bsz)
+                self.cache_batch_size = bsz
             
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
