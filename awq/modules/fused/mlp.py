@@ -3,15 +3,17 @@ import awq_inference_engine
 import torch.nn.functional as F
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
-class QuantLlamaMLP(nn.Module):
 
+class QuantFusedMLP(nn.Module):
     def __init__(
         self,
         gate_proj,
         down_proj,
-        up_proj
+        up_proj,
+        activation,
     ):
         super().__init__()
+
         self.register_buffer('gate_proj_qweight', gate_proj.qweight)
         self.register_buffer('gate_proj_scales', gate_proj.scales)
         self.register_buffer('gate_proj_qzeros', gate_proj.qzeros)
@@ -32,6 +34,8 @@ class QuantLlamaMLP(nn.Module):
             self.linear = awq_inference_engine.gemm_forward_cuda
             self.group_size = 8
 
+        self.activation = activation
+
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.intermediate_size,)
         x = x.reshape(-1, x.shape[-1])
@@ -49,8 +53,22 @@ class QuantLlamaMLP(nn.Module):
             self.up_proj_qzeros,
             self.group_size,
         )
-        x = F.silu(gate_output) * up_output
+        x = self.activation(gate_output) * up_output
         x = x.reshape(out_shape)
         x = self.down_proj(x)
 
         return x
+        
+
+class QuantLlamaMLP(QuantFusedMLP):
+    r"""
+    QuantLlamaMLP class kept for backward compatibilty, in the future, users 
+    should always use `QuantFusedMLP` class instead.
+    """
+    def __init__(
+        self,
+        gate_proj,
+        down_proj,
+        up_proj
+    ):
+        super().__init__(gate_proj, down_proj, up_proj, F.silu)
