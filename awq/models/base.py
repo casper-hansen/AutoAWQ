@@ -14,8 +14,12 @@ from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
-from accelerate import init_empty_weights, infer_auto_device_map, load_checkpoint_and_dispatch
-
+from accelerate.big_modeling import (
+    init_empty_weights,
+    infer_auto_device_map,
+    load_checkpoint_and_dispatch,
+)
+from accelerate.utils import get_balanced_memory
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
@@ -109,10 +113,18 @@ class BaseAWQForCausalLM(nn.Module):
             with init_empty_weights():
                 model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
 
+            # Evenly distribute memory on GPUs
+            max_memory = get_balanced_memory(
+                model,
+                no_split_module_classes=[self.layer_type],
+                dtype=torch_dtype
+            )
+
             # Get device map
             device_map = infer_auto_device_map(
                 model,
-                no_split_module_classes=[self.layer_type], 
+                max_memory=max_memory,
+                no_split_module_classes=[self.layer_type],
                 dtype=torch_dtype
             )
             del model
@@ -123,6 +135,7 @@ class BaseAWQForCausalLM(nn.Module):
             trust_remote_code=trust_remote_code,
             torch_dtype=torch_dtype,
             use_safetensors=safetensors,
+            device_map=device_map,
             **model_init_kwargs
         )
 
