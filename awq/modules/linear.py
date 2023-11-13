@@ -102,7 +102,6 @@ class WQLinear_GEMM(nn.Module):
         if input_dtype != torch.float16:
             x = x.half()
         
-        x = x.to(self.qweight.device)
         out = awq_inference_engine.gemm_forward_cuda(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8)
         
         if input_dtype != torch.float16:
@@ -209,8 +208,6 @@ class WQLinear_GEMV(nn.Module):
         input_dtype = inputs.dtype
         if input_dtype != torch.float16:
             inputs = inputs.half()
-        
-        inputs = inputs.to(self.qweight.device)
         
         if inputs.shape[0] > 8:
             out = awq_inference_engine.gemmv2_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)

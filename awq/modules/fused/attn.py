@@ -180,7 +180,7 @@ class QuantAttentionFused(nn.Module):
 
             # When seqlen is 1, there is nothing else to attend to
             if attention_mask is not None and seqlen > 1:
-                scores = scores + attention_mask.to(scores.device)  # (bs, n_local_heads, slen, cache_len + slen)
+                scores = scores + attention_mask  # (bs, n_local_heads, slen, cache_len + slen)
             scores = F.softmax(scores.float(), dim=-1).type_as(xq)
             output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
             attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
