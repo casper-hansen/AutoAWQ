@@ -10,7 +10,7 @@ class QuantFusedMLP(nn.Module):
         gate_proj,
         down_proj,
         up_proj,
-        activation,
+        activation = F.silu,
     ):
         super().__init__()
 
@@ -71,4 +71,4 @@ class QuantLlamaMLP(QuantFusedMLP):
         down_proj,
         up_proj
     ):
-        super().__init__(gate_proj, down_proj, up_proj, F.silu)
+        super().__init__(gate_proj, down_proj, up_proj)
