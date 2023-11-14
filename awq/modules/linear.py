@@ -101,7 +101,7 @@ class WQLinear_GEMM(nn.Module):
         input_dtype = x.dtype
         if input_dtype != torch.float16:
             x = x.half()
-
+        
         out = awq_inference_engine.gemm_forward_cuda(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8)
         
         if input_dtype != torch.float16:

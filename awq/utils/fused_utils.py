@@ -1,6 +1,15 @@
 import torch
+from typing import List
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
+def prepare_correct_devices(next_layer, hidden_states, mask):
+    hidden_states = hidden_states.to(next_layer.device)
+
+    if mask is not None:
+        mask = mask.to(next_layer.device)
+
+    return hidden_states, mask
+    
 def prepare_cache(blocks, seqlen: int) -> int:
     for block in blocks:
         start_pos = block.attn.start_pos
