@@ -70,10 +70,10 @@ class AwqQuantizer:
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
-            common_device = str(next(self.modules[i].parameters()).device)
-            if common_device is None or common_device == "cpu":
+            common_device = next(self.modules[i].parameters()).device
+            if common_device is None or str(common_device) == "cpu":
                 self.modules[i] = self.modules[i].cuda()
-                common_device = str(next(self.modules[i].parameters()).device)
+                common_device = next(self.modules[i].parameters()).device
             
             self.inps = self.inps.to(common_device)
 
