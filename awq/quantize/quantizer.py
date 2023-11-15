@@ -5,6 +5,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from typing import Dict, List
 from collections import defaultdict
+from awq.utils import quantize_utils
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
@@ -68,36 +69,54 @@ class AwqQuantizer:
         return w
     
     def quantize(self):
-        for i in tqdm(range(len(self.modules)), desc="AWQ"):
-            # Move module and inputs to correct device
-            common_device = next(self.modules[i].parameters()).device
-            if common_device is None or str(common_device) == "cpu":
-                self.modules[i] = self.modules[i].cuda()
+        with tqdm(total=len(self.modules), desc="AWQ - ") as progress_bar:
+            for i in range(len(self.modules)):
+                # Move module and inputs to correct device
                 common_device = next(self.modules[i].parameters()).device
-            
-            self.inps = self.inps.to(common_device)
+                if common_device is None or str(common_device) == "cpu":
+                    self.modules[i] = self.modules[i].cuda()
+                    common_device = next(self.modules[i].parameters()).device
+                
+                self.inps = self.inps.to(common_device)
 
-            # [STEP 1]: Get layer, extract linear modules, extract input features
-            named_linears = get_named_linears(self.modules[i])
-            input_feat = self._get_input_feat(self.modules[i], named_linears)
-            clear_memory()
+                low_mem_device = quantize_utils.get_lowest_memory_device()
 
-            # [STEP 2]: Compute and apply scale list
-            module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
-                self.modules[i], input_feat, self.module_kwargs
-            )
-            scales_list = [self._search_best_scale(self.modules[i], **layer) for layer in module_config]
-            apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
-            scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
+                # move every other module to low memory device
+                if i % 2 == 0:
+                    self.inps = self.inps.to(common_device)
+                    for param in self.modules[i].parameters():
+                        param.to(low_mem_device)
 
-            # [STEP 3]: Compute and apply clipping list
-            clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
-            apply_clip(self.modules[i], clip_list)
-            clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+                progress_bar.set_description(
+                    f"AWQ - CommonDevice: {common_device} - LowMemDevice: {low_mem_device}"
+                )
 
-            # [STEP 4]: Quantize weights
-            self._apply_quant(self.modules[i], named_linears)
-            clear_memory()
+                # [STEP 1]: Get layer, extract linear modules, extract input features
+                named_linears = get_named_linears(self.modules[i])
+                input_feat = self._get_input_feat(self.modules[i], named_linears)
+                clear_memory()
+
+                # [STEP 2]: Compute and apply scale list
+                module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
+                    self.modules[i], input_feat, self.module_kwargs
+                )
+                scales_list = [
+                    self._search_best_scale(
+                        self.modules[i], low_mem_device=low_mem_device, **layer) for layer in module_config
+                ]
+                apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
+                scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
+
+                # [STEP 3]: Compute and apply clipping list
+                clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
+                apply_clip(self.modules[i], clip_list)
+                clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+
+                # [STEP 4]: Quantize weights
+                self._apply_quant(self.modules[i], named_linears)
+                clear_memory()
+
+                progress_bar.update(1)
     
     def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
         for name, linear_layer in named_linears.items():
@@ -132,7 +151,10 @@ class AwqQuantizer:
             clear_memory()
 
     @torch.no_grad()
-    def _search_best_scale(self, module, prev_op, layers: List[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
+    def _search_best_scale(
+        self, module, prev_op, layers: List[nn.Linear], inp: torch.Tensor, 
+        low_mem_device, module2inspect=None, kwargs={}
+    ):
         if module2inspect is None:
             assert len(layers) == 1
             module2inspect = layers[0]
@@ -157,20 +179,23 @@ class AwqQuantizer:
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
-            fp16_output = module2inspect(inp, **kwargs)
-            if isinstance(fp16_output, tuple):
-                fp16_output = fp16_output[0]
+            fp16_output = quantize_utils.perform_operation_on_low_mem_device(
+                tensor=inp,
+                operation=module2inspect,
+                low_mem_device=low_mem_device,
+                **kwargs
+            )
         
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
             inp, w_max, x_max, module2inspect,
-            layers, fp16_output, kwargs
+            layers, fp16_output, low_mem_device, kwargs
         )
         
         return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
 
     def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: List[nn.Linear],
-                                  fp16_output, kwargs={}):
+                                  fp16_output, low_mem_device, kwargs={}):
         """
         Compute loss and select best scales
 
@@ -207,9 +232,12 @@ class AwqQuantizer:
                 fc.weight.data = self.pseudo_quantize_tensor(fc.weight.data) / scales_view
 
             # W * X
-            int_w_output = module2inspect(x, **kwargs)
-            if isinstance(int_w_output, tuple):
-                int_w_output = int_w_output[0]
+            int_w_output = quantize_utils.perform_operation_on_low_mem_device(
+                tensor=x,
+                operation=module2inspect,
+                low_mem_device=low_mem_device,
+                **kwargs
+            )
             
             # compute mean squared error (L2 norm)
             loss = (fp16_output - int_w_output).float().pow(2).mean().item() # NOTE: float prevents overflow
