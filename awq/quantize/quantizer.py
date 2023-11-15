@@ -71,27 +71,8 @@ class AwqQuantizer:
     def quantize(self):
         with tqdm(total=len(self.modules), desc="AWQ - ") as progress_bar:
             for i in range(len(self.modules)):
-                # Move module and inputs to correct device
-                common_device = next(self.modules[i].parameters()).device
-                if common_device is None or str(common_device) == "cpu":
-                    self.modules[i] = self.modules[i].cuda()
-                    common_device = next(self.modules[i].parameters()).device
-                
-                self.inps = self.inps.to(common_device)
-
-                low_mem_device = quantize_utils.get_lowest_memory_device()
-
-                # move every other module to low memory device
-                if i % 2 == 0:
-                    self.inps = self.inps.to(common_device)
-                    for param in self.modules[i].parameters():
-                        param.to(low_mem_device)
-
-                progress_bar.set_description(
-                    f"AWQ - CommonDevice: {common_device} - LowMemDevice: {low_mem_device}"
-                )
-
                 # [STEP 1]: Get layer, extract linear modules, extract input features
+                low_mem_device = self._manage_memory(i, progress_bar)
                 named_linears = get_named_linears(self.modules[i])
                 input_feat = self._get_input_feat(self.modules[i], named_linears)
                 clear_memory()
@@ -324,6 +305,37 @@ class AwqQuantizer:
         clear_memory(org_out)
 
         return best_max_val.squeeze(1)
+
+    def _manage_memory(self, i, progress_bar):
+        # Move module and inputs to correct device
+        common_device = next(self.modules[i].parameters()).device
+        if common_device is None or str(common_device) == "cpu":
+            self.modules[i] = self.modules[i].cuda()
+            common_device = next(self.modules[i].parameters()).device
+        
+        self.inps = self.inps.to(common_device)
+
+        low_mem_device = quantize_utils.get_lowest_memory_device()
+        
+        # move every second module to low memory device
+        for j in range(len(self.modules)):
+            next_module_device = torch.device(next(self.modules[j].parameters()).device)
+
+            # offload module from another device to low memory device
+            if i > 0 and j >= i and i % 2 == 0 and next_module_device != low_mem_device:
+                progress_bar.set_description(
+                    f"AWQ - Offloading module {j} from {next_module_device} to {low_mem_device}"
+                )
+                self.inps = self.inps.to(low_mem_device)
+                self.modules[j] = self.modules[j].to(low_mem_device)
+                clear_memory()
+                break
+
+        progress_bar.set_description(
+            f"AWQ - CommonDevice: {common_device} - LowMemDevice: {low_mem_device}"
+        )
+
+        return low_mem_device
 
     def init_quant(self, n_samples=128, seqlen=512):
         modules = self.awq_model.get_model_layers(self.model)
