@@ -131,7 +131,16 @@ class QuantAttentionFused(nn.Module):
             elif bsz < self.cache_batch_size:
                 self.cache.decrease_batch_size(bsz)
                 self.cache_batch_size = bsz
-            
+
+            # Always reset to 0
+            self.start_pos = 0 
+
+        # In case we re-generate, we need to refresh the starting position 
+        # to 0. We detect it by checking if `past_key_values` is set to None, 
+        # which indicates that we are on the first step of `generate()`.
+        if"past_key_value" in kwargs and kwargs["past_key_value"] is None:
+            self.start_pos = 0
+
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
         

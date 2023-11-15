@@ -8,7 +8,7 @@ from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldAquilaDecoderLayer,
     LlamaForCausalLM as OldAquilaForCausalLM
 )
-from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class AquilaAWQForCausalLM(BaseAWQForCausalLM):
@@ -95,7 +95,7 @@ class AquilaFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
-            mlp = QuantLlamaMLP(
+            mlp = QuantFusedMLP(
                 module.mlp.gate_proj,
                 module.mlp.down_proj,
                 module.mlp.up_proj
