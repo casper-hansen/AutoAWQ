@@ -69,8 +69,15 @@ class AwqQuantizer:
     
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
+            # Move module and inputs to correct device
+            common_device = str(next(self.modules[i].parameters()).device)
+            if common_device is None or common_device == "cpu":
+                self.modules[i] = self.modules[i].cuda()
+                common_device = str(next(self.modules[i].parameters()).device)
+            
+            self.inps = self.inps.to(common_device)
+
             # [STEP 1]: Get layer, extract linear modules, extract input features
-            self.modules[i] = self.modules[i].cuda()
             named_linears = get_named_linears(self.modules[i])
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
