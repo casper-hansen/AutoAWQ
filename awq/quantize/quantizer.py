@@ -325,7 +325,8 @@ class AwqQuantizer:
                     hidden_states = args[0]
                     del args
                 else:
-                    hidden_states = kwargs.pop(kwargs.keys()[0])
+                    first_key = list(kwargs.keys())[0]
+                    hidden_states = kwargs.pop(first_key)
 
                 inps.append(hidden_states)
                 layer_kwargs.update(kwargs)
