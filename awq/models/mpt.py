@@ -31,6 +31,9 @@ class MptAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def get_layers_for_scaling(module: OldMptBlock, input_feat, module_kwargs):
         layers = []
+        
+        if module_kwargs.get("output_attentions") is not None:
+            module_kwargs.pop("output_attentions")
 
         # attention input
         layers.append(dict(
