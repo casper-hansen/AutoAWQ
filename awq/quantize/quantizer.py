@@ -197,7 +197,7 @@ class AwqQuantizer:
             ratio = ratio / n_grid
 
             # NOTE: s^-1 * x is fused here, according to paper
-            scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
+            scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
             scales = scales / (scales.max() * scales.min()).sqrt()
             scales_view = scales.view(1, -1).to(device)
 
