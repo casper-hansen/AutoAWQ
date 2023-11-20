@@ -319,8 +319,16 @@ class AwqQuantizer:
                 super().__init__()
                 self.module = module
 
-            def forward(self, hijacked_inputs, **kwargs):
-                inps.append(hijacked_inputs)
+            def forward(self, *args, **kwargs):
+                # assume first input to forward is hidden states
+                if len(args) > 0:
+                    hidden_states = args[0]
+                    del args
+                else:
+                    first_key = list(kwargs.keys())[0]
+                    hidden_states = kwargs.pop(first_key)
+
+                inps.append(hidden_states)
                 layer_kwargs.update(kwargs)
                 raise ValueError  # early exit to break later inference
 
