@@ -32,7 +32,7 @@ def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
         num_new_tokens = num_input_tokens - last_forward_num_tokens
         
         # after context is processed, slice to latest token
-        if num_new_tokens in [0,1]:
+        if num_new_tokens == 1:
             input_ids = input_ids[:, -1:]
 
     return input_ids, last_forward_num_tokens + num_new_tokens
