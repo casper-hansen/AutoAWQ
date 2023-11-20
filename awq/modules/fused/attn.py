@@ -100,6 +100,7 @@ class QuantAttentionFused(nn.Module):
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
         self.max_seq_len = max_seq_len
+        self.is_hf_transformers = False
 
         # attention shapes for self attention
         self.attention_shapes = get_attention_shapes(
@@ -123,21 +124,25 @@ class QuantAttentionFused(nn.Module):
     def forward(self, hidden_states:torch.Tensor, attention_mask=None, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
 
+        # Reallocate cache if batch size changes
         if bsz != self.cache_batch_size:
-            raise RuntimeError(
-                f"Batch size is incorrectly set - input batch size {bsz}, kv-cache batch size {self.cache_batch_size}. "
-                f"Use: AutoAWQForCausalLM.from_quantized(batch_size={bsz})"
-            )
+            if bsz > self.cache_batch_size:
+                self.cache.increase_batch_size(bsz)
+                self.cache_batch_size = bsz
+            elif bsz < self.cache_batch_size:
+                self.cache.decrease_batch_size(bsz)
+                self.cache_batch_size = bsz
 
-        will_cache_be_exceeded = self.start_pos + seqlen > self.max_seq_len
+            # Always reset to 0
+            self.start_pos = 0 
 
-        # Reset and avoid retaining state when processing context
-        if will_cache_be_exceeded and seqlen > 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=self.start_pos)
-        # Slowly roll out old tokens without performance hit if exceeded during decoding 
-        elif will_cache_be_exceeded and seqlen == 1:
-            self.start_pos = self.cache.roll_kv_n_steps(self.start_pos, n=100)
-            
+        # In case we re-generate, we need to refresh the starting position 
+        # to 0. We detect it by checking if `past_key_values` is set to None, 
+        # which indicates that we are on the first step of `generate()`.
+        # This is only applicable for `transformers` integration
+        if self.is_hf_transformers and "past_key_value" in kwargs and kwargs["past_key_value"] is None:
+            self.start_pos = 0
+
         xqkv = self.qkv_proj(hidden_states)
         xqkv = xqkv.view((bsz, seqlen) + self.attention_shapes["xqkv_view"])
         
@@ -215,5 +220,7 @@ class QuantAttentionFused(nn.Module):
         self.start_pos += seqlen
 
         # past_key_value is replaced with cache_v, cache_k, returning empty data
-        past_key_value = [torch.Tensor([ [ [[0]], [[0]], [[0]] ] ])]
+        # we pass a dummy past kv cache for transformers to be able to retrieve the correct info 
+        # about past key length
+        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)]
         return attn_output, attention_weight, past_key_value

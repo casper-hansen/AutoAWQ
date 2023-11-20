@@ -1,5 +1,27 @@
 import torch
+from typing import List
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+
+def prepare_correct_devices(next_layer, hidden_states, mask):
+    hidden_states = hidden_states.to(next_layer.device)
+
+    if mask is not None:
+        mask = mask.to(next_layer.device)
+
+    return hidden_states, mask
+    
+def prepare_cache(blocks, seqlen: int) -> int:
+    for block in blocks:
+        start_pos = block.attn.start_pos
+        will_cache_be_exceeded = start_pos + seqlen > block.attn.max_seq_len
+
+        # Reset and avoid retaining state when processing context
+        if seqlen > 1 and (will_cache_be_exceeded or start_pos > 0):
+            block.attn.start_pos = block.attn.cache.roll_kv_n_steps(start_pos, n=start_pos)
+        
+        # Slowly roll out old tokens without performance hit if exceeded during decoding 
+        elif seqlen == 1 and will_cache_be_exceeded:
+            block.attn.start_pos = block.attn.cache.roll_kv_n_steps(start_pos, n=100)
 
 def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
     # NOTE: from transformers 4.35.0, input_ids includes full context during decoding

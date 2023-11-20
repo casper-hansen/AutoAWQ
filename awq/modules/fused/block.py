@@ -19,6 +19,7 @@ class LlamaLikeBlock(nn.Module):
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)
+        self.device = dev
 
     def forward(
         self, hidden_states, past_key_value, attn_bias=None, attention_mask=None, is_causal=None
@@ -30,7 +31,7 @@ class LlamaLikeBlock(nn.Module):
             attention_mask=attention_mask
         )
 
-        h = hidden_states + attn_output
+        h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.mlp.forward(self.norm_2(h))
 
         return out, None, past_key_value
@@ -48,6 +49,7 @@ class MPTBlock(nn.Module):
         ).to(dev)
         self.norm_2 = norm_2
         self.ffn = mpt_mlp.to(dev)
+        self.device = dev
 
     def forward(
         self, hidden_states, past_key_value, attn_bias=None, attention_mask=None, is_causal=None
@@ -62,7 +64,7 @@ class MPTBlock(nn.Module):
             use_cache=True
         )
 
-        h = hidden_states + attn_output
+        h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.ffn.forward(self.norm_2(h))
         return out, None, past_key_value
 
@@ -94,6 +96,7 @@ class FalconDecoderLayer(nn.Module):
             self.input_layernorm = input_layernorm # before attention
         
         self.mlp = mlp
+        self.device = dev
     
     def _get_attention_shapes(self, n_heads, max_seq_len, head_dim):
         batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
@@ -136,7 +139,7 @@ class FalconDecoderLayer(nn.Module):
             use_cache=True
         )
 
-        h_attn = hidden_states + attn_output
+        h_attn = hidden_states.to(attn_output.device) + attn_output
 
         if self.new_decoder_arch:
             h_mlp = self.mlp.forward(mlp_layernorm_out)

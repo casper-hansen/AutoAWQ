@@ -14,8 +14,12 @@ from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.utils.module import get_named_linears, set_op_by_name
 from transformers import AutoModelForCausalLM, AutoConfig, PreTrainedModel
-from accelerate import init_empty_weights, load_checkpoint_in_model, infer_auto_device_map
-
+from accelerate.big_modeling import (
+    init_empty_weights,
+    infer_auto_device_map,
+    load_checkpoint_and_dispatch,
+)
+from accelerate.utils import get_balanced_memory
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, quant_config):
@@ -67,9 +71,10 @@ class BaseAWQForCausalLM(nn.Module):
         self.quant_config.save_pretrained(save_dir)
 
         # Remove empty state dict
-        default_path = f'{save_dir}/model.safetensors'
-        if os.path.exists(default_path):
-            os.remove(default_path)
+        default_paths = [f'{save_dir}/model.safetensors', f'{save_dir}/pytorch_model.bin']
+        for path in default_paths:
+            if os.path.exists(path):
+                os.remove(path)
 
         # model_name has no extension, add it when saving state_dict
         model_name = 'model.safetensors' if safetensors else 'pytorch_model.bin'
@@ -108,10 +113,18 @@ class BaseAWQForCausalLM(nn.Module):
             with init_empty_weights():
                 model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
 
+            # Evenly distribute memory on GPUs
+            max_memory = get_balanced_memory(
+                model,
+                no_split_module_classes=[self.layer_type],
+                dtype=torch_dtype
+            )
+
             # Get device map
             device_map = infer_auto_device_map(
                 model,
-                no_split_module_classes=[self.layer_type], 
+                max_memory=max_memory,
+                no_split_module_classes=[self.layer_type],
                 dtype=torch_dtype
             )
             del model
@@ -135,11 +148,13 @@ class BaseAWQForCausalLM(nn.Module):
                              max_new_tokens=None, torch_dtype=torch.float16, 
                              trust_remote_code=True, safetensors=True, is_quantized=True, 
                              fuse_layers=False, version='GEMM',
-                             max_memory=None, offload_folder=None):
+                             device_map="balanced", offload_folder=None,
+                             **config_kwargs):
         # [STEP 1-2] Load weights path and configs
         model_weights_path, config, quant_config = self._load_config(
             self, model_path, model_filename, safetensors, version, 
-            trust_remote_code, max_new_tokens=max_new_tokens
+            trust_remote_code, max_new_tokens=max_new_tokens,
+            **config_kwargs
         )
         
         # [STEP 3] Load model
@@ -151,40 +166,26 @@ class BaseAWQForCausalLM(nn.Module):
         
         model.tie_weights()
 
-        # Get device map
-        device_map = infer_auto_device_map(
-            model,
-            no_split_module_classes=[self.layer_type], 
-            max_memory=max_memory,
-            dtype=torch_dtype
-        )
-
-        # Load checkpoint
-        load_checkpoint_in_model(
+        # loads the weights into modules and distributes
+        # across available devices automatically
+        load_checkpoint_and_dispatch(
             model,
             checkpoint=model_weights_path,
             device_map=device_map,
+            no_split_module_classes=[self.layer_type],
             offload_folder=offload_folder,
-            dtype=torch_dtype
+            dtype=torch_dtype,
         )
         
         # Dispath to devices
         if fuse_layers:
             self.fuse_layers(model)
 
-        # Offloading dispatch
-        from accelerate import dispatch_model
-        model = dispatch_model(
-            model,
-            device_map=device_map,
-            offload_dir=offload_folder
-        )
-        
-
         return self(model, model_type, is_quantized=is_quantized, quant_config=quant_config)
 
     def _load_config(self, model_path, model_filename, safetensors=True, 
-                           version="GEMM", trust_remote_code=True, max_new_tokens=4096):
+                           version="GEMM", trust_remote_code=True, max_new_tokens=4096,
+                           **config_kwargs):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt"]
@@ -206,11 +207,11 @@ class BaseAWQForCausalLM(nn.Module):
         
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
             config.max_new_tokens = getattr(config, self.max_new_tokens_key)
         else:
             max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
             config.max_new_tokens = max_new_tokens
         
         return model_weights_path, config, quant_config

@@ -4,7 +4,7 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
-from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class YiAWQForCausalLM(BaseAWQForCausalLM):
@@ -90,7 +90,7 @@ class YiFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
-            mlp = QuantLlamaMLP(
+            mlp = QuantFusedMLP(
                 module.mlp.gate_proj,
                 module.mlp.down_proj,
                 module.mlp.up_proj

@@ -8,7 +8,7 @@ from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OldMistralDecoderLayer,
     MistralForCausalLM as OldMistralForCausalLM
 )
-from awq.modules.fused.mlp import QuantLlamaMLP
+from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class MistralAWQForCausalLM(BaseAWQForCausalLM):
@@ -95,7 +95,7 @@ class MistralFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
-            mlp = QuantLlamaMLP(
+            mlp = QuantFusedMLP(
                 module.mlp.gate_proj,
                 module.mlp.down_proj,
                 module.mlp.up_proj
