@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from datasets import load_dataset
-from awq import AutoAWQForCausalLM
-from transformers import AutoTokenizer
 
 def evaluate_perplexity(model, tokenizer):
     def _perplexity(nlls, n_samples, seqlen):
@@ -40,3 +38,12 @@ def evaluate_perplexity(model, tokenizer):
     ppl = _perplexity(nlls, n_samples, seqlen)
     
     return ppl.item()
+
+if __name__ == '__main__':
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    
+    model_path = 'mistralai/Mistral-7B-Instruct-v0.1'
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    evaluate_perplexity(model, tokenizer)
