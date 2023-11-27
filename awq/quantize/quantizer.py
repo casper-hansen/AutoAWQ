@@ -14,7 +14,7 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       n_grid, calib_data, split, text_column) -> None:
+                       calib_data, split, text_column) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
@@ -24,7 +24,6 @@ class AwqQuantizer:
         self.calib_data = calib_data
         self.split = split
         self.text_column = text_column
-        self.n_grid = n_grid
         self.modules, self.module_kwargs, self.inps = self.init_quant()
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
@@ -181,6 +180,7 @@ class AwqQuantizer:
         W: original weights in FP16     | layer
         s: per channel scaling factor   | s^-1 * X
         """
+        n_grid = 20
         history = []
         best_ratio = -1
         best_scales = None
@@ -192,9 +192,9 @@ class AwqQuantizer:
         x_max = x_max.view(-1).to(device)
         w_max = w_max.view(-1).to(device)
         
-        for ratio in range(self.n_grid):
+        for ratio in range(n_grid):
             # create new scales
-            ratio = ratio / self.n_grid
+            ratio = ratio / n_grid
 
             # NOTE: s^-1 * x is fused here, according to paper
             scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
