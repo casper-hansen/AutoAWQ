@@ -3,6 +3,7 @@ from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 from awq.utils.lm_eval_adaptor import LMEvalAdaptor
+from awq.utils.eval_utils import evaluate_perplexity
 
 def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot, task_use_pretrained):
     """
@@ -17,18 +18,23 @@ def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     # Load adapter
-    lm_eval_model = LMEvalAdaptor(model_path, model, tokenizer, device, batch_size=task_batch_size)
+    tasks = tasks.split(',')
+    if len(tasks) == 1 and tasks[0] == 'wikitext':
+        evaluate_perplexity(model.model, tokenizer)
 
-    # Evaluate perplexity of quantized model
-    results = evaluator.simple_evaluate(
-        model=lm_eval_model,
-        tasks=tasks.split(','),
-        batch_size=task_batch_size,
-        no_cache=True,
-        num_fewshot=task_n_shot,
-    )
+    else:
+        lm_eval_model = LMEvalAdaptor(model_path, model, tokenizer, device, batch_size=task_batch_size)
 
-    print(evaluator.make_table(results))
+        # Evaluate perplexity of quantized model
+        results = evaluator.simple_evaluate(
+            model=lm_eval_model,
+            tasks=tasks,
+            batch_size=task_batch_size,
+            no_cache=True,
+            num_fewshot=task_n_shot,
+        )
+
+        print(evaluator.make_table(results))
 
 if __name__ == '__main__':
     """
