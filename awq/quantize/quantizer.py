@@ -14,7 +14,7 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column) -> None:
+                       calib_data, split, text_column, duo_scaling) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
@@ -24,6 +24,7 @@ class AwqQuantizer:
         self.calib_data = calib_data
         self.split = split
         self.text_column = text_column
+        self.duo_scaling = duo_scaling
         self.modules, self.module_kwargs, self.inps = self.init_quant()
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
@@ -197,7 +198,10 @@ class AwqQuantizer:
             ratio = ratio / n_grid
 
             # NOTE: s^-1 * x is fused here, according to paper
-            scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
+            if self.duo_scaling:
+                scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
+            else:
+                scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
             scales = scales / (scales.max() * scales.min()).sqrt()
             scales_view = scales.view(1, -1).to(device)
 
