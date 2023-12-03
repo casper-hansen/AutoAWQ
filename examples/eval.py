@@ -3,32 +3,41 @@ from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 from awq.utils.lm_eval_adaptor import LMEvalAdaptor
+from awq.utils.eval_utils import evaluate_perplexity
 
-def run_eval(model_path, quant_file, device, tasks, task_batch_size, task_n_shot, task_use_pretrained):
+def run_eval(
+        model_path, quant_file, device, tasks, task_batch_size, task_n_shot,
+        task_use_pretrained, pretrained_safetensors
+    ):
     """
     Post quantization: Evaluate perplexity on wikitext with EleutherAI Evaluation Harness
     """
     # Load model
     if task_use_pretrained:
-        model = AutoAWQForCausalLM.from_pretrained(model_path)
+        model = AutoAWQForCausalLM.from_pretrained(model_path, safetensors=pretrained_safetensors)
     else:
         model = AutoAWQForCausalLM.from_quantized(model_path, quant_file, fuse_layers=False)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     # Load adapter
-    lm_eval_model = LMEvalAdaptor(model_path, model, tokenizer, device, batch_size=task_batch_size)
+    tasks = tasks.split(',')
+    if len(tasks) == 1 and tasks[0] == 'wikitext':
+        evaluate_perplexity(model.model, tokenizer)
 
-    # Evaluate perplexity of quantized model
-    results = evaluator.simple_evaluate(
-        model=lm_eval_model,
-        tasks=tasks.split(','),
-        batch_size=task_batch_size,
-        no_cache=True,
-        num_fewshot=task_n_shot,
-    )
+    else:
+        lm_eval_model = LMEvalAdaptor(model_path, model, tokenizer, device, batch_size=task_batch_size)
 
-    print(evaluator.make_table(results))
+        # Evaluate perplexity of quantized model
+        results = evaluator.simple_evaluate(
+            model=lm_eval_model,
+            tasks=tasks,
+            batch_size=task_batch_size,
+            no_cache=True,
+            num_fewshot=task_n_shot,
+        )
+
+        print(evaluator.make_table(results))
 
 if __name__ == '__main__':
     """
@@ -45,6 +54,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to load model to')
     parser.add_argument("--use_pretrained", default=False, action='store_true',
                         help="Pass '--use_pretrained' to use a pretrained model running FP16")
+    parser.add_argument("--pretrained_safetensors", default=False, action='store_true',
+                        help="Load safetensors for FP16 model")
     parser.add_argument('--tasks', type=str, default='wikitext', help='Tasks to evaluate. '
                     'Separate tasks by comma for multiple tasks.'
                     'https://github.com/EleutherAI/lm-evaluation-harness/blob/master/docs/task_table.md')
@@ -52,5 +63,9 @@ if __name__ == '__main__':
     parser.add_argument('--n_shot', type=int, default=0)
     args = parser.parse_args()
 
-    run_eval(args.model_path, args.quant_file, args.device,
-                       args.tasks, args.batch_size, args.n_shot, args.use_pretrained)
+    run_eval(
+        args.model_path, args.quant_file, args.device,
+        args.tasks, args.batch_size, args.n_shot, args.use_pretrained,
+        args.pretrained_safetensors
+    )
+    
