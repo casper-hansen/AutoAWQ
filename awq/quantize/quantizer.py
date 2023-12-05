@@ -13,20 +13,31 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 
 class AwqQuantizer:
-    def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column, duo_scaling) -> None:
+
+    def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version,
+                 calib_data, split, text_column, duo_scaling,
+                 batch_block) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
         self.w_bit = w_bit
         self.group_size = group_size
         self.version = version
-        self.calib_data = calib_data
+        if isinstance(calib_data, tuple):
+            self.calib_data = calib_data[0]
+            if self.calib_data == "custom":
+                self.custom_calib_file = list(calib_data[1:])
+            else:
+                self.custom_calib_file = None
+        else:
+            self.calib_data = calib_data
+            self.custom_calib_file = None
         self.split = split
         self.text_column = text_column
         self.duo_scaling = duo_scaling
+        self.batch_block = batch_block
         self.modules, self.module_kwargs, self.inps = self.init_quant()
-    
+
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
         org_w_shape = w.shape
         if self.group_size > 0:
@@ -37,7 +48,7 @@ class AwqQuantizer:
         # zero point quantization
         max_val = w.amax(dim=1, keepdim=True)
         min_val = w.amin(dim=1, keepdim=True)
-        max_int = 2 ** self.w_bit - 1
+        max_int = 2**self.w_bit - 1
         min_int = 0
         scales = (max_val - min_val).clamp(min=1e-5) / max_int
         zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
@@ -45,7 +56,8 @@ class AwqQuantizer:
         assert torch.isnan(scales).sum() == 0
         assert torch.isnan(w).sum() == 0
 
-        w = (torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros) * scales
+        w = (torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) -
+             zeros) * scales
         assert torch.isnan(w).sum() == 0
 
         w = w.reshape(org_w_shape)
@@ -54,8 +66,9 @@ class AwqQuantizer:
             return w, scales.view(w.shape[0], -1), zeros.view(w.shape[0], -1)
         else:
             return w
-    
-    def pseudo_dequantize_tensor(self, w: nn.Linear, scales: torch.Tensor, zeros: torch.Tensor):
+
+    def pseudo_dequantize_tensor(self, w: nn.Linear, scales: torch.Tensor,
+                                 zeros: torch.Tensor):
         # get repeated count
         repeat_count = w.weight.data.shape[-1] // zeros.shape[-1]
 
@@ -67,7 +80,7 @@ class AwqQuantizer:
         w = (w.weight.data - zeros) * scales
 
         return w
-    
+
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
@@ -75,7 +88,7 @@ class AwqQuantizer:
             if common_device is None or str(common_device) == "cpu":
                 self.modules[i] = self.modules[i].cuda()
                 common_device = next(self.modules[i].parameters()).device
-            
+
             self.inps = self.inps.to(common_device)
 
             # [STEP 1]: Get layer, extract linear modules, extract input features
@@ -85,47 +98,52 @@ class AwqQuantizer:
 
             # [STEP 2]: Compute and apply scale list
             module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
-                self.modules[i], input_feat, self.module_kwargs
-            )
-            scales_list = [self._search_best_scale(self.modules[i], **layer) for layer in module_config]
-            apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
-            scales_list = append_str_prefix(scales_list, get_op_name(self.model, self.modules[i]) + ".")
+                self.modules[i], input_feat, self.module_kwargs)
+            scales_list = [
+                self._search_best_scale(self.modules[i], **layer)
+                for layer in module_config
+            ]
+            apply_scale(self.modules[i],
+                        scales_list,
+                        input_feat_dict=input_feat)
+            scales_list = append_str_prefix(
+                scales_list,
+                get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 3]: Compute and apply clipping list
-            clip_list = self._search_best_clip(self.modules[i], named_linears, input_feat)
+            clip_list = self._search_best_clip(self.modules[i], named_linears,
+                                               input_feat)
             apply_clip(self.modules[i], clip_list)
-            clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
+            clip_list = append_str_prefix(
+                clip_list,
+                get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 4]: Quantize weights
             self._apply_quant(self.modules[i], named_linears)
             clear_memory()
-    
+
     def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
         for name, linear_layer in named_linears.items():
             # NOTE: small regression in perplexity if linear layer uses .cpu().float()
             linear_layer = linear_layer.cuda().half()
 
             linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
-                linear_layer.weight.data, 
-                get_scale_zp=True
-            )
+                linear_layer.weight.data, get_scale_zp=True)
 
             if self.version == 'GEMM':
                 scales = scales.t().contiguous()
                 zeros = zeros.t().contiguous()
                 q_linear_module = WQLinear_GEMM
 
-            elif self.version  == 'GEMV':
+            elif self.version == 'GEMV':
                 q_linear_module = WQLinear_GEMV
-            
-            q_linear = q_linear_module.from_linear(
-                linear=linear_layer,
-                w_bit=self.w_bit,
-                group_size=self.group_size,
-                init_only=False,
-                scales=scales,
-                zeros=zeros
-            )
+
+            q_linear = q_linear_module.from_linear(linear=linear_layer,
+                                                   w_bit=self.w_bit,
+                                                   group_size=self.group_size,
+                                                   init_only=False,
+                                                   scales=scales,
+                                                   zeros=zeros)
 
             linear_layer.cpu()
             q_linear.to(next(module.parameters()).device)
@@ -133,14 +151,20 @@ class AwqQuantizer:
             clear_memory()
 
     @torch.no_grad()
-    def _search_best_scale(self, module, prev_op, layers: List[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
+    def _search_best_scale(self,
+                           module,
+                           prev_op,
+                           layers: List[nn.Linear],
+                           inp: torch.Tensor,
+                           module2inspect=None,
+                           kwargs={}):
         if module2inspect is None:
             assert len(layers) == 1
             module2inspect = layers[0]
-        
+
         if "use_cache" in kwargs:
             kwargs.pop("use_cache")
-        
+
         # Put x on the right device
         inp = inp.to(next(module2inspect.parameters()).device)
 
@@ -156,22 +180,49 @@ class AwqQuantizer:
         # [STEP 2]: Compute maximum of x
         x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
 
-        # [STEP 3]: Compute output of module
+        # [STEP 3]: Compute output of module by block
+        inp = inp.cpu()
+        fp16_output_list = []
+        dev = next(module2inspect.parameters()).device
         with torch.no_grad():
-            fp16_output = module2inspect(inp, **kwargs)
-            if isinstance(fp16_output, tuple):
-                fp16_output = fp16_output[0]
-        
-        # [STEP 4]: Compute loss
-        best_scales = self._compute_best_scale(
-            inp, w_max, x_max, module2inspect,
-            layers, fp16_output, kwargs
-        )
-        
-        return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
+            if 'attention_mask' in kwargs:
+                kwargs['attention_mask'] = kwargs['attention_mask'].cpu()
+            for i in range(0, inp.shape[0], self.batch_block):
+                if 'attention_mask' in kwargs:
+                    fp16_output_batch = module2inspect(
+                        inp[i:i + self.batch_block].to(dev),
+                        attention_mask=kwargs['attention_mask']
+                        [i:i + self.batch_block].to(dev),
+                        position_ids=kwargs['position_ids'],
+                        past_key_value=kwargs['past_key_value'],
+                        output_attentions=kwargs['output_attentions'],
+                        padding_mask=kwargs['padding_mask'])
+                else:
+                    fp16_output_batch = module2inspect(
+                        inp[i:i + self.batch_block].to(dev))
+                if isinstance(fp16_output_batch, tuple):
+                    fp16_output_list.append(fp16_output_batch[0].cpu())
+                else:
+                    fp16_output_list.append(fp16_output_batch.cpu())
+                del fp16_output_batch
+        fp16_output = torch.cat(fp16_output_list, dim=0)
 
-    def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: List[nn.Linear],
-                                  fp16_output, kwargs={}):
+        # [STEP 4]: Compute loss
+        best_scales = self._compute_best_scale(inp, w_max, x_max,
+                                               module2inspect, layers,
+                                               fp16_output, kwargs)
+
+        return (get_op_name(module, prev_op),
+                tuple([get_op_name(module, m) for m in layers]), best_scales)
+
+    def _compute_best_scale(self,
+                            x,
+                            w_max,
+                            x_max,
+                            module2inspect,
+                            linears2scale: List[nn.Linear],
+                            fp16_output,
+                            kwargs={}):
         """
         Compute loss and select best scales
 
@@ -188,18 +239,19 @@ class AwqQuantizer:
         best_error = float('inf')
 
         org_sd = {k: v.cpu() for k, v in module2inspect.state_dict().items()}
-        
-        device = x.device
+
+        device = next(module2inspect.parameters()).device  # for big batch
         x_max = x_max.view(-1).to(device)
         w_max = w_max.view(-1).to(device)
-        
+
         for ratio in range(n_grid):
             # create new scales
             ratio = ratio / n_grid
 
             # NOTE: s^-1 * x is fused here, according to paper
             if self.duo_scaling:
-                scales = (x_max.pow(ratio) / w_max.pow(1-ratio)).clamp(min=1e-4)
+                scales = (x_max.pow(ratio) /
+                          w_max.pow(1 - ratio)).clamp(min=1e-4)
             else:
                 scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
             scales = scales / (scales.max() * scales.min()).sqrt()
@@ -208,16 +260,40 @@ class AwqQuantizer:
             # Q(W * s)
             for fc in linears2scale:
                 fc.weight.mul_(scales_view)
-                fc.weight.data = self.pseudo_quantize_tensor(fc.weight.data) / scales_view
+                fc.weight.data = self.pseudo_quantize_tensor(
+                    fc.weight.data) / scales_view
 
-            # W * X
-            int_w_output = module2inspect(x, **kwargs)
+            # W * X by block
+            output = []
+            if 'attention_mask' in kwargs:
+                kwargs['attention_mask'] = kwargs['attention_mask'].cpu()
+            for i in range(0, x.shape[0], self.batch_block):
+                if 'attention_mask' in kwargs:
+                    int_w_output_batch = module2inspect(
+                        x[i:i + self.batch_block].to(device),
+                        attention_mask=kwargs['attention_mask']
+                        [i:i + self.batch_block].to(device),
+                        position_ids=kwargs['position_ids'],
+                        past_key_value=kwargs['past_key_value'],
+                        output_attentions=kwargs['output_attentions'],
+                        padding_mask=kwargs['padding_mask'])
+                else:
+                    int_w_output_batch = module2inspect(
+                        x[i:i + self.batch_block].to(device))
+                if isinstance(int_w_output_batch, tuple):
+                    output.append(int_w_output_batch[0].cpu())
+                else:
+                    output.append(int_w_output_batch.cpu())
+                del int_w_output_batch
+
+            int_w_output = torch.cat(output, dim=0)
             if isinstance(int_w_output, tuple):
                 int_w_output = int_w_output[0]
-            
-            # compute mean squared error (L2 norm)
-            loss = (fp16_output - int_w_output).float().pow(2).mean().item() # NOTE: float prevents overflow
 
+            # compute mean squared error (L2 norm)
+            loss = (fp16_output - int_w_output).float().pow(
+                2).mean().item()  # NOTE: float prevents overflow
+            del int_w_output
             history.append(loss)
             if loss < best_error:
                 best_error = loss
@@ -244,15 +320,21 @@ class AwqQuantizer:
                 continue
 
             named_linears[name].cuda()
-            max_val = self._compute_best_clip(named_linears[name].weight, input_feat[name])
+            max_val = self._compute_best_clip(named_linears[name].weight,
+                                              input_feat[name])
             clip_list.append((name, max_val))
 
             named_linears[name].cpu()
-        
+
         return clip_list
 
     @torch.no_grad()
-    def _compute_best_clip(self, w: torch.Tensor, input_feat: torch.Tensor, n_grid=20, max_shrink=0.5, n_sample_token=512):
+    def _compute_best_clip(self,
+                           w: torch.Tensor,
+                           input_feat: torch.Tensor,
+                           n_grid=20,
+                           max_shrink=0.5,
+                           n_sample_token=512):
         assert w.dim() == 2
         org_w_shape = w.shape
         # w           [co, ci]      -> [co, 1, n_group, group size]
@@ -269,9 +351,10 @@ class AwqQuantizer:
         best_max_val_all = []
 
         for i_b in range(w.shape[0] // oc_batch_size):
-            w = w_all[i_b * oc_batch_size: (i_b + 1) * oc_batch_size]
+            w = w_all[i_b * oc_batch_size:(i_b + 1) * oc_batch_size]
 
-            org_max_val = w.abs().amax(dim=-1, keepdim=True)  # co, 1, n_group, 1
+            org_max_val = w.abs().amax(dim=-1,
+                                       keepdim=True)  # co, 1, n_group, 1
 
             best_max_val = org_max_val.clone()
             min_errs = torch.ones_like(org_max_val) * 1e9
@@ -280,13 +363,14 @@ class AwqQuantizer:
 
             for i_s in range(int(max_shrink * n_grid)):
                 max_val = org_max_val * (1 - i_s / n_grid)
-                min_val = - max_val
+                min_val = -max_val
                 cur_w = torch.clamp(w, min_val, max_val)
                 q_w = self.pseudo_quantize_tensor(cur_w)
                 cur_out = (input_feat * q_w).sum(dim=-1)
 
                 # co, 1, n_group, 1
-                err = (cur_out - org_out).pow(2).mean(dim=1).view(min_errs.shape)
+                err = (cur_out - org_out).pow(2).mean(dim=1).view(
+                    min_errs.shape)
                 del cur_w
                 del cur_out
                 cur_best_idx = err < min_errs
@@ -303,22 +387,26 @@ class AwqQuantizer:
 
     def init_quant(self, n_samples=128, seqlen=512):
         modules = self.awq_model.get_model_layers(self.model)
-        samples = get_calib_dataset(
-            data=self.calib_data, tokenizer=self.tokenizer, n_samples=n_samples, block_size=seqlen,
-            split=self.split, text_column=self.text_column
-        )
+        samples = get_calib_dataset(data=self.calib_data,
+                                    tokenizer=self.tokenizer,
+                                    n_samples=n_samples,
+                                    block_size=seqlen,
+                                    split=self.split,
+                                    text_column=self.text_column,
+                                    custom_calib_file=self.custom_calib_file)
         samples = torch.cat(samples, dim=0)
-
+        print(f'samples.shape: {samples.shape}')
         inps = []
         layer_kwargs = {}
 
         modules[0] = modules[0].cuda()
         self.awq_model.move_embed(self.model, "cuda")
-        
+
         # get input and kwargs to layer 0
         # with_kwargs is only supported in PyTorch 2.0
         # use this Catcher hack for now
         class Catcher(nn.Module):
+
             def __init__(self, module):
                 super().__init__()
                 self.module = module
@@ -332,30 +420,35 @@ class AwqQuantizer:
                     first_key = list(kwargs.keys())[0]
                     hidden_states = kwargs.pop(first_key)
 
-                inps.append(hidden_states)
+                inps.append(hidden_states.to('cpu'))
+                if 'attention_mask' in layer_kwargs.keys():
+                    kwargs['attention_mask'] = torch.cat(
+                        (layer_kwargs["attention_mask"].to('cpu'),
+                         kwargs['attention_mask'].to('cpu')),
+                        dim=0)
+                kwargs['attention_mask'].to('cpu')
                 layer_kwargs.update(kwargs)
                 raise ValueError  # early exit to break later inference
 
         # patch layer 0 to catch input and kwargs
         modules[0] = Catcher(modules[0])
-        try:
-            self.model(samples.to(next(self.model.parameters()).device))
-        except ValueError:  # work with early exit
-            pass
-        del samples
+        for i in range(0, samples.shape[0], self.batch_block):
+            try:
+                self.model(samples[i:i + self.batch_block].to(
+                    next(self.model.parameters()).device))
+            except ValueError:  # work with early exit
+                pass
+        clear_memory(samples)
         modules[0] = modules[0].module  # restore
         inps = inps[0]
 
         modules[0] = modules[0].cpu()
         self.awq_model.move_embed(self.model, "cpu")
-        
-        clear_memory()
-        
-        if layer_kwargs.get("attention_mask") is not None:
-            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to("cuda")
 
+        clear_memory()
+        # keep them on cpu for awq big calib data
         return modules, layer_kwargs, inps
-    
+
     def _get_input_feat(self, layer, named_linears):
         # firstly, get input features of all linear layers
         def cache_input_hook(m, x, y, name, feat_dict):
@@ -367,14 +460,29 @@ class AwqQuantizer:
         handles = []
         for name in named_linears:
             handles.append(named_linears[name].register_forward_hook(
-                functools.partial(cache_input_hook, name=name,
-                                feat_dict=input_feat)))
-        self.inps = self.inps.to(next(layer.parameters()).device)  # in case multi-gpu
-        # get output as next layer's input
-        self.inps = layer(self.inps, **self.module_kwargs)[0]
+                functools.partial(cache_input_hook,
+                                  name=name,
+                                  feat_dict=input_feat)))
+
+        for i in range(0, self.inps.shape[0], self.batch_block):
+            dev = next(layer.parameters()).device
+            if 'attention_mask' in self.module_kwargs:
+                self.inps[i:i + self.batch_block] = (layer(
+                    self.inps[i:i + self.batch_block].to(dev),
+                    attention_mask=self.module_kwargs['attention_mask']
+                    [i:i + self.batch_block].to(dev),
+                    position_ids=self.module_kwargs['position_ids'],
+                    past_key_value=self.module_kwargs['past_key_value'],
+                    output_attentions=self.module_kwargs['output_attentions'],
+                    padding_mask=self.module_kwargs['padding_mask'])[0]).to(
+                        'cpu')  # TODO: optimize cpu to dev
+            else:
+                self.inps[i:i + self.batch_block] = layer(
+                    self.inps[i:i + self.batch_block].to(dev)).to('cpu')
+            clear_memory()
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
-        
+
         return input_feat
