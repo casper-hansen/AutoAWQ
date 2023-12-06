@@ -32,25 +32,27 @@ class WQLinear_GEMM_Propagator(torch.autograd.Function):
     
     @staticmethod
     def setup_context(ctx: Any, inputs: Tuple[Any], output: Any) -> Any:
+        input = inputs[0]
         qweight = inputs[1]
         scales = inputs[2]
         qzeros = inputs[3]
         split_k_iters = inputs[4]
-        ctx.save_for_backward(qweight, scales, qzeros)
+        ctx.save_for_backward(input, qweight, scales, qzeros)
         ctx.split_k_iters = split_k_iters
     
     @staticmethod
     @once_differentiable
     def backward(ctx, grad_output):
-        qweight, scales, qzeros = ctx.saved_tensors
+        input, qweight, scales, qzeros = ctx.saved_tensors
         split_k_iters = ctx.split_k_iters
 
-        # ! Hack: Don't train if the shapes of gradients and Q are different
-        if grad_output.shape[1] != qweight.shape[0]:
-            return torch.zeros(grad_output.shape[0], qweight.shape[0], device=qweight.device), None, None, None, None
+        # Source - https://github.com/compressa-ai/AutoAWQ/blob/6673333456b8871522b11a7fb110de612edfdf95/awq/modules/linear.py#L51-L58
+        weights_fp16 = awq_inference_engine.dequantize_weights_cuda(qweight, scales, qzeros, split_k_iters, 0, 0, False)
 
-        backprop = awq_inference_engine.gemm_backward_cuda(grad_output.reshape(-1, grad_output.shape[-1]), qweight, scales, qzeros, split_k_iters)
-        return backprop, None, None, None, None
+        if ctx.needs_input_grad[0]:
+            grad_input = grad_output.mm(weights_fp16.transpose(0, 1))
+
+        return grad_input, None, None, None, None
 
 
 class WQLinear_GEMM(nn.Module):
