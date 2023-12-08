@@ -232,11 +232,11 @@ class QuantAttentionFused(nn.Module):
         # past_key_value is replaced with cache_v, cache_k, returning empty data
         # we pass a dummy past kv cache for transformers to be able to retrieve the correct info 
         # about past key length
-        past_key_value = [torch.zeros(1, 1, self.start_pos, 1), torch.zeros(1, 1, self.start_pos, 1)]
+        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)]
 
-        if HF_NEW_CACHE_FORMAT:
+        if HF_NEW_CACHE_FORMAT and self.is_hf_transformers:
             new_cache = DynamicCache()
-            new_cache.update(past_key_value[0], past_key_value[1], layer_idx=0)
+            new_cache.update(past_key_value[0], past_key_value[0], layer_idx=0)
             past_key_value = new_cache
 
         return attn_output, attention_weight, past_key_value
