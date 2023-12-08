@@ -26,7 +26,7 @@ class QwenAWQForCausalLM(BaseAWQForCausalLM):
         layers.append(
             dict(
                 prev_op=module.ln_1,
-                layers=[module.attn.c_attn, module.attn.c_proj],
+                layers=[module.attn.c_attn],
                 inp=input_feat["attn.c_attn"],
                 module2inspect=module.attn,
                 kwargs=module_kwargs,
