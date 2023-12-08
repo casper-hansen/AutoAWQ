@@ -115,26 +115,6 @@ class BaseAWQForCausalLM(nn.Module):
             self, model_path, '', safetensors, trust_remote_code=trust_remote_code
         )
 
-        if device_map is None:
-            with init_empty_weights():
-                model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
-
-            # Evenly distribute memory on GPUs
-            max_memory = get_balanced_memory(
-                model,
-                no_split_module_classes=[self.layer_type],
-                dtype=torch_dtype
-            )
-
-            # Get device map
-            device_map = infer_auto_device_map(
-                model,
-                max_memory=max_memory,
-                no_split_module_classes=[self.layer_type],
-                dtype=torch_dtype
-            )
-            del model
-
         # If not quantized, must load with AutoModelForCausalLM
         model = AutoModelForCausalLM.from_pretrained(
             model_weights_path,
