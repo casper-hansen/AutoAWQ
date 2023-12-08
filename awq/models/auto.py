@@ -17,7 +17,8 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gpt_neox": GPTNeoXAWQForCausalLM,
     "aquila": AquilaAWQForCausalLM,
     "Yi": YiAWQForCausalLM,
-    "qwen": QwenAWQForCausalLM
+    "qwen": QwenAWQForCausalLM,
+    "baichuan": BaichuanAWQForCausalLM
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True, **model_init_kwargs):

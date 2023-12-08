@@ -57,6 +57,7 @@ class BaseAWQForCausalLM(nn.Module):
             self.quant_config.version, calib_data, split, text_column, duo_scaling
         )
         quantizer.quantize()
+        
         self.is_quantized = True
     
     @staticmethod
