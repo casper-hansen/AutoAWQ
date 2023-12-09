@@ -67,7 +67,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
             layers.append(dict(
                 prev_op=prev_op,
                 layers=[expert.w1, expert.w3],
-                inp=input_feat[f'experts.{i}.w1'],
+                inp=input_feat[f'mlp.experts.{i}.w1'],
                 module2inspect=module.mlp,
             ))
 
@@ -75,7 +75,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
             layers.append(dict(
                 prev_op=expert.w3,
                 layers=[expert.w2],
-                inp=input_feat[f'experts.{i}.w2'],
+                inp=input_feat[f'mlp.experts.{i}.w2'],
             ))
 
         return layers
