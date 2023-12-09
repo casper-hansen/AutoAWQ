@@ -52,20 +52,30 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         
         # experts
         # MoE has multiple MLPs called experts
-        for i, expert in enumerate(module.experts):
+        for i, expert in enumerate(module.mlp.experts):
             # routed MLP in
+            # TODO: figure out if prev_op can be removed
+            if i == 0:
+                prev_op = module.post_attention_layernorm
+            else:
+                prev_op = module.mlp.experts[i].w2
+            
+            # w1 = gate_proj
+            # w2 = down_proj
+            # w3 = up_proj
+            # w2(F.silu(w1(x)) * w3(x))
             layers.append(dict(
-                prev_op=module.ffn_norm,
-                layers=[module.router, expert.gate_proj, expert.up_proj],
-                inp=input_feat[f'experts.{i}.gate_proj'],
-                module2inspect=module.feed_forward,
+                prev_op=prev_op,
+                layers=[expert.w1, expert.w3],
+                inp=input_feat[f'experts.{i}.w1'],
+                module2inspect=module.mlp,
             ))
 
             # routed MLP out
             layers.append(dict(
-                prev_op=expert.up_proj,
-                layers=[expert.down_proj],
-                inp=input_feat[f'experts.{i}.down_proj'],
+                prev_op=expert.w3,
+                layers=[expert.w2],
+                inp=input_feat[f'experts.{i}.w2'],
             ))
 
         return layers
@@ -95,9 +105,9 @@ class MixtralFuser:
             # Adapt to mixture of experts
             for i in range(len(module.experts)):
                 mlp = QuantFusedMLP(
-                    module.experts[i].gate_proj,
-                    module.experts[i].down_proj,
-                    module.experts[i].up_proj
+                    gate_proj=module.experts[i].w1,
+                    down_proj=module.experts[i].w2,
+                    up_proj=module.experts[i].w3
                 )
                 module.experts[i] = mlp
             norm_1 = FasterTransformerRMSNorm(
