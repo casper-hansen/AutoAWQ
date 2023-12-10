@@ -1,8 +1,7 @@
 import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
-from awq.utils.fused_utils import fuse_qkv
-from awq.modules.fused.block import LlamaLikeBlock, BaichuanBlock
+from awq.modules.fused.block import BaichuanBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
@@ -12,8 +11,8 @@ from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "LlamaDecoderLayer"
-    max_new_tokens_key = "max_position_embeddings"
+    layer_type = "BaichuanLayer"
+    max_new_tokens_key = "model_max_length"
 
     @staticmethod
     def fuse_layers(model):
