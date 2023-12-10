@@ -20,17 +20,17 @@ class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldLlamaForCausalLM):
+    def get_model_layers(model):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: OldLlamaDecoderLayer):
+    def get_act_for_scaling(module):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: OldLlamaForCausalLM, device: str):
+    def move_embed(model, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
