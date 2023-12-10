@@ -2,7 +2,7 @@ import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
-from awq.modules.fused.block import LlamaLikeBlock
+from awq.modules.fused.block import LlamaLikeBlock, BaichuanBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
@@ -16,8 +16,8 @@ class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model):
+        fuser = BaichuanFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
@@ -83,7 +83,7 @@ class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
 
 
 class BaichuanFuser:
-    def __init__(self, model: OldLlamaForCausalLM):
+    def __init__(self, model):
         self.model = model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
@@ -94,15 +94,15 @@ class BaichuanFuser:
     def fuse_transformer(self):
         blocks = []
 
-        module: OldLlamaDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
-            qkv = fuse_qkv(
-                module,
-                module.self_attn.q_proj,
-                module.self_attn.k_proj,
-                module.self_attn.v_proj
-            )
+            # qkv = fuse_qkv(
+            #     module,
+            #     module.self_attn.q_proj,
+            #     module.self_attn.k_proj,
+            #     module.self_attn.v_proj
+            # )
+            qkv = module.self_attn.W_pack
             mlp = QuantFusedMLP(
                 module.mlp.gate_proj,
                 module.mlp.down_proj,
@@ -110,23 +110,24 @@ class BaichuanFuser:
             )
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight,
-                module.input_layernorm.variance_epsilon
+                module.input_layernorm.epsilon
             )
             norm_2 = FasterTransformerRMSNorm(
                 module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.variance_epsilon
+                module.post_attention_layernorm.epsilon
             )
-            blocks.append(LlamaLikeBlock(
+            blocks.append(BaichuanBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
-                n_kv_heads=self.model.config.num_key_value_heads,
+                n_kv_heads=self.model.config.num_attention_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
                 mlp=mlp,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens
+                max_seq_len=self.model.config.max_new_tokens,
+                use_alibi=True
             ))
         
         self.model.model = LlamaLikeModel(
