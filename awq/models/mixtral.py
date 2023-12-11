@@ -68,7 +68,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=prev_op,
                 layers=[expert.w1, expert.w3],
                 inp=input_feat[f'block_sparse_moe.experts.{i}.w1'],
-                module2inspect=module.block_sparse_moe,
+                module2inspect=module.block_sparse_moe.experts[i],
             ))
 
             # routed expert out
