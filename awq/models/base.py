@@ -12,7 +12,11 @@ from huggingface_hub import snapshot_download
 from awq.quantize.quantizer import AwqQuantizer
 from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.utils.module import get_named_linears, set_op_by_name
+from awq.utils.module import (
+    get_named_linears,
+    set_op_by_name,
+    exclude_layers_to_not_quantize,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoConfig,
@@ -24,7 +28,6 @@ from accelerate.big_modeling import (
     infer_auto_device_map,
     load_checkpoint_and_dispatch,
 )
-from accelerate.utils import get_balanced_memory
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, config, quant_config):
@@ -214,6 +217,9 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Get every linear layer in a block
             named_linears = get_named_linears(layer)
+
+            # Filter out the linear layers we don't want to exclude
+            named_linears = exclude_layers_to_not_quantize(named_linears, quant_config.modules_to_not_convert)
 
             # Replace activation functions
             self._scale_activations(self, layer)
