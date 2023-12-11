@@ -18,6 +18,7 @@ from transformers import (
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
+    LlavaForConditionalGeneration
 )
 from accelerate.big_modeling import (
     init_empty_weights,
@@ -115,8 +116,10 @@ class BaseAWQForCausalLM(nn.Module):
             self, model_path, '', safetensors, trust_remote_code=trust_remote_code
         )
 
+        target_cls = AutoModelForCausalLM if "llava" not in model_weights_path else LlavaForConditionalGeneration
+
         # If not quantized, must load with AutoModelForCausalLM
-        model = AutoModelForCausalLM.from_pretrained(
+        model = target_cls.from_pretrained(
             model_weights_path,
             trust_remote_code=trust_remote_code,
             torch_dtype=torch_dtype,

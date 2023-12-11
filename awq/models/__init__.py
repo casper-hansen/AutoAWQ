@@ -10,3 +10,4 @@ from .gpt_neox import GPTNeoXAWQForCausalLM
 from .aquila import AquilaAWQForCausalLM
 from .yi import YiAWQForCausalLM
 from .qwen import QwenAWQForCausalLM
+from .llava import LlavaAWQForCausalLM
