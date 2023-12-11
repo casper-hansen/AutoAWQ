@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Dict
+from typing import Dict, Optional, List
 from dataclasses import dataclass, field, fields
 from transformers.utils.hub import PushToHubMixin, cached_file
 
@@ -13,6 +13,7 @@ class AwqConfig(PushToHubMixin):
     w_bit: int = field(default=4)
     version: str = field(default="GEMM")
     config_file_name = "quant_config.json"
+    modules_to_not_convert: Optional[List] = None
 
     def save_pretrained(self, save_dir: str, **kwargs):
         logging.warning(
@@ -76,7 +77,8 @@ class AwqConfig(PushToHubMixin):
             "zero_point": self.zero_point,
             "q_group_size": self.q_group_size,
             "w_bit": self.w_bit,
-            "version": self.version
+            "version": self.version,
+            "modules_to_not_convert": self.modules_to_not_convert,
         }
 
     def to_transformers_dict(self):
@@ -86,4 +88,5 @@ class AwqConfig(PushToHubMixin):
             "group_size": self.q_group_size,
             "bits": self.w_bit,
             "version": self.version.lower(),
+            "modules_to_not_convert": self.modules_to_not_convert,
         }

@@ -14,7 +14,7 @@ from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, 
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column, duo_scaling) -> None:
+                       calib_data, split, text_column, duo_scaling, modules_to_not_convert=None) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
@@ -25,6 +25,7 @@ class AwqQuantizer:
         self.split = split
         self.text_column = text_column
         self.duo_scaling = duo_scaling
+        self.modules_to_not_convert = modules_to_not_convert if modules_to_not_convert is not None else []
         self.modules, self.module_kwargs, self.inps = self.init_quant()
     
     def pseudo_quantize_tensor(self, w: torch.Tensor, get_scale_zp=False):
@@ -68,6 +69,13 @@ class AwqQuantizer:
 
         return w
     
+    def _exclude_layers_to_not_quantize(self, linear_layers):
+        filtered_layers = {}
+        for name, linear_layer in linear_layers.items():
+            if not any(key in name for key in self.modules_to_not_convert):
+                filtered_layers[name] = linear_layer
+        return filtered_layers
+    
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
@@ -80,6 +88,10 @@ class AwqQuantizer:
 
             # [STEP 1]: Get layer, extract linear modules, extract input features
             named_linears = get_named_linears(self.modules[i])
+
+            # Filter out the linear layers we don't want to exclude
+            named_linears = self._exclude_layers_to_not_quantize(named_linears)
+
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
 
