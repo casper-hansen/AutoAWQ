@@ -4,19 +4,19 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import MixtralBlock
 from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.mistral.modeling_mistral import (
-    MistralDecoderLayer as OldMistralDecoderLayer,
-    MistralForCausalLM as OldMistralForCausalLM
+from transformers.models.mixtral.modeling_mixtral import (
+    MixtralDecoderLayer as OldmixtralDecoderLayer,
+    MixtralForCausalLM as OldmixtralForCausalLM
 )
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "MistralDecoderLayer"
+    layer_type = "MixtralDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def get_model_layers(model):
+    def get_model_layers(model: OldmixtralForCausalLM):
         return model.model.layers
     
     @staticmethod
@@ -26,11 +26,11 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         )
     
     @staticmethod
-    def move_embed(model, device: str):
+    def move_embed(model: OldmixtralForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldmixtralDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -52,13 +52,13 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         
         # experts
         # MoE has multiple MLPs called experts
-        for i, expert in enumerate(module.mlp.experts):
-            # routed MLP in
+        for i, expert in enumerate(module.block_sparse_moe.experts):
+            # routed expert in
             # TODO: figure out if prev_op can be removed
             if i == 0:
                 prev_op = module.post_attention_layernorm
             else:
-                prev_op = module.mlp.experts[i].w2
+                prev_op = module.block_sparse_moe.experts[i].w2
             
             # w1 = gate_proj
             # w2 = down_proj
@@ -67,33 +67,33 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
             layers.append(dict(
                 prev_op=prev_op,
                 layers=[expert.w1, expert.w3],
-                inp=input_feat[f'mlp.experts.{i}.w1'],
-                module2inspect=module.mlp,
+                inp=input_feat[f'block_sparse_moe.experts.{i}.w1'],
+                module2inspect=module.block_sparse_moe,
             ))
 
-            # routed MLP out
+            # routed expert out
             layers.append(dict(
                 prev_op=expert.w3,
                 layers=[expert.w2],
-                inp=input_feat[f'mlp.experts.{i}.w2'],
+                inp=input_feat[f'block_sparse_moe.experts.{i}.w2'],
             ))
 
         return layers
 
 
 class MixtralFuser:
-    def __init__(self, model: OldMistralForCausalLM):
+    def __init__(self, model: OldmixtralForCausalLM):
         self.model = model
 
-        self.mistral_blocks: List[Tuple[str, OldMistralDecoderLayer]] = [
+        self.mixtral_blocks: List[Tuple[str, OldmixtralDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
-            if 'MistralDecoderLayer'.lower() in module.__class__.__name__.lower()
+            if 'MixtralDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_transformer(self):
         blocks = []
 
-        module: OldMistralDecoderLayer
+        module: OldmixtralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -103,13 +103,13 @@ class MixtralFuser:
                 module.self_attn.v_proj
             )
             # Adapt to mixture of experts
-            for i in range(len(module.experts)):
+            for i in range(len(module.block_sparse_moe.experts)):
                 mlp = QuantFusedMLP(
-                    gate_proj=module.experts[i].w1,
-                    down_proj=module.experts[i].w2,
-                    up_proj=module.experts[i].w3
+                    gate_proj=module.block_sparse_moe.experts[i].w1,
+                    down_proj=module.block_sparse_moe.experts[i].w2,
+                    up_proj=module.block_sparse_moe.experts[i].w3
                 )
-                module.experts[i] = mlp
+                module.block_sparse_moe.experts[i] = mlp
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight,
                 module.input_layernorm.variance_epsilon
@@ -124,7 +124,7 @@ class MixtralFuser:
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                moe=module.experts,
+                moe=module.block_sparse_moe.experts,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
