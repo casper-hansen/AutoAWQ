@@ -342,6 +342,13 @@ class AwqQuantizer:
             self.model(samples.to(next(self.model.parameters()).device))
         except ValueError:  # work with early exit
             pass
+        
+        # Update the layer kwargs with `prepare_inputs_for_generation` method
+        # that takes care of everything to avoid unexpected errors.
+        layer_kwargs = self.model.prepare_inputs_for_generation(samples, **layer_kwargs)
+        # Pop the input_ids as they are not needed at all.
+        layer_kwargs.pop("input_ids")
+
         del samples
         modules[0] = modules[0].module  # restore
         inps = inps[0]
