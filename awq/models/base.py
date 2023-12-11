@@ -1,18 +1,18 @@
 import os
 import gc
 import json
+
 import torch
 import torch.nn as nn
+
 from tqdm import tqdm
 from typing import List, Union
 from safetensors.torch import save_file
-from awq.models._config import AwqConfig
-from awq.modules.act import ScaledActivation
+
 from huggingface_hub import snapshot_download
-from awq.quantize.quantizer import AwqQuantizer
+import transformers
 from transformers.modeling_utils import shard_checkpoint
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.utils.module import get_named_linears, set_op_by_name
+
 from transformers import (
     AutoModelForCausalLM,
     AutoConfig,
@@ -26,6 +26,32 @@ from accelerate.big_modeling import (
     load_checkpoint_and_dispatch,
 )
 from accelerate.utils import get_balanced_memory
+
+from awq.models._config import AwqConfig
+from awq.modules.act import ScaledActivation
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.quantize.quantizer import AwqQuantizer
+from awq.utils.module import get_named_linears, set_op_by_name
+
+# Since we support different `AutoModelForxxx` from transformers 
+# we need to define a custom mapping dict as below:
+TRANSFORMERS_AUTO_MAPPING_DICT = {
+    "mpt": "AutoModelForCausalLM",
+    "llama": "AutoModelForCausalLM",
+    "opt": "AutoModelForCausalLM",
+    "RefinedWeb": "AutoModelForCausalLM",
+    "RefinedWebModel": "AutoModelForCausalLM",
+    "falcon": "AutoModelForCausalLM",
+    "bloom": "AutoModelForCausalLM",
+    "gptj": "AutoModelForCausalLM",
+    "gpt_bigcode": "AutoModelForCausalLM",
+    "mistral": "AutoModelForCausalLM",
+    "gpt_neox": "AutoModelForCausalLM",
+    "aquila": "AutoModelForCausalLM",
+    "Yi": "AutoModelForCausalLM",
+    "qwen": "AutoModelForCausalLM",
+    "llava": "LlavaForConditionalGeneration",
+}
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(self, model, model_type, is_quantized, config, quant_config):
@@ -116,7 +142,8 @@ class BaseAWQForCausalLM(nn.Module):
             self, model_path, '', safetensors, trust_remote_code=trust_remote_code
         )
 
-        target_cls = AutoModelForCausalLM if "llava" not in model_weights_path else LlavaForConditionalGeneration
+        target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
+        target_cls = getattr(transformers, target_cls_name)
 
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(
@@ -145,10 +172,13 @@ class BaseAWQForCausalLM(nn.Module):
             trust_remote_code, max_new_tokens=max_new_tokens,
             **config_kwargs
         )
+
+        target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
+        target_cls = getattr(transformers, target_cls_name)
         
         # [STEP 3] Load model
         with init_empty_weights():
-            model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
+            model = target_cls.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
         
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(self, model, quant_config, quant_config.version)
