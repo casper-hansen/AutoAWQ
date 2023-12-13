@@ -50,7 +50,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "aquila": "AutoModelForCausalLM",
     "Yi": "AutoModelForCausalLM",
     "qwen": "AutoModelForCausalLM",
-    "llava": "LlavaForConditionalGeneration",
+    "llava": "AutoModelForVision2Seq",
 }
 
 class BaseAWQForCausalLM(nn.Module):
@@ -227,7 +227,10 @@ class BaseAWQForCausalLM(nn.Module):
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
-            config.max_new_tokens = getattr(config, self.max_new_tokens_key)
+            config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
+            # To add the generate support for Multi-modal models as well
+            if hasattr(config, "text_config"):
+                config.text_config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
         else:
             max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)

@@ -76,7 +76,7 @@ class LlavaAWQForCausalLM(BaseAWQForCausalLM):
 
 class LlavaFuser:
     def __init__(self, model: OldLlavaForConditionalGeneration):
-        self.model = model
+        self.model = model.language_model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -121,7 +121,7 @@ class LlavaFuser:
                 max_seq_len=self.model.config.max_new_tokens
             ))
         
-        self.model.model = LlamaLikeModel(
+        self.model = LlamaLikeModel(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,
