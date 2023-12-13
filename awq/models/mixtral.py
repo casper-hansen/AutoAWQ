@@ -50,32 +50,31 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
                 inp=input_feat['self_attn.o_proj'],
             ))
         
-        # experts
-        # MoE has multiple MLPs called experts
-        for i, expert in enumerate(module.block_sparse_moe.experts):
-            # routed expert in
-            # TODO: figure out if prev_op can be removed
-            if i == 0:
-                prev_op = module.post_attention_layernorm
-            else:
-                prev_op = module.block_sparse_moe.experts[i].w2
-            
-            # w1 = gate_proj
-            # w2 = down_proj
-            # w3 = up_proj
-            # w2(F.silu(w1(x)) * w3(x))
+        # first expert
+        layers.append(dict(
+            prev_op=module.post_attention_layernorm,
+            layers=[module.block_sparse_moe.experts[0].w1,
+                    module.block_sparse_moe.experts[0].w3],
+            inp=input_feat[f'block_sparse_moe.experts.{0}.w1'],
+            module2inspect=module.block_sparse_moe.experts[0],
+        ))
+
+        # remaining experts
+        experts = module.block_sparse_moe.experts
+        for i, expert in enumerate(experts[1:]):
+            expert_index = i+1
+
             layers.append(dict(
-                prev_op=prev_op,
+                prev_op=expert.w3,
                 layers=[expert.w1, expert.w3],
-                inp=input_feat[f'block_sparse_moe.experts.{i}.w1'],
-                module2inspect=module.block_sparse_moe.experts[i],
+                inp=input_feat[f'block_sparse_moe.experts.{expert_index}.w1'],
+                module2inspect=experts[expert_index],
             ))
 
-            # routed expert out
             layers.append(dict(
                 prev_op=expert.w3,
                 layers=[expert.w2],
-                inp=input_feat[f'block_sparse_moe.experts.{i}.w2'],
+                inp=input_feat[f'block_sparse_moe.experts.{expert_index}.w2'],
             ))
 
         return layers
