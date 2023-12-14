@@ -395,9 +395,9 @@ class AwqQuantizer:
         # Sanitize the kwargs in case we use transformers version that contains
         # kwargs that are not handled by the module.
         # Useful for trust_remote_code models.
-        self.module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
+        module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
 
-        self.inps = layer(self.inps, **self.module_kwargs)[0]
+        self.inps = layer(self.inps, **module_kwargs)[0]
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
