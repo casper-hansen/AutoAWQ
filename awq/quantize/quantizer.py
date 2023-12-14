@@ -171,14 +171,16 @@ class AwqQuantizer:
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
-            fp16_output = module2inspect(inp, **kwargs)
+            module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
+
+            fp16_output = module2inspect(inp, **module_kwargs)
             if isinstance(fp16_output, tuple):
                 fp16_output = fp16_output[0]
         
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
             inp, w_max, x_max, module2inspect,
-            layers, fp16_output, kwargs
+            layers, fp16_output, module_kwargs
         )
         
         return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
