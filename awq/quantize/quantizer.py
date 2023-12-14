@@ -1,4 +1,5 @@
 import torch
+import inspect
 import logging
 import functools
 import torch.nn as nn
@@ -390,6 +391,12 @@ class AwqQuantizer:
                                 feat_dict=input_feat)))
         self.inps = self.inps.to(next(layer.parameters()).device)  # in case multi-gpu
         # get output as next layer's input
+        
+        # Sanitize the kwargs in case we use transformers version that contains
+        # kwargs that are not handled by the module.
+        # Useful for trust_remote_code models.
+        self.module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
+
         self.inps = layer(self.inps, **self.module_kwargs)[0]
         for h in handles:
             h.remove()
@@ -397,3 +404,23 @@ class AwqQuantizer:
         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
         
         return input_feat
+
+
+    def _sanitize_kwargs(self, inputs_kwargs, module):
+        """
+        Remove the arguments that are not supported in the module's
+        forward pass to avoid breaking behaviour between different versions
+        of transformers. 
+
+        Args:
+            inputs_kwargs (`dict`):
+                The input dictionary to pass to the model layer
+            module (`torch.nn.Module`):
+                Target module to quantize.
+        """
+        module_signature = inspect.signature(module.forward).parameters
+        sanitized_kwargs = {}
+        for k, v in  inputs_kwargs.items():
+            if k in module_signature:
+                sanitized_kwargs[k] = v
+        return sanitized_kwargs
