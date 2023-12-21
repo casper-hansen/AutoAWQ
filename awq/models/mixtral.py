@@ -53,22 +53,20 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         # first expert
         layers.append(dict(
             prev_op=module.post_attention_layernorm,
-            layers=[module.block_sparse_moe.experts[0].w1,
-                    module.block_sparse_moe.experts[0].w3],
-            inp=input_feat['block_sparse_moe.experts.0.w1'],
-            module2inspect=module.block_sparse_moe.experts[0],
+            layers=[
+                w for expert in module.block_sparse_moe.experts
+                  for w in [expert.w1, expert.w3]
+            ],
+            inp=input_feat['block_sparse_moe'],
+            module2inspect=module.block_sparse_moe,
         ))
 
         # remaining experts
-        experts = module.block_sparse_moe.experts
-        for i, expert in enumerate(experts[1:]):
-            expert_index = i+1
-
+        for i, expert in enumerate(module.block_sparse_moe.experts):
             layers.append(dict(
                 prev_op=expert.w3,
-                layers=[expert.w3, expert.w1],
-                inp=input_feat[f'block_sparse_moe.experts.{expert_index}.w1'],
-                module2inspect=experts[expert_index],
+                layers=[expert.w2],
+                inp=input_feat[f'block_sparse_moe.experts.{i}.w2'],
             ))
 
         return layers

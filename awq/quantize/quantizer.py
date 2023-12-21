@@ -383,6 +383,11 @@ class AwqQuantizer:
 
         input_feat = defaultdict(list)
         handles = []
+
+        # FIXME: Workaround for Mixtral to use block_sparse_moe input features
+        if self.awq_model.model_type == "mixtral":
+            named_linears = {**named_linears, "block_sparse_moe": layer.block_sparse_moe}
+
         for name in named_linears:
             handles.append(named_linears[name].register_forward_hook(
                 functools.partial(cache_input_hook, name=name,
