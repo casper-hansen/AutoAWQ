@@ -3,10 +3,10 @@ from typing import List, Tuple
 from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import MixtralBlock
-from awq.modules.fused.model import LlamaLikeModel
+from awq.modules.fused.model import MixtralModel
 from transformers.models.mixtral.modeling_mixtral import (
-    MixtralDecoderLayer as OldmixtralDecoderLayer,
-    MixtralForCausalLM as OldmixtralForCausalLM
+    MixtralDecoderLayer as OldMixtralDecoderLayer,
+    MixtralForCausalLM as OldMixtralForCausalLM
 )
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
@@ -14,9 +14,14 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MixtralDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
-
+    
     @staticmethod
-    def get_model_layers(model: OldmixtralForCausalLM):
+    def fuse_layers(model: OldMixtralForCausalLM):
+        fuser = MixtralFuser(model)
+        fuser.fuse_transformer()
+    
+    @staticmethod
+    def get_model_layers(model: OldMixtralForCausalLM):
         return model.model.layers
     
     @staticmethod
@@ -26,11 +31,11 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         )
     
     @staticmethod
-    def move_embed(model: OldmixtralForCausalLM, device: str):
+    def move_embed(model: OldMixtralForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: OldmixtralDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldMixtralDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -73,10 +78,10 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
 
 
 class MixtralFuser:
-    def __init__(self, model: OldmixtralForCausalLM):
+    def __init__(self, model: OldMixtralForCausalLM):
         self.model = model
 
-        self.mixtral_blocks: List[Tuple[str, OldmixtralDecoderLayer]] = [
+        self.mixtral_blocks: List[Tuple[str, OldMixtralDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
             if 'MixtralDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
@@ -84,7 +89,7 @@ class MixtralFuser:
     def fuse_transformer(self):
         blocks = []
 
-        module: OldmixtralDecoderLayer
+        module: OldMixtralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -115,14 +120,14 @@ class MixtralFuser:
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                moe=module.block_sparse_moe.experts,
+                moe=module.block_sparse_moe,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
                 max_seq_len=self.model.config.max_new_tokens
             ))
         
-        self.model.model = LlamaLikeModel(
+        self.model.model = MixtralModel(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,
