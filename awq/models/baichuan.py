@@ -1,7 +1,7 @@
 import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
-from awq.modules.fused.block import BaichuanBlock
+from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
@@ -115,7 +115,7 @@ class BaichuanFuser:
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.epsilon
             )
-            blocks.append(BaichuanBlock(
+            blocks.append(LlamaLikeBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
                 n_kv_heads=self.model.config.num_attention_heads,
