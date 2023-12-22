@@ -1,4 +1,5 @@
 import torch
+import inspect
 import logging
 import functools
 import torch.nn as nn
@@ -9,7 +10,13 @@ from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
+from awq.utils.module import (
+    append_str_prefix,
+    get_op_name,
+    get_named_linears,
+    set_op_by_name,
+    exclude_layers_to_not_quantize
+)
 
 
 class AwqQuantizer:
@@ -69,13 +76,6 @@ class AwqQuantizer:
 
         return w
     
-    def _exclude_layers_to_not_quantize(self, linear_layers):
-        filtered_layers = {}
-        for name, linear_layer in linear_layers.items():
-            if not any(key in name for key in self.modules_to_not_convert):
-                filtered_layers[name] = linear_layer
-        return filtered_layers
-    
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
@@ -90,7 +90,7 @@ class AwqQuantizer:
             named_linears = get_named_linears(self.modules[i])
 
             # Filter out the linear layers we don't want to exclude
-            named_linears = self._exclude_layers_to_not_quantize(named_linears)
+            named_linears = exclude_layers_to_not_quantize(named_linears, self.modules_to_not_convert)
 
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
@@ -170,14 +170,16 @@ class AwqQuantizer:
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
-            fp16_output = module2inspect(inp, **kwargs)
+            module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
+
+            fp16_output = module2inspect(inp, **module_kwargs)
             if isinstance(fp16_output, tuple):
                 fp16_output = fp16_output[0]
         
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
             inp, w_max, x_max, module2inspect,
-            layers, fp16_output, kwargs
+            layers, fp16_output, module_kwargs
         )
         
         return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
@@ -384,16 +386,47 @@ class AwqQuantizer:
 
         input_feat = defaultdict(list)
         handles = []
+
+        # FIXME: Workaround for Mixtral to use block_sparse_moe input features
+        if self.awq_model.model_type == "mixtral":
+            named_linears = {**named_linears, "block_sparse_moe": layer.block_sparse_moe}
+
         for name in named_linears:
             handles.append(named_linears[name].register_forward_hook(
                 functools.partial(cache_input_hook, name=name,
                                 feat_dict=input_feat)))
         self.inps = self.inps.to(next(layer.parameters()).device)  # in case multi-gpu
         # get output as next layer's input
-        self.inps = layer(self.inps, **self.module_kwargs)[0]
+        
+        # Sanitize the kwargs in case we use transformers version that contains
+        # kwargs that are not handled by the module.
+        # Useful for trust_remote_code models.
+        module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
+
+        self.inps = layer(self.inps, **module_kwargs)[0]
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
         
         return input_feat
+
+
+    def _sanitize_kwargs(self, inputs_kwargs, module):
+        """
+        Remove the arguments that are not supported in the module's
+        forward pass to avoid breaking behaviour between different versions
+        of transformers. 
+
+        Args:
+            inputs_kwargs (`dict`):
+                The input dictionary to pass to the model layer
+            module (`torch.nn.Module`):
+                Target module to quantize.
+        """
+        module_signature = inspect.signature(module.forward).parameters
+        sanitized_kwargs = {}
+        for k, v in  inputs_kwargs.items():
+            if k in module_signature:
+                sanitized_kwargs[k] = v
+        return sanitized_kwargs

@@ -11,3 +11,4 @@ from .aquila import AquilaAWQForCausalLM
 from .yi import YiAWQForCausalLM
 from .qwen import QwenAWQForCausalLM
 from .llava import LlavaAWQForCausalLM
+from .mixtral import MixtralAWQForCausalLM
