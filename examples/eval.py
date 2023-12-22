@@ -2,7 +2,6 @@ import argparse
 from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.utils.lm_eval_adaptor import LMEvalAdaptor
 from awq.utils.eval_utils import evaluate_perplexity
 
 def run_eval(
@@ -26,11 +25,9 @@ def run_eval(
         evaluate_perplexity(model.model, tokenizer)
 
     else:
-        lm_eval_model = LMEvalAdaptor(model_path, model, tokenizer, device, batch_size=task_batch_size)
-
         # Evaluate perplexity of quantized model
         results = evaluator.simple_evaluate(
-            model=lm_eval_model,
+            model=model,
             tasks=tasks,
             batch_size=task_batch_size,
             no_cache=True,

@@ -18,8 +18,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: OldMixtralForCausalLM):
         fuser = MixtralFuser(model)
-        # TODO: Fix perplexity on fusing Mixtral
-        #fuser.fuse_transformer()
+        fuser.fuse_transformer()
     
     @staticmethod
     def get_model_layers(model: OldMixtralForCausalLM):
@@ -125,7 +124,8 @@ class MixtralFuser:
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens
+                max_seq_len=self.model.config.max_new_tokens,
+                rope_theta=self.model.config.rope_theta
             ))
         
         self.model.model = MixtralModel(

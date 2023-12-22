@@ -118,7 +118,8 @@ class LlamaFuser:
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens
+                max_seq_len=self.model.config.max_new_tokens,
+                rope_theta=self.model.config.rope_theta
             ))
         
         self.model.model = LlamaLikeModel(
