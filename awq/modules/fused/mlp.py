@@ -36,7 +36,7 @@ class QuantFusedMLP(nn.Module):
 
         self.activation = activation
 
-    def forward(self, x, *args, **kwargs):
+    def forward(self, x, routing_weights=None):
         out_shape = x.shape[:-1] + (self.intermediate_size,)
         x = x.reshape(-1, x.shape[-1])
         gate_output = self.linear(
@@ -57,8 +57,8 @@ class QuantFusedMLP(nn.Module):
         x = x.reshape(out_shape)
         x = self.down_proj(x)
 
-        if kwargs.get("routing_weights") is not None:
-            x = kwargs["routing_weights"] * x
+        if routing_weights is not None:
+            x = routing_weights * x
 
         return x
         
