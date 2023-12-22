@@ -8,12 +8,10 @@ os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
 AUTOAWQ_VERSION = "0.1.7"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
-CUDA_VERSION = "".join(os.environ.get("CUDA_VERSION", torch.version.cuda).split("."))[:3]
-PY_VERSION = f"{sys.version_info.major}{sys.version_info.minor}"
-OPERATING_SYSTEM = "win_amd64" if os.name == "nt" else "linux_x86_64"
 
 if not PYPI_BUILD:
     try:
+        CUDA_VERSION = "".join(os.environ.get("CUDA_VERSION", torch.version.cuda).split("."))[:3]
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     except Exception as ex:
         raise RuntimeError("Your system must have an Nvidia GPU for installing AutoAWQ")
@@ -43,12 +41,8 @@ common_setup_kwargs = {
     ]
 }
 
-kernel_version = "0.0.1"
-base_kernel = f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{kernel_version}/"
-kernel_wheel = f"autoawq_kernels-{kernel_version}+{CUDA_VERSION}-cp39-cp39-{OPERATING_SYSTEM}.whl"
-wheel_link = base_kernel + kernel_wheel
-
 requirements = [
+    "autoawq_kernels",
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
@@ -61,7 +55,6 @@ requirements = [
     "protobuf",
     "torchvision",
     "tabulate",
-    wheel_link
 ]
 
 setup(
