@@ -18,8 +18,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def fuse_layers(model: OldMixtralForCausalLM):
         fuser = MixtralFuser(model)
-        # TODO: Fix perplexity on fusing Mixtral
-        #fuser.fuse_transformer()
+        fuser.fuse_transformer()
     
     @staticmethod
     def get_model_layers(model: OldMixtralForCausalLM):
