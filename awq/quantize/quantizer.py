@@ -10,7 +10,13 @@ from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.utils.module import append_str_prefix, get_op_name, get_named_linears, set_op_by_name
+from awq.utils.module import (
+    append_str_prefix,
+    get_op_name,
+    get_named_linears,
+    set_op_by_name,
+    exclude_layers_to_not_quantize
+)
 
 
 class AwqQuantizer:
@@ -70,13 +76,6 @@ class AwqQuantizer:
 
         return w
     
-    def _exclude_layers_to_not_quantize(self, linear_layers):
-        filtered_layers = {}
-        for name, linear_layer in linear_layers.items():
-            if not any(key in name for key in self.modules_to_not_convert):
-                filtered_layers[name] = linear_layer
-        return filtered_layers
-    
     def quantize(self):
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
@@ -91,7 +90,7 @@ class AwqQuantizer:
             named_linears = get_named_linears(self.modules[i])
 
             # Filter out the linear layers we don't want to exclude
-            named_linears = self._exclude_layers_to_not_quantize(named_linears)
+            named_linears = exclude_layers_to_not_quantize(named_linears, self.modules_to_not_convert)
 
             input_feat = self._get_input_feat(self.modules[i], named_linears)
             clear_memory()
@@ -387,6 +386,11 @@ class AwqQuantizer:
 
         input_feat = defaultdict(list)
         handles = []
+
+        # FIXME: Workaround for Mixtral to use block_sparse_moe input features
+        if self.awq_model.model_type == "mixtral":
+            named_linears = {**named_linears, "block_sparse_moe": layer.block_sparse_moe}
+
         for name in named_linears:
             handles.append(named_linears[name].register_forward_hook(
                 functools.partial(cache_input_hook, name=name,

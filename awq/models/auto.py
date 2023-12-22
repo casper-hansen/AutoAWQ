@@ -14,6 +14,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gptj": GPTJAWQForCausalLM,
     "gpt_bigcode": GptBigCodeAWQForCausalLM,
     "mistral": MistralAWQForCausalLM,
+    "mixtral": MixtralAWQForCausalLM,
     "gpt_neox": GPTNeoXAWQForCausalLM,
     "aquila": AquilaAWQForCausalLM,
     "Yi": YiAWQForCausalLM,
