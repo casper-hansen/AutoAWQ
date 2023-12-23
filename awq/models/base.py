@@ -20,15 +20,12 @@ from awq.utils.module import (
     exclude_layers_to_not_quantize,
 )
 from transformers import (
-    AutoModelForCausalLM,
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
-    LlavaForConditionalGeneration
 )
 from accelerate.big_modeling import (
     init_empty_weights,
-    infer_auto_device_map,
     load_checkpoint_and_dispatch,
 )
 
