@@ -19,6 +19,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "aquila": AquilaAWQForCausalLM,
     "Yi": YiAWQForCausalLM,
     "qwen": QwenAWQForCausalLM,
+    "baichuan": BaichuanAWQForCausalLM,
     "llava": LlavaAWQForCausalLM,
 }
 

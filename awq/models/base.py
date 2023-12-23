@@ -55,6 +55,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "aquila": "AutoModelForCausalLM",
     "Yi": "AutoModelForCausalLM",
     "qwen": "AutoModelForCausalLM",
+    "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
 }
 
@@ -90,6 +91,7 @@ class BaseAWQForCausalLM(nn.Module):
             self.quant_config.version, calib_data, split, text_column, duo_scaling, modules_to_not_convert=modules_to_not_convert
         )
         quantizer.quantize()
+        
         self.is_quantized = True
     
     @staticmethod
