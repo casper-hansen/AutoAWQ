@@ -55,6 +55,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "aquila": "AutoModelForCausalLM",
     "Yi": "AutoModelForCausalLM",
     "qwen": "AutoModelForCausalLM",
+    "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
 }
 
