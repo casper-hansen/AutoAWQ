@@ -6,23 +6,23 @@ from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
-    LlamaForCausalLM as OldLlamaForCausalLM
 )
+from transformers.models.llava.modeling_llava import LlavaForConditionalGeneration as OldLlavaForConditionalGeneration
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
-class LlamaAWQForCausalLM(BaseAWQForCausalLM):
+class LlavaAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model: OldLlavaForConditionalGeneration):
+        fuser = LlavaFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldLlamaForCausalLM):
-        return model.model.layers
+    def get_model_layers(model: OldLlavaForConditionalGeneration):
+        return model.language_model.model.layers
     
     @staticmethod
     def get_act_for_scaling(module: OldLlamaDecoderLayer):
@@ -31,8 +31,8 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         )
     
     @staticmethod
-    def move_embed(model: OldLlamaForCausalLM, device: str):
-        model.model.embed_tokens = model.model.embed_tokens.to(device)
+    def move_embed(model: OldLlavaForConditionalGeneration, device: str):
+        model.language_model.model.embed_tokens = model.get_input_embeddings().to(device)
     
     @staticmethod
     def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
@@ -74,9 +74,9 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class LlamaFuser:
-    def __init__(self, model: OldLlamaForCausalLM):
-        self.model = model
+class LlavaFuser:
+    def __init__(self, model: OldLlavaForConditionalGeneration):
+        self.model = model.language_model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
@@ -118,11 +118,10 @@ class LlamaFuser:
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens,
-                rope_theta=self.model.config.rope_theta
+                max_seq_len=self.model.config.max_new_tokens
             ))
         
-        self.model.model = LlamaLikeModel(
+        self.model = LlamaLikeModel(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,

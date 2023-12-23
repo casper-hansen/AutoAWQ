@@ -14,11 +14,13 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gptj": GPTJAWQForCausalLM,
     "gpt_bigcode": GptBigCodeAWQForCausalLM,
     "mistral": MistralAWQForCausalLM,
+    "mixtral": MixtralAWQForCausalLM,
     "gpt_neox": GPTNeoXAWQForCausalLM,
     "aquila": AquilaAWQForCausalLM,
     "Yi": YiAWQForCausalLM,
     "qwen": QwenAWQForCausalLM,
-    "baichuan": BaichuanAWQForCausalLM
+    "baichuan": BaichuanAWQForCausalLM,
+    "llava": LlavaAWQForCausalLM,
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True, **model_init_kwargs):

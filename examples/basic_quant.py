@@ -7,7 +7,9 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 # NOTE: pass safetensors=True to load safetensors
-model = AutoAWQForCausalLM.from_pretrained(model_path, **{"low_cpu_mem_usage": True})
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Quantize

@@ -1,33 +1,65 @@
 import os
 import gc
 import json
+
 import torch
 import torch.nn as nn
+
 from tqdm import tqdm
 from typing import List, Union
 from safetensors.torch import save_file
-from awq.models._config import AwqConfig
-from awq.modules.act import ScaledActivation
+
 from huggingface_hub import snapshot_download
-from awq.quantize.quantizer import AwqQuantizer
+import transformers
 from transformers.modeling_utils import shard_checkpoint
+
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.utils.module import get_named_linears, set_op_by_name
+from awq.utils.module import (
+    get_named_linears,
+    set_op_by_name,
+    exclude_layers_to_not_quantize,
+)
 from transformers import (
-    AutoModelForCausalLM,
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
+    AutoProcessor,
+    CLIPImageProcessor,
 )
 from accelerate.big_modeling import (
     init_empty_weights,
-    infer_auto_device_map,
     load_checkpoint_and_dispatch,
 )
-from accelerate.utils import get_balanced_memory
+
+from awq.models._config import AwqConfig
+from awq.modules.act import ScaledActivation
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.quantize.quantizer import AwqQuantizer
+from awq.utils.module import get_named_linears, set_op_by_name
+
+# Since we support different `AutoModelForxxx` from transformers 
+# we need to define a custom mapping dict as below:
+TRANSFORMERS_AUTO_MAPPING_DICT = {
+    "mpt": "AutoModelForCausalLM",
+    "llama": "AutoModelForCausalLM",
+    "opt": "AutoModelForCausalLM",
+    "RefinedWeb": "AutoModelForCausalLM",
+    "RefinedWebModel": "AutoModelForCausalLM",
+    "falcon": "AutoModelForCausalLM",
+    "bloom": "AutoModelForCausalLM",
+    "gptj": "AutoModelForCausalLM",
+    "gpt_bigcode": "AutoModelForCausalLM",
+    "mistral": "AutoModelForCausalLM",
+    "mixtral": "AutoModelForCausalLM",
+    "gpt_neox": "AutoModelForCausalLM",
+    "aquila": "AutoModelForCausalLM",
+    "Yi": "AutoModelForCausalLM",
+    "qwen": "AutoModelForCausalLM",
+    "llava": "AutoModelForVision2Seq",
+}
 
 class BaseAWQForCausalLM(nn.Module):
-    def __init__(self, model, model_type, is_quantized, config, quant_config):
+    def __init__(self, model, model_type, is_quantized, config, quant_config, processor):
         super().__init__()
         self.model:PreTrainedModel = model
         self.model_type:str = model_type
@@ -35,6 +67,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
+        self.processor: CLIPImageProcessor = processor
     
     def to(self, device: str):
         return self.model.to(device)
@@ -49,12 +82,12 @@ class BaseAWQForCausalLM(nn.Module):
     @torch.no_grad()
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
-                       split="train", text_column="text", duo_scaling=True):
+                       split="train", text_column="text", duo_scaling=True, modules_to_not_convert=None):
         self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
 
         quantizer = AwqQuantizer(
             self, self.model, tokenizer, self.quant_config.w_bit, self.quant_config.q_group_size,
-            self.quant_config.version, calib_data, split, text_column, duo_scaling
+            self.quant_config.version, calib_data, split, text_column, duo_scaling, modules_to_not_convert=modules_to_not_convert
         )
         quantizer.quantize()
         
@@ -76,6 +109,10 @@ class BaseAWQForCausalLM(nn.Module):
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
         self.quant_config.save_pretrained(save_dir)
+
+        # Vision transformers have a processor
+        if self.processor is not None:
+            self.processor.save_pretrained(save_dir)
 
         # Remove empty state dict
         default_paths = [f'{save_dir}/model.safetensors', f'{save_dir}/pytorch_model.bin']
@@ -116,8 +153,16 @@ class BaseAWQForCausalLM(nn.Module):
             self, model_path, '', safetensors, trust_remote_code=trust_remote_code
         )
 
+        target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
+        target_cls = getattr(transformers, target_cls_name)
+
+        processor = None
+        if target_cls_name == "AutoModelForVision2Seq":
+            processor = AutoProcessor.from_pretrained(model_weights_path)
+            processor: CLIPImageProcessor = processor.image_processor
+
         # If not quantized, must load with AutoModelForCausalLM
-        model = AutoModelForCausalLM.from_pretrained(
+        model = target_cls.from_pretrained(
             model_weights_path,
             trust_remote_code=trust_remote_code,
             torch_dtype=torch_dtype,
@@ -128,7 +173,8 @@ class BaseAWQForCausalLM(nn.Module):
 
         model.eval()
 
-        return self(model, model_type, is_quantized=False, config=config, quant_config=quant_config)
+        return self(model, model_type, is_quantized=False, config=config, 
+                    quant_config=quant_config, processor=processor)
 
     @classmethod
     def from_quantized(self, model_path, model_type, model_filename='', 
@@ -143,10 +189,13 @@ class BaseAWQForCausalLM(nn.Module):
             trust_remote_code, max_new_tokens=max_new_tokens,
             **config_kwargs
         )
+
+        target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
+        target_cls = getattr(transformers, target_cls_name)
         
         # [STEP 3] Load model
         with init_empty_weights():
-            model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
+            model = target_cls.from_config(config=config, torch_dtype=torch_dtype, trust_remote_code=trust_remote_code)
         
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(self, model, quant_config, quant_config.version)
@@ -168,7 +217,8 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        return self(model, model_type, is_quantized=is_quantized, config=config, quant_config=quant_config)
+        return self(model, model_type, is_quantized=is_quantized, config=config,
+                    quant_config=quant_config, processor=None)
 
     def _load_config(self, model_path, model_filename, safetensors=True, 
                            version="GEMM", trust_remote_code=True, max_new_tokens=4096,
@@ -177,7 +227,7 @@ class BaseAWQForCausalLM(nn.Module):
         if not os.path.isdir(model_path):
             ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt"]
             if safetensors:
-                ignore_patterns.extend(["*.pt*", "*.bin*"])
+                ignore_patterns.extend(["*.pt*", "*.bin*", "consolidated*"])
             else:
                 ignore_patterns.append("*.safetensors*")
             
@@ -195,7 +245,10 @@ class BaseAWQForCausalLM(nn.Module):
         # Load model config and set max generation length
         if max_new_tokens is None and hasattr(self, 'max_new_tokens_key'):
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
-            config.max_new_tokens = getattr(config, self.max_new_tokens_key)
+            config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
+            # To add the generate support for Multi-modal models as well
+            if hasattr(config, "text_config"):
+                config.text_config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
         else:
             max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code, **config_kwargs)
@@ -215,6 +268,9 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Get every linear layer in a block
             named_linears = get_named_linears(layer)
+
+            # Filter out the linear layers we don't want to exclude
+            named_linears = exclude_layers_to_not_quantize(named_linears, quant_config.modules_to_not_convert)
 
             # Replace activation functions
             self._scale_activations(self, layer)
