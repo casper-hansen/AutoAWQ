@@ -23,6 +23,8 @@ from transformers import (
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
+    AutoProcessor,
+    CLIPImageProcessor,
 )
 from accelerate.big_modeling import (
     init_empty_weights,
@@ -57,7 +59,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
 }
 
 class BaseAWQForCausalLM(nn.Module):
-    def __init__(self, model, model_type, is_quantized, config, quant_config):
+    def __init__(self, model, model_type, is_quantized, config, quant_config, processor):
         super().__init__()
         self.model:PreTrainedModel = model
         self.model_type:str = model_type
@@ -65,6 +67,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
+        self.processor: CLIPImageProcessor = processor
     
     def to(self, device: str):
         return self.model.to(device)
@@ -105,6 +108,10 @@ class BaseAWQForCausalLM(nn.Module):
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
         self.quant_config.save_pretrained(save_dir)
+
+        # Vision transformers have a processor
+        if self.processor is not None:
+            self.processor.save_pretrained(save_dir)
 
         # Remove empty state dict
         default_paths = [f'{save_dir}/model.safetensors', f'{save_dir}/pytorch_model.bin']
@@ -148,6 +155,11 @@ class BaseAWQForCausalLM(nn.Module):
         target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
         target_cls = getattr(transformers, target_cls_name)
 
+        processor = None
+        if target_cls_name == "AutoModelForVision2Seq":
+            processor = AutoProcessor.from_pretrained(model_weights_path)
+            processor: CLIPImageProcessor = processor.image_processor
+
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(
             model_weights_path,
@@ -160,7 +172,8 @@ class BaseAWQForCausalLM(nn.Module):
 
         model.eval()
 
-        return self(model, model_type, is_quantized=False, config=config, quant_config=quant_config)
+        return self(model, model_type, is_quantized=False, config=config, 
+                    quant_config=quant_config, processor=processor)
 
     @classmethod
     def from_quantized(self, model_path, model_type, model_filename='', 
@@ -203,7 +216,8 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        return self(model, model_type, is_quantized=is_quantized, config=config, quant_config=quant_config)
+        return self(model, model_type, is_quantized=is_quantized, config=config,
+                    quant_config=quant_config, processor=None)
 
     def _load_config(self, model_path, model_filename, safetensors=True, 
                            version="GEMM", trust_remote_code=True, max_new_tokens=4096,
