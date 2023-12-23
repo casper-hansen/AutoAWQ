@@ -48,6 +48,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "gptj": "AutoModelForCausalLM",
     "gpt_bigcode": "AutoModelForCausalLM",
     "mistral": "AutoModelForCausalLM",
+    "mixtral": "AutoModelForCausalLM",
     "gpt_neox": "AutoModelForCausalLM",
     "aquila": "AutoModelForCausalLM",
     "Yi": "AutoModelForCausalLM",
