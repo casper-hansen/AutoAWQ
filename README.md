@@ -78,6 +78,7 @@ The detailed support list:
 | BigCode  | 1B/7B/15B                   |
 | GPT NeoX | 20B                         |
 | GPT-J    | 6B                          |
+| Llava    | 7B/13B                      |
 
 ## Usage
 
