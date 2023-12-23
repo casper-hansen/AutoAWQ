@@ -43,7 +43,7 @@ class LlamaLikeBlock(nn.Module):
     """
     def __init__(
         self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, 
-        mlp, norm_1, norm_2, dev, max_seq_len, rope_theta
+        mlp, norm_1, norm_2, dev, max_seq_len, rope_theta, use_alibi=False
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -52,7 +52,7 @@ class LlamaLikeBlock(nn.Module):
         self.norm_1 = norm_1.to(dev)
         self.attn = QuantAttentionFused(
             self.hidden_size, self.n_heads, self.n_kv_heads, qkv_layer, o_proj,
-            dev=dev, max_seq_len=max_seq_len, use_alibi=False, rope_theta=rope_theta
+            dev=dev, max_seq_len=max_seq_len, use_alibi=use_alibi, rope_theta=rope_theta
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)
