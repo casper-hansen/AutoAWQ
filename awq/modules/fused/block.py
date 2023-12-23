@@ -43,7 +43,7 @@ class LlamaLikeBlock(nn.Module):
     """
     def __init__(
         self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, 
-        mlp, norm_1, norm_2, dev, max_seq_len, rope_theta, use_alibi=False
+        mlp, norm_1, norm_2, dev, max_seq_len, rope_theta=10000, use_alibi=False
     ):
         super().__init__()
         self.n_heads = n_heads
