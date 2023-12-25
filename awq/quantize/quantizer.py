@@ -352,8 +352,15 @@ class AwqQuantizer:
 
         # patch layer 0 to catch input and kwargs
         modules[0] = Catcher(modules[0])
+
+        
         try:
-            self.model(samples.to(next(self.model.parameters()).device))
+            if not self.awq_model.is_encoder_decoder:
+                device = next(self.awq_model.parameters()).device
+                self.model(samples.to(device))
+            else:
+                device = self.awq_model.get_input_embeds().weight.device
+                modules[0](self.awq_model.get_input_embeds()(samples.to(device)))
         except ValueError:  # work with early exit
             pass
         
@@ -361,7 +368,7 @@ class AwqQuantizer:
         # that takes care of everything to avoid unexpected errors.
         layer_kwargs = self.model.prepare_inputs_for_generation(samples, **layer_kwargs)
         # Pop the input_ids as they are not needed at all.
-        layer_kwargs.pop("input_ids")
+        layer_kwargs.pop("input_ids", None)
 
         del samples
         modules[0] = modules[0].module  # restore
