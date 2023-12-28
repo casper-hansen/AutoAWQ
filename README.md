@@ -32,6 +32,7 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
 
 - Your GPU(s) must be of Compute Capability 7.5. Turing and later architectures are supported.
 - Your CUDA version must be CUDA 11.8 or later.
+- Requires installing [AutoAWQ kernels](https://github.com/casper-hansen/AutoAWQ_kernels).
 
 ### Install from PyPi
 
