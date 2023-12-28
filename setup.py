@@ -42,7 +42,7 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "autoawq_kernels",
+    "autoawq-kernels",
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
