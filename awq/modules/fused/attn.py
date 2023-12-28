@@ -8,7 +8,7 @@ from awq.utils.fused_utils import get_attention_shapes
 
 
 try:
-    import ft_inference_engine
+    import awq_ft_ext
     FT_INSTALLED = True
 except:
     FT_INSTALLED = False
@@ -214,7 +214,7 @@ class QuantAttentionFused(nn.Module):
             xv = xv.view((bsz,) + self.attention_shapes["single_xv_view"])
 
             alibi_slopes = self.alibi.slopes if self.alibi is not None else None
-            attention_weight = ft_inference_engine.single_query_attention(
+            attention_weight = awq_ft_ext.single_query_attention(
                 xq, # query
                 xk, # key
                 xv, # value
