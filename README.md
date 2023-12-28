@@ -50,8 +50,6 @@ pip install https://github.com/casper-hansen/AutoAWQ/releases/download/v0.1.6/au
 
 ### Build from source
 
-Build time can take 10-20 minutes. Download your model while you install AutoAWQ.
-
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
 cd AutoAWQ
