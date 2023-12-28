@@ -23,11 +23,13 @@ if HF_NEW_CACHE_FORMAT:
 
 
 class RoPE(nn.Module):
-    def __init__(self, hidden_size, n_heads, max_seq_len, device):
+    def __init__(self, hidden_size, n_heads, max_seq_len, device, rope_theta):
         super(RoPE, self).__init__()
         
         self.freqs_cis = nn.Parameter(
-            self.precompute_freqs_cis(hidden_size // n_heads, max_seq_len * 2).to(device),
+            self.precompute_freqs_cis(
+                hidden_size // n_heads, max_seq_len * 2, rope_theta
+            ).to(device),
             requires_grad=False
         )
 
@@ -97,7 +99,7 @@ class ALiBi(nn.Module):
 
 class QuantAttentionFused(nn.Module):
     def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, dev, max_seq_len, 
-                       use_alibi=False, attention_shapes=None):
+                       use_alibi=False, attention_shapes=None, rope_theta=10000):
         super().__init__()
         self.hidden_size = hidden_size
         self.n_heads = n_heads
@@ -111,6 +113,7 @@ class QuantAttentionFused(nn.Module):
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
         self.max_seq_len = max_seq_len
         self.is_hf_transformers = False
+        self.rope_theta = rope_theta
 
         # attention shapes for self attention
         self.attention_shapes = get_attention_shapes(
@@ -127,7 +130,7 @@ class QuantAttentionFused(nn.Module):
             self.is_neox = False
         else:
             self.alibi = None
-            self.rope = RoPE(hidden_size, n_heads, max_seq_len, dev)
+            self.rope = RoPE(hidden_size, n_heads, max_seq_len, dev, rope_theta)
             self.rotary_dim = self.head_dim
             self.is_neox = True
     
@@ -221,7 +224,7 @@ class QuantAttentionFused(nn.Module):
                 alibi_slopes, # alibi slopes
                 self.start_pos, # timestep
                 self.rotary_dim, # rotary embedding dimension
-                10000, # rotary embedding base
+                self.rope_theta, # rotary embedding base
                 self.is_neox, # is neox
             )
             attention_weight = attention_weight.reshape(bsz, 1, -1)

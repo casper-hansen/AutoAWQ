@@ -1,7 +1,6 @@
 import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
-from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
@@ -11,50 +10,58 @@ from transformers.models.llama.modeling_llama import (
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
-class LlamaAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "LlamaDecoderLayer"
-    max_new_tokens_key = "max_position_embeddings"
+class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "BaichuanLayer"
+    max_new_tokens_key = "model_max_length"
 
     @staticmethod
-    def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model):
+        fuser = BaichuanFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldLlamaForCausalLM):
+    def get_model_layers(model):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: OldLlamaDecoderLayer):
+    def get_act_for_scaling(module):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: OldLlamaForCausalLM, device: str):
+    def move_embed(model, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
+    # def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module, input_feat, module_kwargs):
         layers = []
 
         # attention input
         layers.append(dict(
             prev_op=module.input_layernorm,
-            layers=[module.self_attn.q_proj,
-                    module.self_attn.k_proj, module.self_attn.v_proj],
-            inp=input_feat['self_attn.q_proj'],
+            layers=[module.self_attn.W_pack],
+            inp=input_feat['self_attn.W_pack'],
             module2inspect=module.self_attn, kwargs=module_kwargs,
         ))
 
+        # # attention out
+        # # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+        # if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+        #     layers.append(dict(
+        #         prev_op=module.self_attn.v_proj,
+        #         layers=[module.self_attn.o_proj],
+        #         inp=input_feat['self_attn.o_proj'],
+        #     ))
+
         # attention out
         # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
-        if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
-            layers.append(dict(
-                prev_op=module.self_attn.v_proj,
-                layers=[module.self_attn.o_proj],
-                inp=input_feat['self_attn.o_proj'],
-            ))
+        layers.append(dict(
+            prev_op=module.self_attn.W_pack,
+            layers=[module.self_attn.o_proj],
+            inp=input_feat['self_attn.o_proj'],
+        ))
         
         # linear 1
         layers.append(dict(
@@ -74,8 +81,8 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class LlamaFuser:
-    def __init__(self, model: OldLlamaForCausalLM):
+class BaichuanFuser:
+    def __init__(self, model):
         self.model = model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
@@ -86,15 +93,15 @@ class LlamaFuser:
     def fuse_transformer(self):
         blocks = []
 
-        module: OldLlamaDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
-            qkv = fuse_qkv(
-                module,
-                module.self_attn.q_proj,
-                module.self_attn.k_proj,
-                module.self_attn.v_proj
-            )
+            # qkv = fuse_qkv(
+            #     module,
+            #     module.self_attn.q_proj,
+            #     module.self_attn.k_proj,
+            #     module.self_attn.v_proj
+            # )
+            qkv = module.self_attn.W_pack
             mlp = QuantFusedMLP(
                 module.mlp.gate_proj,
                 module.mlp.down_proj,
@@ -102,16 +109,16 @@ class LlamaFuser:
             )
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight,
-                module.input_layernorm.variance_epsilon
+                module.input_layernorm.epsilon
             )
             norm_2 = FasterTransformerRMSNorm(
                 module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.variance_epsilon
+                module.post_attention_layernorm.epsilon
             )
             blocks.append(LlamaLikeBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
-                n_kv_heads=self.model.config.num_key_value_heads,
+                n_kv_heads=self.model.config.num_attention_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
                 mlp=mlp,
@@ -119,7 +126,7 @@ class LlamaFuser:
                 norm_2=norm_2,
                 dev=device,
                 max_seq_len=self.model.config.max_new_tokens,
-                rope_theta=self.model.config.rope_theta
+                use_alibi=True
             ))
         
         self.model.model = LlamaLikeModel(

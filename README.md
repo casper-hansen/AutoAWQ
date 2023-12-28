@@ -19,6 +19,7 @@
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2023/12] Mixtral, LLaVa, QWen, Baichuan model support.
 - [2023/11] AutoAWQ inference has been integrated into 🤗 transformers. Now includes CUDA 12.1 wheels.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
 - [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon).
@@ -78,6 +79,10 @@ The detailed support list:
 | BigCode  | 1B/7B/15B                   |
 | GPT NeoX | 20B                         |
 | GPT-J    | 6B                          |
+| LLaVa    | 7B/13B                      |
+| Mixtral  | 8x7B                        |
+| Baichuan | 7B/13B                      |
+| QWen     | 1.8B/7B/14/72B              |
 
 ## Usage
 

@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
-AUTOAWQ_VERSION = "0.1.7"
+AUTOAWQ_VERSION = "0.1.8"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 
 if not PYPI_BUILD:
