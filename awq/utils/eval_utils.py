@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from lm_eval import evaluator
 from datasets import load_dataset
 from transformers import pipeline
 from evaluate import load as load_metric
+from lm_eval.tasks import initialize_tasks
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.whisper.english_normalizer import BasicTextNormalizer
 
@@ -97,6 +99,21 @@ def eval_librispeech(model_id, num_samples=100, batch_size=4):
             # word error rate computation
             wer = wer_metric.compute(predictions=predictions, references=references) * 100
             pbar.set_description(f"Word Error Rate: {wer:.3f}%")
+
+def eval_mmlu(model_path="gpt2", num_fewshot=1, batch_size=1, device="cuda:0"):
+    initialize_tasks()
+
+    results = evaluator.simple_evaluate(
+        model="hf",
+        model_args=f"pretrained={model_path}",
+        tasks=['mmlu'],
+        num_fewshot=num_fewshot,
+        batch_size=batch_size,
+        device=device,
+        log_samples=False,
+    )
+
+    print(evaluator.make_table(results))
 
 if __name__ == '__main__':
     ### PERPLEXITY
