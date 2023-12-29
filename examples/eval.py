@@ -2,7 +2,11 @@ import argparse
 from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.utils.eval_utils import evaluate_perplexity
+from awq.utils.eval_utils import (
+    evaluate_perplexity,
+    eval_librispeech,
+    eval_mmlu,
+)
 
 def run_eval(
         model_path, quant_file, device, tasks, task_batch_size, task_n_shot,
@@ -23,6 +27,12 @@ def run_eval(
     tasks = tasks.split(',')
     if len(tasks) == 1 and tasks[0] == 'wikitext':
         evaluate_perplexity(model.model, tokenizer)
+    
+    elif len(tasks) == 1 and tasks[0] == 'librispeech':
+        eval_librispeech(model_path)
+    
+    elif len(tasks) == 1 and tasks[0] == 'mmlu':
+        eval_mmlu(model_path, task_n_shot, task_batch_size, device)
 
     else:
         # Evaluate perplexity of quantized model
