@@ -2,6 +2,18 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from datasets import load_dataset
+from transformers import pipeline
+from evaluate import load as load_metric
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.models.whisper.english_normalizer import BasicTextNormalizer
+
+def get_device():
+    if torch.backends.mps.is_available():
+        return 'mps'
+    elif torch.cuda.is_available():
+        return 'cuda:0'
+    else:
+        return 'cpu'
 
 def evaluate_perplexity(model, tokenizer):
     def _perplexity(nlls, n_samples, seqlen):
@@ -39,11 +51,61 @@ def evaluate_perplexity(model, tokenizer):
     
     return ppl.item()
 
-if __name__ == '__main__':
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    
-    model_path = 'mistralai/Mistral-7B-Instruct-v0.1'
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+def eval_librispeech(model_id, num_samples=100, batch_size=4):
+    dataset = load_dataset("librispeech_asr", "clean", split="test", streaming=True)
 
-    evaluate_perplexity(model, tokenizer)
+    # Load the Whisper model pipeline for automatic speech recognition
+    pipe = pipeline(
+        task="automatic-speech-recognition",
+        model=model_id,
+        batch_size=batch_size,
+        device=get_device(),
+        torch_dtype=torch.float16,
+    )
+
+    # Word normalizer
+    normalizer = BasicTextNormalizer()
+    
+    # Load the WER metric
+    wer_metric = load_metric("wer")
+
+    texts = []
+    audio = []
+    for i, data in tqdm(enumerate(dataset), total=num_samples, desc="Loading dataset"):
+        if len(audio) == num_samples: break
+        audio.append(data["audio"])
+        texts.append(data["text"])
+
+    references = []
+    predictions = []
+
+    with tqdm(range(0, num_samples, batch_size), desc="Word Error Rate: -") as pbar:
+        for i in pbar:
+            batch_audio = audio[i:i+batch_size]
+            batch_texts = texts[i:i+batch_size]
+
+            # inference
+            results = pipe(batch_audio, batch_size=len(batch_audio))
+
+            # normalize text
+            normalized_predictions = [normalizer(result["text"]) for result in results]
+            normalized_texts = [normalizer(text) for text in batch_texts]
+
+            predictions.extend(normalized_predictions)
+            references.extend(normalized_texts)
+
+            # word error rate computation
+            wer = wer_metric.compute(predictions=predictions, references=references) * 100
+            pbar.set_description(f"Word Error Rate: {wer:.3f}%")
+
+if __name__ == '__main__':
+    ### PERPLEXITY
+    # model_path = 'mistralai/Mistral-7B-Instruct-v0.1'
+    # model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+    # tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # evaluate_perplexity(model, tokenizer)
+
+    ### WORD ERROR RATE
+    # model_id = "distil-whisper/distil-small.en" # 3.594
+    model_id = "distil-whisper/distil-medium.en" # 3.436
+    eval_librispeech(model_id)
