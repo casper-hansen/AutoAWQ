@@ -100,12 +100,39 @@ def eval_librispeech(model_id, num_samples=100, batch_size=4):
             wer = wer_metric.compute(predictions=predictions, references=references) * 100
             pbar.set_description(f"Word Error Rate: {wer:.3f}%")
 
-def eval_mmlu(model_path="gpt2", num_fewshot=1, batch_size=1, device="cuda:0"):
-    initialize_tasks()
+def eval_mmlu(model_path="gpt2", num_fewshot=1, batch_size=1, device="cuda:0", task_use_pretrained=False):
+    try:
+        import vllm
+        VLLM_INSTALLED = True
+    except ImportError:
+        VLLM_INSTALLED = False
+    
+    initialize_tasks(verbosity="DEBUG")
+
+    if VLLM_INSTALLED:
+        model = "vllm"
+        model_args = dict(
+            pretrained=model_path,
+            max_model_len=2048,
+            dtype="float16",
+            trust_remote_code=True,
+        )
+
+        if not task_use_pretrained:
+            model_args["quantization"] = "awq"
+    else:
+        model = "hf"
+        model_args = dict(
+            pretrained=model_path,
+            device_map_option=device,
+            dtype="float16",
+            trust_remote_code=True,
+        )
+    model_args = ",".join([f"{k}={v}" for k,v in model_args.items()])
 
     results = evaluator.simple_evaluate(
-        model="hf",
-        model_args=f"pretrained={model_path}",
+        model=model,
+        model_args=model_args,
         tasks=['mmlu'],
         num_fewshot=num_fewshot,
         batch_size=batch_size,
