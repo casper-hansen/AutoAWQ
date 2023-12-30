@@ -18,7 +18,7 @@ def run_eval(
     tasks = tasks.split(',')
 
     # Load model
-    if len(tasks) == 1 and tasks[0] != "mmlu":
+    if len(tasks) == 1 and tasks[0] != "mmlu" and tasks[0] != "librispeech":
         if task_use_pretrained:
             model = AutoAWQForCausalLM.from_pretrained(model_path, safetensors=pretrained_safetensors)
         else:
