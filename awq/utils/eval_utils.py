@@ -54,6 +54,11 @@ def evaluate_perplexity(model, tokenizer):
     return ppl.item()
 
 def eval_librispeech(model_id, num_samples=100, batch_size=4):
+    try:
+        import jiwer, librosa, soundfile
+    except ImportError:
+        print("Please install the following: pip install jiwer librosa soundfile")
+    
     dataset = load_dataset("librispeech_asr", "clean", split="test", streaming=True)
 
     # Load the Whisper model pipeline for automatic speech recognition
