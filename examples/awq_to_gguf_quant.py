@@ -3,10 +3,10 @@ import subprocess
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 
-model_path = 'TheBloke/Llama-2-7B-Chat-fp16'
-quant_path = 'llama-2-7b-chat-awq'
+model_path = 'mistralai/Mistral-7B-v0.1'
+quant_path = 'mistral-awq'
 llama_cpp_path = '/workspace/llama.cpp'
-quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 6, "version": "GEMM" }
 
 # Load model
 # NOTE: pass safetensors=True to load safetensors
@@ -31,7 +31,7 @@ print(f'Model is quantized and saved at "{quant_path}"')
 
 # GGUF conversion
 print('Converting model to GGUF...')
-llama_cpp_method = f"q{quant_config['w_bit']}_0"
+llama_cpp_method = "q4_K_M"
 convert_cmd_path = os.path.join(llama_cpp_path, "convert.py")
 quantize_cmd_path = os.path.join(llama_cpp_path, "quantize")
 
