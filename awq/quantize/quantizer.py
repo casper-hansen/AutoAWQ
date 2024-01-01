@@ -21,7 +21,8 @@ from awq.utils.module import (
 
 class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
-                       calib_data, split, text_column, duo_scaling, modules_to_not_convert=None) -> None:
+                       calib_data, split, text_column, duo_scaling, modules_to_not_convert=None,
+                       gguf_compatible=False) -> None:
         self.awq_model = awq_model
         self.model = model
         self.tokenizer = tokenizer
@@ -32,6 +33,7 @@ class AwqQuantizer:
         self.split = split
         self.text_column = text_column
         self.duo_scaling = duo_scaling
+        self.gguf_compatible = gguf_compatible
         self.modules_to_not_convert = modules_to_not_convert if modules_to_not_convert is not None else []
         self.modules, self.module_kwargs, self.inps = self.init_quant()
     
@@ -109,7 +111,9 @@ class AwqQuantizer:
             clip_list = append_str_prefix(clip_list, get_op_name(self.model, self.modules[i]) + ".")
 
             # [STEP 4]: Quantize weights
-            self._apply_quant(self.modules[i], named_linears)
+            if not self.gguf_compatible:
+                self._apply_quant(self.modules[i], named_linears)
+            
             clear_memory()
     
     def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
