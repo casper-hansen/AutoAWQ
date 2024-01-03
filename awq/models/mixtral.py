@@ -6,7 +6,8 @@ from awq.modules.fused.block import MixtralBlock
 from awq.modules.fused.model import MixtralModel
 from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
-    MixtralForCausalLM as OldMixtralForCausalLM
+    MixtralForCausalLM as OldMixtralForCausalLM,
+    MixtralBLockSparseTop2MLP as OldMixtralBLockSparseTop2MLP,
 )
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
@@ -62,19 +63,18 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
                 layers=[module.self_attn.o_proj],
                 inp=input_feat['self_attn.o_proj'],
             ))
-        
-        # linear in
+
+        # NOTE: Scaled in awq.quantize.scale.scale_moe_experts, awq.modules.moe.ScaledMixtralSparseMoeBlock
+        # Experts: Not a linear layer, special handling is introduced in awq.quantize.quantizer
         layers.append(dict(
-            prev_op=module.post_attention_layernorm,
-            layers=[
-                w for expert in module.block_sparse_moe.experts
-                  for w in [expert.w1, expert.w3]
-            ],
+            prev_op=module.block_sparse_moe,
+            layers=module.block_sparse_moe.experts,
             inp=input_feat['block_sparse_moe'],
             module2inspect=module.block_sparse_moe,
         ))
 
-        # linear out
+        # scaling w2        
+        expert: OldMixtralBLockSparseTop2MLP
         for i, expert in enumerate(module.block_sparse_moe.experts):
             layers.append(dict(
                 prev_op=expert.w3,

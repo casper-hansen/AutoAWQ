@@ -4,7 +4,7 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Dict, List
+from typing import Dict, List, Union
 from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
@@ -17,6 +17,7 @@ from awq.utils.module import (
     set_op_by_name,
     exclude_layers_to_not_quantize
 )
+from transformers.models.mixtral.modeling_mixtral import MixtralBLockSparseTop2MLP
 
 
 class AwqQuantizer:
@@ -145,7 +146,8 @@ class AwqQuantizer:
             clear_memory()
 
     @torch.no_grad()
-    def _search_best_scale(self, module, prev_op, layers: List[nn.Linear], inp: torch.Tensor, module2inspect=None, kwargs={}):
+    def _search_best_scale(self, module, prev_op, layers: Union[List[nn.Linear], List[MixtralBLockSparseTop2MLP]],
+                           inp: torch.Tensor, module2inspect=None, kwargs={}):
         if module2inspect is None:
             assert len(layers) == 1
             module2inspect = layers[0]
@@ -157,13 +159,25 @@ class AwqQuantizer:
         inp = inp.to(next(module2inspect.parameters()).device)
 
         # [STEP 1]: Compute maximum of weight
-        weight = torch.cat([_m.weight for _m in layers], dim=0)
-        org_shape = weight.shape
-        weight = weight.view(-1, self.group_size)
-        w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
-        w_scale = w_scale.view(org_shape)
-        w_max = w_scale.mean(0)
-        clear_memory(weight)
+        if all(isinstance(m, MixtralBLockSparseTop2MLP) for m in layers):
+            w_max = []
+            for expert in layers:
+                weight = torch.cat([expert.w1.weight, expert.w3.weight], dim=0)
+                org_shape = weight.shape
+                weight = weight.view(-1, self.group_size)
+                w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+                w_scale = w_scale.view(org_shape)
+                expert_w_max = w_scale.mean(0)
+                w_max.append(expert_w_max)
+                clear_memory(weight)
+        else:
+            weight = torch.cat([_m.weight for _m in layers], dim=0)
+            org_shape = weight.shape
+            weight = weight.view(-1, self.group_size)
+            w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+            w_scale = w_scale.view(org_shape)
+            w_max = w_scale.mean(0)
+            clear_memory(weight)
 
         # [STEP 2]: Compute maximum of x
         x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
@@ -177,12 +191,23 @@ class AwqQuantizer:
                 fp16_output = fp16_output[0]
         
         # [STEP 4]: Compute loss
-        best_scales = self._compute_best_scale(
-            inp, w_max, x_max, module2inspect,
-            layers, fp16_output, module_kwargs
-        )
+        if all(isinstance(m, MixtralBLockSparseTop2MLP) for m in layers):
+            best_scales = [
+                self._compute_best_scale(
+                    inp, w_max[i], x_max, module2inspect,
+                    [expert.w1, expert.w3], fp16_output, module_kwargs
+                ) for i, expert in enumerate(layers)
+            ]
+        else:
+            best_scales = self._compute_best_scale(
+                inp, w_max, x_max, module2inspect,
+                layers, fp16_output, module_kwargs
+            )
         
-        return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), best_scales)
+        prev_op_name = get_op_name(module, prev_op)
+        layer_names = tuple([get_op_name(module, m) for m in layers])
+        
+        return (prev_op_name, layer_names, best_scales)
 
     def _compute_best_scale(self, x, w_max, x_max, module2inspect, linears2scale: List[nn.Linear],
                                   fp16_output, kwargs={}):

@@ -13,15 +13,19 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
 
     def __init__(self, prev_op: MixtralSparseMoeBlock, scales: torch.Tensor):
         super().__init__()
-        config: MixtralConfig = prev_op.config
-        self.hidden_dim = config.hidden_size
-        self.ffn_dim = config.intermediate_size
-        self.num_experts = config.num_local_experts
-        self.top_k = config.num_experts_per_tok
+        self.hidden_dim = prev_op.hidden_dim
+        self.ffn_dim = prev_op.ffn_dim
+        self.num_experts = prev_op.num_experts
+        self.top_k = prev_op.top_k
 
         # gating
         self.gate = torch.nn.Linear(self.hidden_dim, self.num_experts, bias=False)
-        self.experts = torch.nn.ModuleList([MixtralBLockSparseTop2MLP(config) for _ in range(self.num_experts)])
+
+        # experts
+        self.experts = torch.nn.ModuleList([
+            MixtralBLockSparseTop2MLP(self.ffn_dim, self.hidden_dim)
+            for _ in range(self.num_experts)
+        ])
 
         # [expert_num, hidden_dim]
         self.scales = torch.nn.Parameter(scales.data)
@@ -62,9 +66,9 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
             # Index the correct hidden states and compute the expert hidden state for
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
-            ### MODIFICATION START
+            
+            ### NOTE: We scale weights here, modified from original MoE.
             current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim) / self.scales[expert_idx]
-            ### MODIFICATION END
             current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
@@ -74,17 +78,21 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
         return final_hidden_states, router_logits
 
 class MixtralBLockSparseTop2MLP(torch.nn.Module):
-    def __init__(self, config: MixtralConfig):
+    def __init__(self, ffn_dim, hidden_dim):
         super().__init__()
-        self.ffn_dim = config.intermediate_size
-        self.hidden_dim = config.hidden_size
+        self.ffn_dim = ffn_dim
+        self.hidden_dim = hidden_dim
 
         self.w1 = torch.nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
         self.w2 = torch.nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
         self.w3 = torch.nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
         self.act_fn = torch.nn.SiLU
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, routing_weights=None):
         current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(hidden_states)
         current_hidden_states = self.w2(current_hidden_states)
+
+        if routing_weights is not None:
+            current_hidden_states = current_hidden_states * routing_weights
+        
         return current_hidden_states
