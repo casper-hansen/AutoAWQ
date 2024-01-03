@@ -33,6 +33,7 @@ from accelerate.big_modeling import (
 
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
+from awq.modules.moe import ScaledMixtralSparseMoeBlock
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
@@ -276,6 +277,9 @@ class BaseAWQForCausalLM(nn.Module):
             # Replace activation functions
             self._scale_activations(self, layer)
 
+            # Replace mixture of experts
+            self._scale_moe(self, layer)
+
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
                 if version == 'GEMM':
@@ -308,4 +312,18 @@ class BaseAWQForCausalLM(nn.Module):
 
                 # scale activation
                 scaled_act = ScaledActivation(scale_dict['scale_layer'], scale_like)
+                set_op_by_name(layer, scale_dict['scale_name'], scaled_act)
+
+    def _scale_moe(self, layer):
+        if hasattr(self, "get_moe_for_scaling"):
+            scale_dict: dict = self.get_moe_for_scaling()
+
+            if not isinstance(scale_dict['scale_layer'], ScaledMixtralSparseMoeBlock):
+                param = next(layer.parameters())
+
+                # get activation scale
+                scale_like = torch.ones(scale_dict['scale_shape'], dtype=param.dtype, device=param.device)
+
+                # scale moe
+                scaled_act = ScaledMixtralSparseMoeBlock(scale_dict['scale_layer'], scale_like)
                 set_op_by_name(layer, scale_dict['scale_name'], scaled_act)

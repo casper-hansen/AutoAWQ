@@ -31,6 +31,14 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
         )
     
     @staticmethod
+    def get_moe_for_scaling(module: OldMixtralDecoderLayer):
+        return dict(
+            scale_name="block_sparse_moe",
+            scale_layer=module.block_sparse_moe,
+            scale_shape=(module.block_sparse_moe.num_experts, module.block_sparse_moe.hidden_dim),
+        )
+    
+    @staticmethod
     def move_embed(model: OldMixtralForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     

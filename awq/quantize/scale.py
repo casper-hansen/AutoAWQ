@@ -2,13 +2,16 @@ import torch
 import torch.nn as nn
 from typing import Tuple, List
 from awq.modules.act import ScaledActivation
+from awq.modules.moe import ScaledMixtralSparseMoeBlock
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm]
 allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation, PytorchGELUTanh, GELUActivation]
+allowed_moes = [MixtralSparseMoeBlock]
 
 @torch.no_grad()
 def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
@@ -48,6 +51,11 @@ def apply_scale(module, scales_list, input_feat_dict=None):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
+        
+        elif any(isinstance(prev_op,t) for t in allowed_moes):
+            new_module = ScaledMixtralSparseMoeBlock(prev_op, scales)
+            set_op_by_name(module, prev_op_name, new_module)
+            scale_moe_experts(prev_op, layers, scales)
             
         else:
             raise NotImplementedError(
@@ -133,3 +141,15 @@ def scale_gelu_fc(gelu: allowed_act_fns, fc: nn.Linear, scales: torch.Tensor):
 
     for p in fc.parameters():
         assert torch.isnan(p).sum() == 0
+
+@torch.no_grad()
+def scale_moe_experts(moe, experts: List[nn.Linear], scales: torch.Tensor):
+    assert any(isinstance(moe,m) for m in allowed_moes)
+    assert all(isinstance(m, nn.Linear) for m in experts)
+
+    for expert in experts:
+        expert.weight.mul_(scales.view(1, -1))
+    
+    for expert in experts:
+        for p in expert.parameters():
+            assert torch.isnan(p).sum() == 0
