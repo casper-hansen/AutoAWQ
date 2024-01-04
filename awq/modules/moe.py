@@ -19,13 +19,12 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
         self.top_k = prev_op.top_k
 
         # gating
-        self.gate = torch.nn.Linear(self.hidden_dim, self.num_experts, bias=False)
+        self.gate = prev_op.gate
 
         # experts
-        self.experts = torch.nn.ModuleList([
-            MixtralBLockSparseTop2MLP(self.ffn_dim, self.hidden_dim)
-            for _ in range(self.num_experts)
-        ])
+        self.experts = prev_op.experts
+        for expert in self.experts:
+            expert.forward = expert_forward
 
         # [expert_num, hidden_dim]
         self.scales = torch.nn.Parameter(scales.data)
@@ -77,22 +76,7 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states, router_logits
 
-class MixtralBLockSparseTop2MLP(torch.nn.Module):
-    def __init__(self, ffn_dim, hidden_dim):
-        super().__init__()
-        self.ffn_dim = ffn_dim
-        self.hidden_dim = hidden_dim
-
-        self.w1 = torch.nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-        self.w2 = torch.nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
-        self.w3 = torch.nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
-        self.act_fn = torch.nn.SiLU
-
-    def forward(self, hidden_states, routing_weights=None):
-        current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(hidden_states)
-        current_hidden_states = self.w2(current_hidden_states)
-
-        if routing_weights is not None:
-            current_hidden_states = current_hidden_states * routing_weights
-        
-        return current_hidden_states
+def expert_forward(self, hidden_states):
+    current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(hidden_states)
+    current_hidden_states = self.w2(current_hidden_states)
+    return current_hidden_states

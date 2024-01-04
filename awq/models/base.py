@@ -316,7 +316,7 @@ class BaseAWQForCausalLM(nn.Module):
 
     def _scale_moe(self, layer):
         if hasattr(self, "get_moe_for_scaling"):
-            scale_dict: dict = self.get_moe_for_scaling()
+            scale_dict: dict = self.get_moe_for_scaling(layer)
 
             if not isinstance(scale_dict['scale_layer'], ScaledMixtralSparseMoeBlock):
                 param = next(layer.parameters())

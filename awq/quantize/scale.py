@@ -37,7 +37,12 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         prev_op.cuda()
         for layer in layers:
             layer.cuda()
-        scales.cuda()
+        
+        if type(scales) == list:
+            for scale in scales:
+                scale.cuda()
+        else:
+            scales.cuda()
         
         if isinstance(prev_op, nn.Linear) and type(layers) == list and isinstance(layers[0], nn.Linear):
             scale_fc_fcs(prev_op, layers, scales)
@@ -57,7 +62,7 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         
         elif any(isinstance(prev_op,t) for t in allowed_moe):
             # scales: [best_scale_expert_0, best_scale_expert_1, ...] -> [expert_index, scales]
-            scales = torch.stack(scales)
+            scales = torch.stack(scales).cuda()
 
             # apply scales
             new_module = ScaledMixtralSparseMoeBlock(prev_op, scales)
@@ -79,7 +84,12 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         prev_op.cpu()
         for layer in layers:
             layer.cpu()
-        scales.cpu()
+        
+        if type(scales) == list:
+            for scale in scales:
+                scale.cpu()
+        else:
+            scales.cpu()
 
 @torch.no_grad()
 def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
