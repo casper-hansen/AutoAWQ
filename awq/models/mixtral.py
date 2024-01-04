@@ -12,6 +12,17 @@ from transformers.models.mixtral.modeling_mixtral import (
 from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
+def _transformers_version_check():
+    import transformers
+    tv = transformers.__version__.split('.')
+    if len(tv) == 4:
+        major, minor, patch, dev = tv
+    else:
+        major, minor, patch = tv
+    
+    if int(major) >= 4 and int(minor) < 37:
+        raise Exception("Mixtral requires a minimum of 4.37.0.dev0: pip install git+https://github.com/huggingface/transformers.git")
+
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MixtralDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
@@ -23,6 +34,7 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     
     @staticmethod
     def get_model_layers(model: OldMixtralForCausalLM):
+        _transformers_version_check()
         return model.model.layers
     
     @staticmethod

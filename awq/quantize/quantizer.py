@@ -4,9 +4,10 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Dict, List, Union
 from collections import defaultdict
+from typing import Dict, List, Union
 from awq.utils.utils import clear_memory
+from transformers import PreTrainedModel
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
@@ -24,7 +25,7 @@ class AwqQuantizer:
     def __init__(self, awq_model, model, tokenizer, w_bit, group_size, version, 
                        calib_data, split, text_column, duo_scaling, modules_to_not_convert=None) -> None:
         self.awq_model = awq_model
-        self.model = model
+        self.model: PreTrainedModel = model
         self.tokenizer = tokenizer
         self.w_bit = w_bit
         self.group_size = group_size
