@@ -68,7 +68,7 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
             
             ### NOTE: We scale weights here, modified from original MoE.
             current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim) / self.scales[expert_idx]
-            current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
+            current_hidden_states = expert_layer(expert_layer, current_state) * routing_weights[top_x_list, idx_list, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.

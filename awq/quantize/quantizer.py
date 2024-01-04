@@ -159,25 +159,23 @@ class AwqQuantizer:
         inp = inp.to(next(module2inspect.parameters()).device)
 
         # [STEP 1]: Compute maximum of weight
-        if all(isinstance(m, MixtralBLockSparseTop2MLP) for m in layers):
-            w_max = []
-            for expert in layers:
-                weight = torch.cat([expert.w1.weight, expert.w3.weight], dim=0)
-                org_shape = weight.shape
-                weight = weight.view(-1, self.group_size)
-                w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
-                w_scale = w_scale.view(org_shape)
-                expert_w_max = w_scale.mean(0)
-                w_max.append(expert_w_max)
-                clear_memory(weight)
-        else:
-            weight = torch.cat([_m.weight for _m in layers], dim=0)
+        def _get_w_max(layer_weights):
+            weight = torch.cat([_m.weight for _m in layer_weights], dim=0)
             org_shape = weight.shape
             weight = weight.view(-1, self.group_size)
             w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
             w_scale = w_scale.view(org_shape)
             w_max = w_scale.mean(0)
             clear_memory(weight)
+
+            return w_max
+    
+        if type(layers[0]) == nn.Linear:
+            w_max = _get_w_max(layers)
+        else:
+            # FIXME: Specific to Mixtral
+            weights = [[expert.w1, expert.w3] for expert in layers]
+            w_max = [_get_w_max(weight) for weight in weights]
 
         # [STEP 2]: Compute maximum of x
         x_max = inp.abs().view(-1, inp.shape[-1]).mean(0)
@@ -191,18 +189,18 @@ class AwqQuantizer:
                 fp16_output = fp16_output[0]
         
         # [STEP 4]: Compute loss
-        if all(isinstance(m, MixtralBLockSparseTop2MLP) for m in layers):
-            best_scales = [
-                self._compute_best_scale(
-                    inp, w_max[i], x_max, module2inspect,
-                    [expert.w1, expert.w3], fp16_output, module_kwargs
-                ) for i, expert in enumerate(layers)
-            ]
-        else:
+        if type(layers[0]) == nn.Linear:
             best_scales = self._compute_best_scale(
                 inp, w_max, x_max, module2inspect,
                 layers, fp16_output, module_kwargs
             )
+        else:
+            best_scales = [
+                self._compute_best_scale(
+                    inp, w_max[i], x_max, module2inspect,
+                    experts, fp16_output, module_kwargs
+                ) for i, experts in enumerate(weights)
+            ]
         
         prev_op_name = get_op_name(module, prev_op)
         layer_names = tuple([get_op_name(module, m) for m in layers])
