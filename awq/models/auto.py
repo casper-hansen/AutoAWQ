@@ -21,6 +21,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "qwen": QwenAWQForCausalLM,
     "baichuan": BaichuanAWQForCausalLM,
     "llava": LlavaAWQForCausalLM,
+    "codeshell": CodeShellAWQForCausalLM,
 }
 
 def check_and_get_model_type(model_dir, trust_remote_code=True, **model_init_kwargs):

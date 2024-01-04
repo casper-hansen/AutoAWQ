@@ -57,6 +57,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "qwen": "AutoModelForCausalLM",
     "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
+    "codeshell": "AutoModelForCausalLM",
 }
 
 class BaseAWQForCausalLM(nn.Module):
