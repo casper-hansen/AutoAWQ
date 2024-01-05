@@ -21,7 +21,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 model.quantize(
     tokenizer,
     quant_config=quant_config,
-    gguf_compatible=True
+    export_compatible=True
 )
 
 # Save quantized model

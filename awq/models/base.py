@@ -84,17 +84,34 @@ class BaseAWQForCausalLM(nn.Module):
     def quantize(self, tokenizer=None, quant_config={},
                        calib_data: Union[str, List[str]]="pileval", 
                        split="train", text_column="text", duo_scaling=True, 
-                       modules_to_not_convert=None, gguf_compatible=False):
+                       modules_to_not_convert=None, export_compatible=False):
         self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
 
-        quantizer = AwqQuantizer(
+        self.quantizer = AwqQuantizer(
             self, self.model, tokenizer, self.quant_config.w_bit, self.quant_config.q_group_size,
             self.quant_config.version, calib_data, split, text_column, duo_scaling, modules_to_not_convert=modules_to_not_convert,
-            gguf_compatible=gguf_compatible
+            export_compatible=export_compatible
         )
-        quantizer.quantize()
+        self.quantizer.quantize()
         
         self.is_quantized = True
+    
+    @torch.no_grad()
+    def pack(self):
+        """
+        A utility function for the following scenario. Note that save_quantized will
+        overwrite existing weights if you use the same quant_path.
+        
+        model.quantize(
+            tokenizer,
+            quant_config=quant_config,
+            export_compatible=True
+        ) 
+        model.save_quantized(...)  # produces GGUF/other compat weights
+        model.pack(...) # makes the model CUDA compat
+        model.save_quantized(...)  # produces CUDA compat weights
+        """
+        self.quantizer.pack()
     
     @staticmethod
     def fuse_layers(model):
