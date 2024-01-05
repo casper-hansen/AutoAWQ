@@ -2,7 +2,7 @@ import argparse
 from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.utils.eval_utils import (
+from awq.evaluation.eval_utils import (
     evaluate_perplexity,
     eval_librispeech,
     eval_mmlu,
