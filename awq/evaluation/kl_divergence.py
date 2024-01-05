@@ -4,15 +4,20 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from datasets import load_dataset
-from scipy.stats import bayes_mvs
-from scipy.stats import t as student_t
-from scipy.stats.mstats import mquantiles_cimj
 from transformers import (
     PreTrainedTokenizer,
     PreTrainedModel,
     AutoModelForCausalLM,
     AutoTokenizer,
 )
+
+try:
+    from scipy.stats import bayes_mvs
+    from scipy.stats import t as student_t
+    from scipy.stats.mstats import mquantiles_cimj
+    SCIPY_INSTALLED = True
+except:
+    SCIPY_INSTALLED = False
 
 @torch.jit.script
 def rel_entr(x, y):
@@ -31,6 +36,9 @@ def bin_conf(p, n, z):
     return z * torch.sqrt(p*(1-p)/n)
 
 def eval_kl_divergence(ref_model: PreTrainedModel, eval_model: PreTrainedModel, tokenizer: PreTrainedTokenizer, seqlen: int):
+    if not SCIPY_INSTALLED:
+        raise Exception("SciPy needs to be installed for KL Divergence evaluation: pip install scipy")
+
     # load dataset
     data = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
     data = tokenizer("\n\n".join(data['text']), return_tensors='pt')
@@ -61,12 +69,10 @@ def eval_kl_divergence(ref_model: PreTrainedModel, eval_model: PreTrainedModel, 
                 y2 = eval_model(batch)[0]
 
             # kl divergence
-            for i in range(len(y1)):
-                y1_probs = torch.softmax(y1[i], dim=-1)
-                y2_probs = torch.softmax(y2[i], dim=-1)
-                kl_div = torch.sum(rel_entr(y1_probs, y2_probs))
-                kl_div = torch.nan_to_num(kl_div)
-                kls.append(kl_div)
+            y1_probs = torch.softmax(y1, dim=-1)
+            y2_probs = torch.softmax(y2, dim=-1)
+            kl_div = torch.sum(rel_entr(y1_probs, y2_probs), dim=-1)
+            kls.extend(torch.nan_to_num(kl_div).tolist())
             
             # stats
             eval_argmax = torch.argmax(y2, axis=-1).squeeze(0)
