@@ -79,18 +79,23 @@ def eval_kl_divergence(ref_model: PreTrainedModel, eval_model: PreTrainedModel, 
             # stats
             eval_argmax = torch.argmax(y2, axis=-1).squeeze(0)
             ref_argmax = torch.argmax(y1, axis=-1).squeeze(0)
-            eval_part5 = torch.topk(y2, k=5, dim=-1).values[:, :, -5].squeeze(0)
-            ref_part5 = torch.topk(y1, k=5, dim=-1).values[:, :, -5].squeeze(0)
-            eval_part10 = torch.topk(y2, k=10, dim=-1).values[:, :, -10].squeeze(0)
-            ref_part10 = torch.topk(y1, k=10, dim=-1).values[:, :, -10].squeeze(0)
-            top1 += sum([eval_argmax[i] == ref_argmax[i] for i in range(batch_len)])
-            top5 += sum([ref_argmax[i] in eval_part5[i] for i in range(batch_len)])
-            top10 += sum([ref_argmax[i] in eval_part10[i] for i in range(batch_len)])
-            eval_top5 += sum([eval_argmax[i] in ref_part5[i] for i in range(batch_len)])
-            eval_top10 += sum([eval_argmax[i] in ref_part10[i] for i in range(batch_len)])
+            eval_part5 = torch.topk(y2, k=5, dim=-1).indices[:, :, -5].squeeze(0)
+            ref_part5 = torch.topk(y1, k=5, dim=-1).indices[:, :, -5].squeeze(0)
+            eval_part10 = torch.topk(y2, k=10, dim=-1).indices[:, :, -10].squeeze(0)
+            ref_part10 = torch.topk(y1, k=10, dim=-1).indices[:, :, -10].squeeze(0)
+            top1 += (eval_argmax == ref_argmax).sum().item()
+            top5 += ((ref_argmax == eval_part5).sum()).item()
+            top10 += ((ref_argmax == eval_part10).sum()).item()
+            eval_top5 += ((eval_argmax == ref_part5).sum()).item()
+            eval_top10 += ((eval_argmax == ref_part10).sum()).item()
             samples += batch_len
 
-            progress_bar.set_description(f"KL Div: {torch.mean(torch.Tensor(kls)):.4g}, Top 1: {top1 / samples:.4g}")
+            progress_bar.set_description(
+                f"KL Div: {torch.mean(torch.Tensor(kls)):.4g}, "
+                f"Top 1: {top1 / samples:.4g}, "
+                f"Top 5: {top5 / samples:.4g}, "
+                f"Top 10: {top10 / samples:.4g}"
+            )
     
     z = student_t.ppf(1 - alpha/2, samples)
     m_conf = z*np.sqrt(np.mean([k**2 for k in kls])/len(kls))
@@ -119,8 +124,9 @@ def eval_kl_divergence(ref_model: PreTrainedModel, eval_model: PreTrainedModel, 
     print(f" ** eval_top10: {eval_top10 / samples:4g} ± {bin_conf(eval_top10/samples, samples, z):.4g}")
 
 if __name__ == '__main__':
-    ref_model_path = "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T"
-    eval_model_path = "TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T"
+    # ref_model_path = "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T"
+    # eval_model_path = "TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T"
+    ref_model_path = eval_model_path = "gpt2"
 
     tokenizer = AutoTokenizer.from_pretrained(ref_model_path)
     ref_model = AutoModelForCausalLM.from_pretrained(ref_model_path, device_map="auto")
