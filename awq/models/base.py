@@ -57,9 +57,12 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "qwen": "AutoModelForCausalLM",
     "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
+    "whisper": "AutoModelForSpeechSeq2Seq"
 }
 
 class BaseAWQForCausalLM(nn.Module):
+    is_encoder_decoder = False
+
     def __init__(self, model, model_type, is_quantized, config, quant_config, processor):
         super().__init__()
         self.model:PreTrainedModel = model
@@ -69,6 +72,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
         self.processor: CLIPImageProcessor = processor
+        
     
     def to(self, device: str):
         return self.model.to(device)
