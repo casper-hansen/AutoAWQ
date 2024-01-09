@@ -75,16 +75,6 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
                 layers=[module.self_attn.o_proj],
                 inp=input_feat['self_attn.o_proj'],
             ))
-        
-        layers.append(dict(
-            prev_op=module.post_attention_layernorm,
-            layers=[
-                w for expert in module.block_sparse_moe.experts
-                  for w in [expert.w1, expert.w3]
-            ],
-            inp=input_feat['block_sparse_moe'],
-            module2inspect=module.block_sparse_moe,
-        ))
 
         # NOTE: Scaled in awq.quantize.scale.scale_moe_experts, awq.modules.moe.ScaledMixtralSparseMoeBlock
         # Experts: Not a linear layer, special handling is introduced in awq.quantize.quantizer
