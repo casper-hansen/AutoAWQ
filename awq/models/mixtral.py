@@ -20,7 +20,7 @@ def _transformers_version_check():
     else:
         major, minor, patch = tv
     
-    if int(major) >= 4 and int(minor) < 37:
+    if int(major) == 4 and int(minor) < 37:
         raise Exception("Mixtral requires a minimum of 4.37.0.dev0: pip install git+https://github.com/huggingface/transformers.git")
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):

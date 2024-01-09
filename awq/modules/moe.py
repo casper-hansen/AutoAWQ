@@ -1,6 +1,4 @@
 import torch
-
-from transformers.models.mixtral.configuration_mixtral import MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
 class ScaledMixtralSparseMoeBlock(torch.nn.Module):
@@ -23,8 +21,6 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
 
         # experts
         self.experts = prev_op.experts
-        for expert in self.experts:
-            expert.forward = expert_forward
 
         # [expert_num, hidden_dim]
         self.scales = torch.nn.Parameter(scales.data)
@@ -67,16 +63,13 @@ class ScaledMixtralSparseMoeBlock(torch.nn.Module):
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             
             ### NOTE: We scale weights here, modified from original MoE.
-            current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim) / self.scales[expert_idx]
-            current_hidden_states = expert_layer(expert_layer, current_state) * routing_weights[top_x_list, idx_list, None]
+            current_state = hidden_states[None, top_x_list].reshape(
+                -1, hidden_dim) / self.scales[expert_idx] # <-- scales
+
+            current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
             final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states, router_logits
-
-def expert_forward(self, hidden_states):
-    current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(hidden_states)
-    current_hidden_states = self.w2(current_hidden_states)
-    return current_hidden_states
