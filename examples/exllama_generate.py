@@ -25,3 +25,13 @@ exllama_out = exllama_model.generate(inp, max_new_tokens=100)
 
 print("Exllama output:")
 print(tokenizer.decode(exllama_out[0]))
+
+
+print("Loading ExllamaV2 model...")
+exllama_v2_model = AutoAWQForCausalLM.from_quantized(
+    quant_path, fuse_layers=False, use_exllama_v2=True
+)
+exllama_v2_out = exllama_v2_model.generate(inp, max_new_tokens=100)
+
+print("ExllamaV2 output:")
+print(tokenizer.decode(exllama_v2_out[0]))

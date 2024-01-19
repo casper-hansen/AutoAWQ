@@ -13,7 +13,9 @@ from huggingface_hub import snapshot_download
 import transformers
 from transformers.modeling_utils import shard_checkpoint
 
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_Exllama
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.exllama import WQLinear_Exllama
+from awq.modules.exllamav2 import WQLinear_ExllamaV2
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
@@ -33,7 +35,9 @@ from accelerate.big_modeling import (
 
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV, WQLinear_Exllama
+from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.exllama import WQLinear_Exllama
+from awq.modules.exllamav2 import WQLinear_ExllamaV2
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
 
@@ -246,6 +250,7 @@ class BaseAWQForCausalLM(nn.Module):
         is_quantized=True,
         fuse_layers=False,
         use_exllama=False,
+        use_exllama_v2=False,
         version="GEMM",
         device_map="balanced",
         offload_folder=None,
@@ -297,11 +302,31 @@ class BaseAWQForCausalLM(nn.Module):
                 if isinstance(module, WQLinear_GEMM)
             }
 
-            for name, module in tqdm(gemm_modules.items(), desc="Using Exllama..."):
+            for name, module in tqdm(
+                gemm_modules.items(), desc="Replacing with Exllama..."
+            ):
                 exllama_module = WQLinear_Exllama.from_wqlinear_gemm(module)
                 exllama_module.to(module.qweight.device)
-                exllama_module.post_init()
                 set_op_by_name(model, name, exllama_module)
+
+        elif use_exllama_v2:
+            gemm_modules = {
+                name: module
+                for name, module in model.named_modules()
+                if isinstance(module, WQLinear_GEMM)
+            }
+
+            for name, module in tqdm(
+                gemm_modules.items(), desc="Replacing with ExllamaV2..."
+            ):
+                exllama_module = WQLinear_ExllamaV2.from_wqlinear_gemm(module)
+                exllama_module.to(module.qweight.device)
+                set_op_by_name(model, name, exllama_module)
+
+        if use_exllama or use_exllama_v2:
+            from auto_gptq.modeling._utils import autogptq_post_init
+
+            model = autogptq_post_init(model, use_act_order=False)
 
         # Dispath to devices
         if fuse_layers:
