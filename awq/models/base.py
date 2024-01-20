@@ -1,7 +1,7 @@
 import os
 import gc
 import json
-
+import time
 import torch
 import torch.nn as nn
 
@@ -16,6 +16,7 @@ from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.modules.exllama import WQLinear_Exllama
 from awq.modules.exllamav2 import WQLinear_ExllamaV2
+from awq.utils.exllama_utils import exllama_post_init, exllamav2_post_init
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
@@ -295,38 +296,16 @@ class BaseAWQForCausalLM(nn.Module):
             dtype=torch_dtype,
         )
 
-        if use_exllama:
-            gemm_modules = {
-                name: module
-                for name, module in model.named_modules()
-                if isinstance(module, WQLinear_GEMM)
-            }
-
-            for name, module in tqdm(
-                gemm_modules.items(), desc="Replacing with Exllama..."
-            ):
-                exllama_module = WQLinear_Exllama.from_wqlinear_gemm(module)
-                exllama_module.to(module.qweight.device)
-                set_op_by_name(model, name, exllama_module)
-
-        elif use_exllama_v2:
-            gemm_modules = {
-                name: module
-                for name, module in model.named_modules()
-                if isinstance(module, WQLinear_GEMM)
-            }
-
-            for name, module in tqdm(
-                gemm_modules.items(), desc="Replacing with ExllamaV2..."
-            ):
-                exllama_module = WQLinear_ExllamaV2.from_wqlinear_gemm(module)
-                exllama_module.to(module.qweight.device)
-                set_op_by_name(model, name, exllama_module)
-
         if use_exllama or use_exllama_v2:
-            from auto_gptq.modeling._utils import autogptq_post_init
+            # exllama kernels are used after weights loading because shapes are not the same
+            # normally this should be avoidable by overriding module.load_state_dict with unpack/pack logic
+            # but accelerate's load_checkpoint_and_dispatch doesn't use that and sets the weights directly,
+            # raising an error on shapes mismatch
 
-            model = autogptq_post_init(model, use_act_order=False)
+            start = time.time()
+            self._load_exllama_modules(self, model, use_exllama, use_exllama_v2)
+            end = time.time()
+            print(f"Replacing layers with Exllama took {end - start:.2f}s")
 
         # Dispath to devices
         if fuse_layers:
@@ -422,11 +401,33 @@ class BaseAWQForCausalLM(nn.Module):
                     module, quant_config.w_bit, quant_config.q_group_size, True
                 )
                 q_linear.to(next(layer.parameters()).device)
-
                 set_op_by_name(layer, name, q_linear)
 
             torch.cuda.empty_cache()
             gc.collect()
+
+    def _load_exllama_modules(self, model, use_exllama, use_exllama_v2):
+        if use_exllama:
+            exllama_module = WQLinear_Exllama
+        elif use_exllama_v2:
+            exllama_module = WQLinear_ExllamaV2
+
+        gemm_modules = {
+            name: module
+            for name, module in model.named_modules()
+            if isinstance(module, WQLinear_GEMM)
+        }
+        for name, gemm_module in gemm_modules.items():
+            new_submodule = exllama_module.from_wqlinear_gemm(gemm_module)
+            set_op_by_name(model, name, new_submodule)
+
+        if use_exllama:
+            model = exllama_post_init(model)
+        elif use_exllama_v2:
+            model = exllamav2_post_init(model)
+
+        torch.cuda.empty_cache()
+        gc.collect()
 
     @staticmethod
     def _scale_activations(self, layer):

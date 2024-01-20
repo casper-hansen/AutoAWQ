@@ -1,8 +1,6 @@
-import math
 import torch
 import torch.nn as nn
 
-# this will raise an error for AMD GPUs for example
 import awq_ext  # with CUDA kernels
 
 

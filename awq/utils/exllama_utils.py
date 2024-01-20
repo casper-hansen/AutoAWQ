@@ -1,191 +1,160 @@
-import numpy as np
 import torch
 
-# copied from https://github.com/AutoGPTQ/AutoGPTQ/pull/484
+
+# non tensor for exllama kernels
+none_tensor = torch.empty((1, 1), device="meta")
 
 
 def awq_reverse_reorder_int_tensor(int_tensor, bits: int):
-    assert bits == 4
-
-    int_tensor = int_tensor.T.contiguous()
     compress_ratio = 32 // bits
+    order_map = [0, 2, 4, 6, 1, 3, 5, 7]
+
     assert int_tensor.shape[-1] % compress_ratio == 0
 
-    order_map = [0, 2, 4, 6, 1, 3, 5, 7]
     order_tensor = torch.tensor(
-        order_map, dtype=torch.int32, device=int_tensor.device
-    ).reshape(1, -1)
+        order_map,
+        dtype=torch.int32,
+        device=int_tensor.device,
+    )[None, :]
+
     order_tensor = order_tensor.repeat(int_tensor.shape[1] // compress_ratio, 1)
-    order_tensor = order_tensor + torch.arange(
+
+    order_tensor += torch.arange(
         0,
-        int_tensor.shape[1],
+        int_tensor.shape[-1],
         compress_ratio,
         dtype=torch.int32,
         device=int_tensor.device,
-    ).reshape(-1, 1)
-    order_tensor = order_tensor.reshape(-1)
+    )[:, None]
 
-    reverse_order_tensor = torch.arange(order_tensor.shape[0]).cuda()[order_tensor]
-    reverse_order_tensor = reverse_order_tensor[order_tensor]
+    order_tensor = order_tensor.view(-1)
+
+    reverse_order_tensor = torch.arange(
+        order_tensor.shape[0],
+        dtype=torch.int32,
+        device=int_tensor.device,
+    )[order_tensor][order_tensor]
+
     int_tensor = int_tensor[:, reverse_order_tensor]
+
     return int_tensor
 
 
-def unpack_awq(
-    awq_qweight: torch.Tensor,
-    awq_qzeros: torch.Tensor,
-    awq_scales: torch.Tensor,
-    bits: int,
-    group_size: int,
-):
-    """
-    Args:
-        awq_qweight (`torch.LongTensor`):
-            Expected shape: (in_features, out_features // (32 // bits))
-        awq_qzeros (`torch.LongTensor`):
-            Expected shape: (in_features // group_size, out_features // (32 // bits))
-        awq_scales (`torch.LongTensor`):
-            Expected shape: (in_features // group_size, out_features)
+def unpack(qweight: torch.Tensor, qzeros: torch.Tensor, bits: int):
+    qweight = qweight.T
+    shifts = torch.arange(0, 32, bits, device=qzeros.device)
 
-    Returns:
-        fp16_weight (`torch.LongTensor`):
-            With shape (in_features, out_features).
-        zeros (`torch.LongTensor`):
-            With shape (in_features // group_size, out_features).
-    """
-    assert bits == 4
+    izeros = torch.bitwise_right_shift(qzeros[:, :, None], shifts[None, None, :])
+    izeros = izeros.reshape(-1, izeros.shape[1] * izeros.shape[2])
 
-    qzeros = awq_qzeros.cuda()
-    qweight = awq_qweight.cuda()
-    qweight = qweight.T.contiguous()
+    iweights = torch.bitwise_right_shift(qweight[:, None, :], shifts[None, :, None])
+    iweights = torch.bitwise_and(iweights, (2**bits) - 1)
+    iweights = iweights.reshape(-1, iweights.shape[-1])
 
-    scales = awq_scales
-    scales = scales.reshape(-1, 1, scales.shape[-1])
+    return iweights, izeros
 
-    infeatures = awq_qweight.shape[0]
 
-    wf = torch.tensor(
-        list(range(0, 32, bits)), dtype=torch.int32, device=qzeros.device
-    ).unsqueeze(0)
-    zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)).to(
-        torch.int16 if bits == 8 else torch.int8
+def awq_reverse_reorder(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
+    iweights = iweights.T
+
+    izeros = awq_reverse_reorder_int_tensor(izeros, bits)
+    iweights = awq_reverse_reorder_int_tensor(iweights, bits)
+
+    return iweights, izeros
+
+
+def pack(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
+    qweight = torch.zeros(
+        (iweights.shape[0] // 32 * bits, iweights.shape[1]),
+        dtype=torch.int32,
+        device=iweights.device,
     )
+    rows = torch.arange(
+        qweight.shape[0],
+        dtype=torch.int32,
+        device=iweights.device,
+    ) * (32 // bits)
 
-    # zeros = zeros + 1
-
-    torch.bitwise_and(zeros, (2**bits) - 1, out=zeros)
-    zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
-
-    weight = torch.bitwise_right_shift(
-        torch.unsqueeze(qweight, 1), wf.unsqueeze(-1)
-    ).to(torch.int16 if bits == 8 else torch.int8)
-    torch.bitwise_and(weight, (2**bits) - 1, out=weight)
-    weight = weight.reshape(-1, group_size, weight.shape[2])
-
-    weight = weight.view(-1, weight.shape[-1])
-    zeros = zeros.view(-1, zeros.shape[-1])
-
-    zeros = zeros.T.contiguous()
-    zeros = awq_reverse_reorder_int_tensor(zeros, bits)
-    weight = awq_reverse_reorder_int_tensor(weight, bits)
-
-    # Dequantize weights.
-    scales = awq_scales.cuda()
-    zeros = zeros.contiguous()
-    scale_zeros = zeros * scales
-
-    g_idx = torch.tensor(
-        [i // group_size for i in range(infeatures)], dtype=torch.int32
-    )
-    scale_mat = scales[g_idx]
-    scale_zeros_mat = scale_zeros[g_idx].half()
-
-    qdq_weight_T = weight * scale_mat - scale_zeros_mat.half()
-
-    fp16_weight = qdq_weight_T.T.cuda()
-
-    return fp16_weight, zeros
-
-
-def pack_from_tensors(
-    unpacked_qweight: torch.Tensor,
-    unpacked_qzeros: torch.Tensor,
-    awq_scales: torch.Tensor,
-    bits: int,
-    group_size: int,
-):
-    """
-    Args:
-        unpacked_qweight (`torch.LongTensor`):
-            Expected shape: (in_features, out_features)
-        unpacked_qzeros (`torch.LongTensor`):
-            Expected shape: (in_features // group_size, out_features)
-        awq_scales (`torch.LongTensor`):
-            Expected shape: (in_features // group_size, out_features)
-
-    Returns:
-        qweight (`torch.LongTensor`):
-            With shape (in_features // (32 // bits), out_features)
-        qzeros (`torch.LongTensor`):
-            With shape (in_features // group_size, out_features // (32 // bits))
-    """
-    assert bits == 4
-    W = unpacked_qweight.clone().cpu()
-
-    awq_scales = awq_scales.t().contiguous()
-    unpacked_qzeros = unpacked_qzeros.contiguous()
-    unpacked_qzeros = unpacked_qzeros.cpu()
-
-    awq_scales = awq_scales.cpu()
-    scale_zeros = unpacked_qzeros.t() * awq_scales
-    scales = awq_scales.clone()
-
-    infeatures = unpacked_qweight.shape[1]
-
-    intweight = []
-    for idx in range(infeatures):
-        g_idx = idx // group_size
-
-        intweight.append(
-            torch.round((W[:, idx] + scale_zeros[:, g_idx]) / scales[:, g_idx]).to(
-                torch.int
-            )[:, None]
+    for j in range(32 // bits):
+        qweight = torch.bitwise_or(
+            qweight, torch.bitwise_left_shift(iweights[j + rows], (bits * j))
         )
-    intweight = torch.cat(intweight, dim=1)
-    intweight = intweight.t().contiguous()
-    intweight = intweight.numpy().astype(np.uint32)
 
-    i = 0
-    row = 0
-    qweight = np.zeros(
-        (intweight.shape[0] // 32 * bits, intweight.shape[1]), dtype=np.uint32
+    qzeros = torch.zeros(
+        (izeros.shape[0], izeros.shape[1] // 32 * bits),
+        dtype=torch.int32,
+        device=izeros.device,
     )
-    while row < qweight.shape[0]:
-        for j in range(i, i + (32 // bits)):
-            qweight[row] |= intweight[j] << (bits * (j - i))
-        i += 32 // bits
-        row += 1
+    cols = torch.arange(
+        qzeros.shape[1],
+        dtype=torch.int32,
+        device=izeros.device,
+    ) * (32 // bits)
 
-    qweight = qweight.astype(np.int32)
-    qweight = torch.from_numpy(qweight)
-
-    unpacked_qzeros = unpacked_qzeros - 1
-    torch.bitwise_and(unpacked_qzeros, (2**bits) - 1, out=unpacked_qzeros)
-
-    unpacked_qzeros = unpacked_qzeros.numpy().astype(np.uint32)
-    qzeros = np.zeros(
-        (unpacked_qzeros.shape[0], unpacked_qzeros.shape[1] // 32 * bits),
-        dtype=np.uint32,
-    )
-    i = 0
-    col = 0
-    while col < qzeros.shape[1]:
-        for j in range(i, i + (32 // bits)):
-            qzeros[:, col] |= unpacked_qzeros[:, j] << (bits * (j - i))
-        i += 32 // bits
-        col += 1
-
-    qzeros = qzeros.astype(np.int32)
-    qzeros = torch.from_numpy(qzeros)
+    for j in range(32 // bits):
+        qzeros = torch.bitwise_or(
+            qzeros,
+            torch.bitwise_left_shift(izeros[:, j + cols], (bits * j)),
+        )
 
     return qweight, qzeros
+
+
+def exllama_post_init(model):
+    for _, submodule in model.named_modules():
+        if hasattr(submodule, "QUANT_TYPE") and submodule.QUANT_TYPE == "exllama":
+            submodule.post_init()
+
+    return model
+
+
+def exllamav2_post_init(model):
+    fixed_bytes = {}
+    for _, submodule in model.named_modules():
+        if hasattr(submodule, "QUANT_TYPE") and submodule.QUANT_TYPE == "exllamav2":
+            device = submodule.qweight.device
+            if device not in fixed_bytes:
+                fixed_bytes[device] = 0
+
+            scratch_fixed = submodule.scratch_space_fixed()
+            fixed_bytes[device] = max(fixed_bytes[device], scratch_fixed)
+
+    device_tensors = {}
+    for device, scratch_bytes in fixed_bytes.items():
+        device_tensors[device] = ExLlamaV2DeviceTensors(device, scratch_bytes)
+
+    # have persistent buffers, otherwise we will get OOM
+    model.device_tensors = device_tensors
+
+    for _, submodule in model.named_modules():
+        if hasattr(submodule, "QUANT_TYPE") and submodule.QUANT_TYPE == "exllamav2":
+            device = submodule.qweight.device
+            submodule.post_init(temp_dq=model.device_tensors[device])
+
+    return model
+
+
+class ExLlamaV2DeviceTensors:
+    dev: torch.device
+    scratch_bytes: int
+    scratch: torch.tensor = None
+
+    def __init__(self, dev, scratch_bytes):
+        self.dev = dev
+        self.scratch_bytes = scratch_bytes
+
+    def prepare(self):
+        self.scratch = torch.empty(
+            self.scratch_bytes // 2,
+            dtype=torch.float16,
+            device=self.dev,
+        )
+
+    def get_scratch_slice(self, size_bytes):
+        if self.scratch is None:
+            self.prepare()
+
+        size_bytes = ((size_bytes + 127) // 128) * 128
+        size_half = size_bytes // 2
+        scratch_slice = self.scratch.narrow(0, 0, size_half)
+        return scratch_slice
