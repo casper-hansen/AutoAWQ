@@ -109,3 +109,5 @@ class FalconFuser:
             self.model.transformer.word_embeddings,
             self.model.transformer.ln_f,
         )
+
+        setattr(self.model.transformer, "blocks", self.model.transformer.blocks)

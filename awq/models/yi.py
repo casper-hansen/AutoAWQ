@@ -4,7 +4,6 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
-from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class YiAWQForCausalLM(BaseAWQForCausalLM):
@@ -90,11 +89,6 @@ class YiFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
-            mlp = QuantFusedMLP(
-                module.mlp.gate_proj,
-                module.mlp.down_proj,
-                module.mlp.up_proj
-            )
             norm_1 = FasterTransformerRMSNorm(
                 module.ln1.weight,
                 module.ln1.variance_epsilon
@@ -109,11 +103,12 @@ class YiFuser:
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                mlp=mlp,
+                mlp=module.mlp,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens
+                max_seq_len=self.model.config.max_new_tokens,
+                rope_theta=self.model.config.rope_theta
             ))
         
         self.model.model = LlamaLikeModel(
@@ -122,3 +117,4 @@ class YiFuser:
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
+        setattr(self.model.model, "blocks", self.model.model.blocks)

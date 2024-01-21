@@ -6,7 +6,7 @@
 </p>
 <p align="center">
     <a href="https://huggingface.co/models?search=awq">
-        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_600+_models_available-8A2BE2">
+        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
     </a>
     <a href="https://github.com/casper-hansen/AutoAWQ/releases">
         <img alt="GitHub - Releases" src="https://img.shields.io/github/release/casper-hansen/AutoAWQ.svg">
@@ -16,10 +16,11 @@
     </a>
 </p>
 
-AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 2x while reducing memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
+AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
-- [2023/11] AutoAWQ has been merged into 🤗 transformers. Now includes CUDA 12.1 wheels.
+- [2023/12] Mixtral, LLaVa, QWen, Baichuan model support.
+- [2023/11] AutoAWQ inference has been integrated into 🤗 transformers. Now includes CUDA 12.1 wheels.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
 - [2023/09] 1.6x-2.5x speed boost on fused models (now including MPT and Falcon).
 - [2023/09] Multi-GPU support, bug fixes, and better benchmark scripts available
@@ -27,56 +28,33 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
 
 ## Install
 
-Requirements: 
-- Compute Capability 7.5 (sm75). Turing and later architectures are supported.
-- CUDA Toolkit 11.8 and later.
+### Prerequisites
 
----
+- Your GPU(s) must be of Compute Capability 7.5. Turing and later architectures are supported.
+- Your CUDA version must be CUDA 11.8 or later.
+- Requires installing [AutoAWQ kernels](https://github.com/casper-hansen/AutoAWQ_kernels).
 
-Install:
+### Install from PyPi
 
-- Install from PyPi distributed wheels (torch 2.1.0 + CUDA 12.1.1)
+To install the newest AutoAWQ from PyPi, you need CUDA 12.1 installed.
 
 ```
 pip install autoawq
 ```
 
-- Install from GitHub a release (torch 2.0.1 + CUDA 11.8.0)
-
-Remember to grab the right link for the [latest release](https://github.com/casper-hansen/AutoAWQ/releases) that matches your environment.
-
-For example, this wheel is torch 2.0.1 with CUDA 11.8.0 and Python 3.10 for Linux:
+If you cannot use CUDA 12.1, you can still use CUDA 11.8 and install the wheel from the [latest release](https://github.com/casper-hansen/AutoAWQ/releases).
 
 ```
 pip install https://github.com/casper-hansen/AutoAWQ/releases/download/v0.1.6/autoawq-0.1.6+cu118-cp310-cp310-linux_x86_64.whl
 ```
 
-### Using conda
-
-CUDA dependencies can be hard to manage sometimes. It is recommended to use conda with AutoAWQ:
-
-```
-conda create --name autoawq python=3.10 -y
-conda activate autoawq
-conda install pytorch=2.0.1 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia
-pip install autoawq
-```
-
-### Build source
-
-<details>
-
-<summary>Build AutoAWQ from scratch</summary>
-
-Build time can take 10 minutes. Download your model while you install AutoAWQ.
+### Build from source
 
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
 cd AutoAWQ
 pip install -e .
 ```
-
-</details>
 
 ## Supported models
 
@@ -95,6 +73,15 @@ The detailed support list:
 | GPTJ     | 6.7B                        |
 | Aquila   | 7B                          |
 | Aquila2  | 7B/34B                      |
+| Yi       | 6B/34B                      |
+| Qwen     | 1.8B/7B/14B/72B             |
+| BigCode  | 1B/7B/15B                   |
+| GPT NeoX | 20B                         |
+| GPT-J    | 6B                          |
+| LLaVa    | 7B/13B                      |
+| Mixtral  | 8x7B                        |
+| Baichuan | 7B/13B                      |
+| QWen     | 1.8B/7B/14/72B              |
 
 ## Usage
 
@@ -165,22 +152,27 @@ tokenizer.save_pretrained(quant_path)
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "casperhansen/vicuna-7b-v1.5-awq"
+quant_path = "TheBloke/zephyr-7B-beta-AWQ"
 
 # Load model
 model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
-streamer = TextStreamer(tokenizer, skip_special_tokens=True)
+streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
 # Convert prompt to tokens
 prompt_template = """\
-A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+<|system|>
+</s>
+<|user|>
+{prompt}</s>
+<|assistant|>"""
 
-USER: {prompt}
-ASSISTANT:"""
+prompt = "You're standing on the surface of the Earth. "\
+        "You walk one mile south, one mile west and one mile north. "\
+        "You end up exactly where you started. Where are you?"
 
 tokens = tokenizer(
-    prompt_template.format(prompt="How are you today?"), 
+    prompt_template.format(prompt=prompt), 
     return_tensors='pt'
 ).input_ids.cuda()
 
@@ -191,18 +183,6 @@ generation_output = model.generate(
     max_new_tokens=512
 )
 ```
-
-</details>
-
-<details>
-
-<summary>AutoAWQForCausalLM.from_quantized</summary>
-
-- `quant_path`: Path to folder containing model files.
-- `quant_filename`: The filename to model weights or `index.json` file.
-- `max_new_tokens`: The max sequence length, used to allocate kv-cache for fused models.
-- `fuse_layers`: Whether or not to use fused layers.
-- `batch_size`: The batch size to initialize the AWQ model with.
 
 </details>
 

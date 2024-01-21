@@ -2,39 +2,39 @@ import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
-from awq.modules.fused.block import LlamaLikeBlock
-from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.llama.modeling_llama import (
-    LlamaDecoderLayer as OldAquilaDecoderLayer,
-    LlamaForCausalLM as OldAquilaForCausalLM
+from awq.modules.fused.block import MixtralBlock
+from awq.modules.fused.model import MixtralModel
+from transformers.models.mixtral.modeling_mixtral import (
+    MixtralDecoderLayer as OldMixtralDecoderLayer,
+    MixtralForCausalLM as OldMixtralForCausalLM
 )
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
-class AquilaAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "AquilaDecoderLayer"
+class MixtralAWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "MixtralDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
-
+    
     @staticmethod
-    def fuse_layers(model: OldAquilaForCausalLM):
-        fuser = AquilaFuser(model)
+    def fuse_layers(model: OldMixtralForCausalLM):
+        fuser = MixtralFuser(model)
         fuser.fuse_transformer()
-
+    
     @staticmethod
-    def get_model_layers(model: OldAquilaForCausalLM):
+    def get_model_layers(model: OldMixtralForCausalLM):
         return model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: OldAquilaDecoderLayer):
+    def get_act_for_scaling(module):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: OldAquilaForCausalLM, device: str):
+    def move_embed(model: OldMixtralForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: OldAquilaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldMixtralDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -47,7 +47,6 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
         ))
 
         # attention out
-        # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
         if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
             layers.append(dict(
                 prev_op=module.self_attn.v_proj,
@@ -55,37 +54,41 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
                 inp=input_feat['self_attn.o_proj'],
             ))
         
-        # linear 1
+        # linear in
         layers.append(dict(
             prev_op=module.post_attention_layernorm,
-            layers=[module.mlp.gate_proj, module.mlp.up_proj],
-            inp=input_feat['mlp.gate_proj'],
-            module2inspect=module.mlp,
+            layers=[
+                w for expert in module.block_sparse_moe.experts
+                  for w in [expert.w1, expert.w3]
+            ],
+            inp=input_feat['block_sparse_moe'],
+            module2inspect=module.block_sparse_moe,
         ))
 
-        # linear 2
-        layers.append(dict(
-            prev_op=module.mlp.up_proj,
-            layers=[module.mlp.down_proj],
-            inp=input_feat['mlp.down_proj'],
-        ))
+        # linear out
+        for i, expert in enumerate(module.block_sparse_moe.experts):
+            layers.append(dict(
+                prev_op=expert.w3,
+                layers=[expert.w2],
+                inp=input_feat[f'block_sparse_moe.experts.{i}.w2'],
+            ))
 
         return layers
 
 
-class AquilaFuser:
-    def __init__(self, model: OldAquilaForCausalLM):
+class MixtralFuser:
+    def __init__(self, model: OldMixtralForCausalLM):
         self.model = model
 
-        self.aquila_blocks: List[Tuple[str, OldAquilaDecoderLayer]] = [
+        self.mixtral_blocks: List[Tuple[str, OldMixtralDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
-            if 'AquilaDecoderLayer'.lower() in module.__class__.__name__.lower()
+            if 'MixtralDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_transformer(self):
         blocks = []
 
-        module: OldAquilaDecoderLayer
+        module: OldMixtralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -102,24 +105,25 @@ class AquilaFuser:
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.variance_epsilon
             )
-            blocks.append(LlamaLikeBlock(
+            blocks.append(MixtralBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                mlp=module.mlp,
+                moe=module.block_sparse_moe,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens
+                max_seq_len=self.model.config.max_new_tokens,
+                rope_theta=self.model.config.rope_theta
             ))
         
-        self.model.model = LlamaLikeModel(
+        self.model.model = MixtralModel(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
-
         setattr(self.model.model, "blocks", self.model.model.blocks)
+

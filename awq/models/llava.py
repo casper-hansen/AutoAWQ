@@ -5,36 +5,36 @@ from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
-    LlamaDecoderLayer as OldAquilaDecoderLayer,
-    LlamaForCausalLM as OldAquilaForCausalLM
+    LlamaDecoderLayer as OldLlamaDecoderLayer,
 )
+from transformers.models.llava.modeling_llava import LlavaForConditionalGeneration as OldLlavaForConditionalGeneration
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
-class AquilaAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "AquilaDecoderLayer"
+class LlavaAWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "LlamaDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldAquilaForCausalLM):
-        fuser = AquilaFuser(model)
+    def fuse_layers(model: OldLlavaForConditionalGeneration):
+        fuser = LlavaFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldAquilaForCausalLM):
-        return model.model.layers
+    def get_model_layers(model: OldLlavaForConditionalGeneration):
+        return model.language_model.model.layers
     
     @staticmethod
-    def get_act_for_scaling(module: OldAquilaDecoderLayer):
+    def get_act_for_scaling(module: OldLlamaDecoderLayer):
         return dict(
             is_scalable=False
         )
     
     @staticmethod
-    def move_embed(model: OldAquilaForCausalLM, device: str):
-        model.model.embed_tokens = model.model.embed_tokens.to(device)
+    def move_embed(model: OldLlavaForConditionalGeneration, device: str):
+        model.language_model.model.embed_tokens = model.get_input_embeddings().to(device)
     
     @staticmethod
-    def get_layers_for_scaling(module: OldAquilaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -73,19 +73,19 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class AquilaFuser:
-    def __init__(self, model: OldAquilaForCausalLM):
-        self.model = model
+class LlavaFuser:
+    def __init__(self, model: OldLlavaForConditionalGeneration):
+        self.model = model.language_model
 
-        self.aquila_blocks: List[Tuple[str, OldAquilaDecoderLayer]] = [
+        self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module) for name, module in self.model.named_modules()
-            if 'AquilaDecoderLayer'.lower() in module.__class__.__name__.lower()
+            if 'LlamaDecoderLayer'.lower() in module.__class__.__name__.lower()
         ]
     
     def fuse_transformer(self):
         blocks = []
 
-        module: OldAquilaDecoderLayer
+        module: OldLlamaDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -121,5 +121,4 @@ class AquilaFuser:
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
-
         setattr(self.model.model, "blocks", self.model.model.blocks)

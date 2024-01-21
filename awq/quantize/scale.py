@@ -33,7 +33,10 @@ def apply_scale(module, scales_list, input_feat_dict=None):
             layer.cuda()
         scales.cuda()
         
-        if isinstance(prev_op, nn.Linear):
+        if isinstance(prev_op, nn.Linear) and type(layers) == list and isinstance(layers[0], nn.Linear):
+            scale_fc_fcs(prev_op, layers, scales)
+
+        elif isinstance(prev_op, nn.Linear):
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
 
@@ -53,8 +56,10 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         # apply the scaling to input feat if given; prepare it for clipping
         if input_feat_dict is not None:  
             for layer_name in layer_names:
-                inp = input_feat_dict[layer_name]
-                inp.div_(scales.view(1, -1).to(inp.device))
+                # Skip the modules that are not quantized
+                if layer_name in input_feat_dict:
+                    inp = input_feat_dict[layer_name]
+                    inp.div_(scales.view(1, -1).to(inp.device))
 
         prev_op.cpu()
         for layer in layers:
@@ -99,6 +104,25 @@ def scale_fc_fc(fc1: nn.Linear, fc2: nn.Linear, scales: torch.Tensor):
     for p in fc2.parameters():
         assert torch.isnan(p).sum() == 0
 
+@torch.no_grad()
+def scale_fc_fcs(fc1: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
+    if not isinstance(fcs, list):
+        fcs = [fcs]
+    
+    scales = scales.to(fc1.weight.device)
+
+    fc1.weight[-scales.size(0):].div_(scales.view(-1, 1))
+    if fc1.bias is not None:
+        fc1.bias.div_(scales.view(-1))
+
+    for fc in fcs:
+        fc.weight.mul_(scales.view(1, -1))
+    
+    for p in fc1.parameters():
+        assert torch.isnan(p).sum() == 0
+    for fc in fcs:
+        for p in fc.parameters():
+            assert torch.isnan(p).sum() == 0
 
 @torch.no_grad()
 def scale_gelu_fc(gelu: allowed_act_fns, fc: nn.Linear, scales: torch.Tensor):
