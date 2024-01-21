@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from awq.utils.exllama_utils import unpack_reorder_pack
 
-import exllama_kernels  # with CUDA kernels (AutoAWQ_kernels)
+import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
 
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
@@ -70,7 +70,7 @@ class WQLinear_Exllama(nn.Module):
         self.qweight, self.qzeros = unpack_reorder_pack(
             self.qweight, self.qzeros, self.w_bit
         )
-        self.q4 = exllama_kernels.make_q4(
+        self.q4 = exl_ext.make_q4(
             self.qweight,
             self.qzeros,
             self.scales,
@@ -114,7 +114,7 @@ class WQLinear_Exllama(nn.Module):
             dtype=torch.float16,
             device=x.device,
         )
-        exllama_kernels.q4_matmul(x, self.q4, out)
+        exl_ext.q4_matmul(x, self.q4, out)
 
         if input_dtype != torch.float16:
             out = out.to(dtype=input_dtype)

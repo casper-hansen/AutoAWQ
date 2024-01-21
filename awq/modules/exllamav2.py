@@ -3,7 +3,7 @@ import torch.nn as nn
 from typing import Dict
 from awq.utils.exllama_utils import unpack_reorder_pack
 
-import exllamav2_kernels  # with CUDA kernels (AutoAWQ_kernels)
+import exlv2_ext  # with CUDA kernels (AutoAWQ_kernels)
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")
@@ -74,7 +74,7 @@ class WQLinear_ExllamaV2(nn.Module):
 
         temp_dq_size = self.temp_dq_size()
         temp_dq = scratch_space.get_slice(temp_dq_size)
-        self.q_handle = exllamav2_kernels.make_q_matrix(
+        self.q_handle = exlv2_ext.make_q_matrix(
             self.qweight,
             none_tensor,
             none_tensor,
@@ -140,7 +140,7 @@ class WQLinear_ExllamaV2(nn.Module):
             dtype=torch.float16,
             device=x.device,
         )
-        exllamav2_kernels.gemm_half_q_half(x, self.q_handle, out, False)
+        exlv2_ext.gemm_half_q_half(x, self.q_handle, out, False)
 
         if input_dtype != torch.float16:
             out = out.to(dtype=input_dtype)
