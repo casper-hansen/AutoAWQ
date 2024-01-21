@@ -47,14 +47,7 @@ requirements = [
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "accelerate",
-    "sentencepiece",
-    "lm_eval",
-    "texttable",
-    "toml",
-    "attributedict",
-    "protobuf",
-    "torchvision",
-    "tabulate",
+    "datasets",
 ]
 
 setup(
