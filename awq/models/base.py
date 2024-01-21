@@ -315,7 +315,7 @@ class BaseAWQForCausalLM(nn.Module):
                 set_op_by_name(layer, scale_dict['scale_name'], scaled_act)
 
     def _scale_moe(self, layer):
-        if hasattr(self, "get_moe_for_scaling"):
+        if hasattr(self, "get_moe_for_scaling") and hasattr(layer.block_sparse_moe, "scales"):
             scale_dict: dict = self.get_moe_for_scaling(layer)
 
             if not isinstance(scale_dict['scale_layer'], ScaledMixtralSparseMoeBlock):
