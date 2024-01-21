@@ -105,3 +105,5 @@ class MptFuser:
             self.model.transformer.wte,
             self.model.transformer.norm_f,
         )
+
+        setattr(self.model.transformer, "blocks", self.model.transformer.blocks)

@@ -8,7 +8,6 @@ from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
     MixtralForCausalLM as OldMixtralForCausalLM
 )
-from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
@@ -98,14 +97,6 @@ class MixtralFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj
             )
-            # Adapt to mixture of experts
-            for i in range(len(module.block_sparse_moe.experts)):
-                mlp = QuantFusedMLP(
-                    gate_proj=module.block_sparse_moe.experts[i].w1,
-                    down_proj=module.block_sparse_moe.experts[i].w2,
-                    up_proj=module.block_sparse_moe.experts[i].w3
-                )
-                module.block_sparse_moe.experts[i] = mlp
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight,
                 module.input_layernorm.variance_epsilon
@@ -134,4 +125,5 @@ class MixtralFuser:
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
+        setattr(self.model.model, "blocks", self.model.model.blocks)
 
