@@ -1,9 +1,10 @@
+import re
 import torch
+import bitsandbytes as bnb
 import peft.peft_model as ppm
-from peft.tuners.lora import LoraLayer, LoraModel
 from peft.utils import _get_submodules
-from .linear import WQLinear_GEMM
-
+from awq.modules.linear import WQLinear_GEMM
+from peft.tuners.lora import LoraLayer, LoraModel
 
 class Lora_WQLinear_GEMM(WQLinear_GEMM, LoraLayer):
     # Lora implemented in a dense layer
@@ -81,47 +82,6 @@ class LoraModel_WQLinear_GEMM(LoraModel):
 
     Returns:
         `torch.nn.Module`: The Lora model.
-
-    Example:
-
-        ```py
-        >>> from transformers import AutoModelForSeq2SeqLM, LoraConfig
-        >>> from peft import LoraModel, LoraConfig
-
-        >>> config = LoraConfig(
-        ...     peft_type="LORA",
-        ...     task_type="SEQ_2_SEQ_LM",
-        ...     r=8,
-        ...     lora_alpha=32,
-        ...     target_modules=["q", "v"],
-        ...     lora_dropout=0.01,
-        ... )
-
-        >>> model = AutoModelForSeq2SeqLM.from_pretrained("t5-base")
-        >>> lora_model = LoraModel(config, model)
-        ```
-
-        ```py
-        >>> import transformers
-        >>> from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_int8_training
-
-        >>> target_modules = ["q_proj", "k_proj", "v_proj", "out_proj", "fc_in", "fc_out", "wte"]
-        >>> config = LoraConfig(
-        ...     r=4, lora_alpha=16, target_modules=target_modules, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM"
-        ... )
-
-        >>> model = transformers.GPTJForCausalLM.from_pretrained(
-        ...     "kakaobrain/kogpt",
-        ...     revision="KoGPT6B-ryan1.5b-float16",  # or float32 version: revision=KoGPT6B-ryan1.5b
-        ...     pad_token_id=tokenizer.eos_token_id,
-        ...     use_cache=False,
-        ...     device_map={"": rank},
-        ...     torch_dtype=torch.float16,
-        ...     load_in_8bit=True,
-        ... )
-        >>> model = prepare_model_for_int8_training(model)
-        >>> lora_model = get_peft_model(model, config)
-        ```
 
     **Attributes**:
         - **model** ([`~transformers.PreTrainedModel`]) -- The model to be adapted.

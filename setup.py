@@ -53,5 +53,10 @@ requirements = [
 setup(
     packages=find_packages(),
     install_requires=requirements,
+    extras_require={
+        "training": [
+            "peft>=0.7.1",
+        ],
+    },
     **common_setup_kwargs
 )
