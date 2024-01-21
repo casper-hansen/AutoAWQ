@@ -14,9 +14,8 @@ import transformers
 from transformers.modeling_utils import shard_checkpoint
 
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.modules.exllama import WQLinear_Exllama
-from awq.modules.exllamav2 import WQLinear_ExllamaV2
-from awq.utils.exllama_utils import exllama_post_init, exllamav2_post_init
+from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
+from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
@@ -281,7 +280,14 @@ class BaseAWQForCausalLM(nn.Module):
             )
 
         # Prepare WQLinear layers, replace nn.Linear
-        self._load_quantized_modules(self, model, quant_config, quant_config.version)
+        self._load_quantized_modules(
+            self,
+            model,
+            quant_config,
+            quant_config.version,
+            use_exllama=use_exllama,
+            use_exllama_v2=use_exllama_v2,
+        )
 
         model.tie_weights()
 
@@ -296,16 +302,16 @@ class BaseAWQForCausalLM(nn.Module):
             dtype=torch_dtype,
         )
 
-        if use_exllama or use_exllama_v2:
-            # exllama kernels are used after weights loading because shapes are not the same
-            # normally this should be avoidable by overriding module.load_state_dict with unpack/pack logic
-            # but accelerate's load_checkpoint_and_dispatch doesn't use that and sets the weights directly,
-            # raising an error on shapes mismatch
-
-            start = time.time()
-            self._load_exllama_modules(self, model, use_exllama, use_exllama_v2)
-            end = time.time()
-            print(f"Replacing layers with Exllama took {end - start:.2f}s")
+        # Post Init creates q4 matric handles
+        import time
+        
+        start = time.time()
+        if use_exllama:
+            model = exllama_post_init(model)
+        elif use_exllama_v2:
+            model = exllamav2_post_init(model)
+        end = time.time()
+        print(f"Post Init (with pack/unpack) took {end-start:.2f}s")
 
         # Dispath to devices
         if fuse_layers:
@@ -369,9 +375,14 @@ class BaseAWQForCausalLM(nn.Module):
 
         return model_weights_path, config, quant_config
 
-    def _load_quantized_modules(self, model, quant_config, version):
+    def _load_quantized_modules(
+        self, model, quant_config, version, use_exllama, use_exllama_v2
+    ):
         # Real quantization of weights
         assert quant_config.zero_point, "We only support zero_point quantization now."
+        assert not (
+            version == "GEMV" and (use_exllama or use_exllama_v2)
+        ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
         layers = self.get_model_layers(model)
@@ -392,7 +403,11 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if version == "GEMM":
+                if use_exllama:
+                    q_linear_module = WQLinear_Exllama
+                elif use_exllama_v2:
+                    q_linear_module = WQLinear_ExllamaV2
+                elif version == "GEMM":
                     q_linear_module = WQLinear_GEMM
                 elif version == "GEMV":
                     q_linear_module = WQLinear_GEMV
@@ -405,29 +420,6 @@ class BaseAWQForCausalLM(nn.Module):
 
             torch.cuda.empty_cache()
             gc.collect()
-
-    def _load_exllama_modules(self, model, use_exllama, use_exllama_v2):
-        if use_exllama:
-            exllama_module = WQLinear_Exllama
-        elif use_exllama_v2:
-            exllama_module = WQLinear_ExllamaV2
-
-        gemm_modules = {
-            name: module
-            for name, module in model.named_modules()
-            if isinstance(module, WQLinear_GEMM)
-        }
-        for name, gemm_module in gemm_modules.items():
-            new_submodule = exllama_module.from_wqlinear_gemm(gemm_module)
-            set_op_by_name(model, name, new_submodule)
-
-        if use_exllama:
-            model = exllama_post_init(model)
-        elif use_exllama_v2:
-            model = exllamav2_post_init(model)
-
-        torch.cuda.empty_cache()
-        gc.collect()
 
     @staticmethod
     def _scale_activations(self, layer):

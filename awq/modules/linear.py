@@ -65,7 +65,12 @@ class WQLinear_GEMM(nn.Module):
         )
         if bias:
             self.register_buffer(
-                "bias", torch.zeros((out_features), dtype=torch.float16, device=dev)
+                "bias",
+                torch.zeros(
+                    (out_features),
+                    dtype=torch.float16,
+                    device=dev,
+                ),
             )
         else:
             self.bias = None
