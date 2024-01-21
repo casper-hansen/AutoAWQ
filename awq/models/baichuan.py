@@ -5,9 +5,7 @@ from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
-    LlamaForCausalLM as OldLlamaForCausalLM
 )
-from awq.modules.fused.mlp import QuantFusedMLP
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
@@ -102,11 +100,6 @@ class BaichuanFuser:
             #     module.self_attn.v_proj
             # )
             qkv = module.self_attn.W_pack
-            mlp = QuantFusedMLP(
-                module.mlp.gate_proj,
-                module.mlp.down_proj,
-                module.mlp.up_proj
-            )
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight,
                 module.input_layernorm.epsilon
@@ -121,7 +114,7 @@ class BaichuanFuser:
                 n_kv_heads=self.model.config.num_attention_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                mlp=mlp,
+                mlp=module.mlp,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
@@ -135,3 +128,5 @@ class BaichuanFuser:
             self.model.model.embed_tokens,
             self.model.model.norm,
         )
+
+        setattr(self.model.model, "blocks", self.model.model.blocks)

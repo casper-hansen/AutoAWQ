@@ -302,23 +302,17 @@ class BaseAWQForCausalLM(nn.Module):
             dtype=torch_dtype,
         )
 
-        # Post Init creates q4 matric handles
-        import time
-
-        start = time.time()
+        # Dispath to devices
+        if fuse_layers:
+            self.fuse_layers(model)
+        
         if use_exllama:
             # creates q4 handle
             model = exllama_post_init(model)
         elif use_exllama_v2:
             # creates q4 handle and allocates scratch spaces wrt max_input_len and
             # max_batch_size, which are hardcoded for now but might be worth interfacing
-            model = exllamav2_post_init(model, max_input_len=2048, max_batch_size=8)
-        end = time.time()
-        print(f"Post Init (with packing/unpacking) took {end-start:.2f}s")
-
-        # Dispath to devices
-        if fuse_layers:
-            self.fuse_layers(model)
+            model = exllamav2_post_init(model, max_input_len=2048, max_batch_size=1)
 
         return self(
             model,
