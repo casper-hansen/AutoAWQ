@@ -10,8 +10,6 @@ none_tensor = torch.empty((1, 1), device="meta")
 
 
 class WQLinear_Exllama(nn.Module):
-    QUANT_TYPE: str = "exllama"
-
     def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
         super().__init__()
 
@@ -43,7 +41,6 @@ class WQLinear_Exllama(nn.Module):
                 device=dev,
             ),
         )
-        ## These shapes are only for compatibility with the state_dict of WQLinear_GEMM ##
         ##################################################################################
 
         self.register_buffer(
