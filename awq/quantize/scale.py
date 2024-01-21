@@ -2,13 +2,19 @@ import torch
 import torch.nn as nn
 from typing import Tuple, List
 from awq.modules.act import ScaledActivation
+from awq.modules.moe import ScaledMixtralSparseMoeBlock
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
+from transformers.models.mixtral.modeling_mixtral import (
+    MixtralSparseMoeBlock,
+    MixtralBLockSparseTop2MLP,
+)
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm]
 allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation, PytorchGELUTanh, GELUActivation]
+allowed_moe = [MixtralSparseMoeBlock]
 
 @torch.no_grad()
 def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
@@ -31,7 +37,12 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         prev_op.cuda()
         for layer in layers:
             layer.cuda()
-        scales.cuda()
+        
+        if type(scales) == list:
+            for scale in scales:
+                scale.cuda()
+        else:
+            scales.cuda()
         
         if isinstance(prev_op, nn.Linear) and type(layers) == list and isinstance(layers[0], nn.Linear):
             scale_fc_fcs(prev_op, layers, scales)
@@ -48,6 +59,15 @@ def apply_scale(module, scales_list, input_feat_dict=None):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
+        
+        elif any(isinstance(prev_op,t) for t in allowed_moe):
+            # scales: [best_scale_expert_0, best_scale_expert_1, ...] -> [expert_index, scales]
+            scales = torch.stack(scales).cuda()
+
+            # apply scales
+            new_module = ScaledMixtralSparseMoeBlock(prev_op, scales)
+            set_op_by_name(module, prev_op_name, new_module)
+            scale_moe_experts(prev_op, layers, scales)
             
         else:
             raise NotImplementedError(
@@ -64,7 +84,12 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         prev_op.cpu()
         for layer in layers:
             layer.cpu()
-        scales.cpu()
+        
+        if type(scales) == list:
+            for scale in scales:
+                scale.cpu()
+        else:
+            scales.cpu()
 
 @torch.no_grad()
 def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
@@ -133,3 +158,18 @@ def scale_gelu_fc(gelu: allowed_act_fns, fc: nn.Linear, scales: torch.Tensor):
 
     for p in fc.parameters():
         assert torch.isnan(p).sum() == 0
+
+@torch.no_grad()
+def scale_moe_experts(moe: MixtralSparseMoeBlock, experts: List[MixtralBLockSparseTop2MLP], scales: torch.Tensor):
+    assert any(isinstance(moe, allowed_module) for allowed_module in allowed_moe)
+    assert all(isinstance(m, MixtralBLockSparseTop2MLP) for m in experts)
+
+    # One scale for each expert, applied to w1 and w3 only
+    # Not applied to w2 because it does not take hidden_states as input
+    for i, expert in enumerate(experts):
+        expert.w1.weight.mul_(scales[i].view(1, -1))
+        expert.w3.weight.mul_(scales[i].view(1, -1))
+    
+    for expert in experts:
+        for p in expert.parameters():
+            assert torch.isnan(p).sum() == 0

@@ -6,13 +6,26 @@ from awq.modules.fused.block import MixtralBlock
 from awq.modules.fused.model import MixtralModel
 from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
-    MixtralForCausalLM as OldMixtralForCausalLM
+    MixtralForCausalLM as OldMixtralForCausalLM,
+    MixtralBLockSparseTop2MLP as OldMixtralBLockSparseTop2MLP,
 )
 from awq.modules.fused.norm import FasterTransformerRMSNorm
+
+def _transformers_version_check():
+    import transformers
+    tv = transformers.__version__.split('.')
+    if len(tv) == 4:
+        major, minor, patch, dev = tv
+    else:
+        major, minor, patch = tv
+    
+    if int(major) == 4 and int(minor) < 37:
+        raise Exception("Mixtral requires a minimum of 4.37.0.dev0: pip install git+https://github.com/huggingface/transformers.git")
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MixtralDecoderLayer"
     max_new_tokens_key = "max_position_embeddings"
+    modules_to_not_convert = ["gate"]
     
     @staticmethod
     def fuse_layers(model: OldMixtralForCausalLM):
@@ -21,12 +34,21 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     
     @staticmethod
     def get_model_layers(model: OldMixtralForCausalLM):
+        _transformers_version_check()
         return model.model.layers
     
     @staticmethod
     def get_act_for_scaling(module):
         return dict(
             is_scalable=False
+        )
+    
+    @staticmethod
+    def get_moe_for_scaling(module: OldMixtralDecoderLayer):
+        return dict(
+            scale_name="block_sparse_moe",
+            scale_layer=module.block_sparse_moe,
+            scale_shape=(module.block_sparse_moe.num_experts, module.block_sparse_moe.hidden_dim),
         )
     
     @staticmethod
@@ -53,19 +75,18 @@ class MixtralAWQForCausalLM(BaseAWQForCausalLM):
                 layers=[module.self_attn.o_proj],
                 inp=input_feat['self_attn.o_proj'],
             ))
-        
-        # linear in
+
+        # NOTE: Scaled in awq.quantize.scale.scale_moe_experts, awq.modules.moe.ScaledMixtralSparseMoeBlock
+        # Experts: Not a linear layer, special handling is introduced in awq.quantize.quantizer
         layers.append(dict(
-            prev_op=module.post_attention_layernorm,
-            layers=[
-                w for expert in module.block_sparse_moe.experts
-                  for w in [expert.w1, expert.w3]
-            ],
+            prev_op=module.block_sparse_moe,
+            layers=module.block_sparse_moe.experts,
             inp=input_feat['block_sparse_moe'],
             module2inspect=module.block_sparse_moe,
         ))
 
-        # linear out
+        # scaling w2        
+        expert: OldMixtralBLockSparseTop2MLP
         for i, expert in enumerate(module.block_sparse_moe.experts):
             layers.append(dict(
                 prev_op=expert.w3,

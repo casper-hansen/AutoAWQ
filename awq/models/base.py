@@ -35,6 +35,7 @@ from accelerate.big_modeling import (
 
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
+from awq.modules.moe import ScaledMixtralSparseMoeBlock
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 from awq.modules.exllama import WQLinear_Exllama
 from awq.modules.exllamav2 import WQLinear_ExllamaV2
@@ -96,10 +97,12 @@ class BaseAWQForCausalLM(nn.Module):
         split="train",
         text_column="text",
         duo_scaling=True,
-        modules_to_not_convert=None,
         export_compatible=False,
     ):
         self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
+
+        if hasattr(self, "modules_to_not_convert"):
+            self.quant_config.modules_to_not_convert = self.modules_to_not_convert
 
         self.quantizer = AwqQuantizer(
             self,
@@ -112,7 +115,7 @@ class BaseAWQForCausalLM(nn.Module):
             split,
             text_column,
             duo_scaling,
-            modules_to_not_convert=modules_to_not_convert,
+            modules_to_not_convert=self.quant_config.modules_to_not_convert,
             export_compatible=export_compatible,
         )
         self.quantizer.quantize()
@@ -402,6 +405,9 @@ class BaseAWQForCausalLM(nn.Module):
             # Replace activation functions
             self._scale_activations(self, layer)
 
+            # Replace mixture of experts
+            self._scale_moe(self, layer)
+
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
                 if use_exllama:
@@ -436,5 +442,19 @@ class BaseAWQForCausalLM(nn.Module):
                 )
 
                 # scale activation
-                scaled_act = ScaledActivation(scale_dict["scale_layer"], scale_like)
-                set_op_by_name(layer, scale_dict["scale_name"], scaled_act)
+                scaled_act = ScaledActivation(scale_dict['scale_layer'], scale_like)
+                set_op_by_name(layer, scale_dict['scale_name'], scaled_act)
+
+    def _scale_moe(self, layer):
+        if hasattr(self, "get_moe_for_scaling") and hasattr(layer.block_sparse_moe, "scales"):
+            scale_dict: dict = self.get_moe_for_scaling(layer)
+
+            if not isinstance(scale_dict['scale_layer'], ScaledMixtralSparseMoeBlock):
+                param = next(layer.parameters())
+
+                # get activation scale
+                scale_like = torch.ones(scale_dict['scale_shape'], dtype=param.dtype, device=param.device)
+
+                # scale moe
+                scaled_act = ScaledMixtralSparseMoeBlock(scale_dict['scale_layer'], scale_like)
+                set_op_by_name(layer, scale_dict['scale_name'], scaled_act)
