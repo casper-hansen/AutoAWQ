@@ -312,7 +312,11 @@ class BaseAWQForCausalLM(nn.Module):
         elif use_exllama_v2:
             # creates q4 handle and allocates scratch spaces wrt max_input_len and
             # max_batch_size, which are hardcoded for now but might be worth interfacing
-            model = exllamav2_post_init(model, max_input_len=2048, max_batch_size=1)
+            model = exllamav2_post_init(
+                model,
+                max_input_len=max_new_tokens,
+                max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1))
+            )
 
         return self(
             model,
