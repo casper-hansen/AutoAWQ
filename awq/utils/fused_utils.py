@@ -1,5 +1,6 @@
 import torch
-from typing import List
+from awq.modules.exllama import WQLinear_Exllama
+from awq.modules.exllamav2 import WQLinear_ExllamaV2
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
 
 def prepare_correct_devices(next_layer, hidden_states, mask):
@@ -52,8 +53,12 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
 
     if isinstance(q_proj, WQLinear_GEMV):
         q_linear = WQLinear_GEMV
-    else:
+    elif isinstance(q_proj, WQLinear_GEMM):
         q_linear = WQLinear_GEMM
+    elif isinstance(q_proj, WQLinear_Exllama):
+        q_linear = WQLinear_Exllama
+    else:
+        q_linear = WQLinear_ExllamaV2
 
     qkv_layer = q_linear(
         q_proj.w_bit,
@@ -64,12 +69,20 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         next(iter(module.state_dict().values())).device
     )
 
-    if isinstance(qkv_layer, WQLinear_GEMV):
+    if isinstance(q_proj, WQLinear_GEMV):
         qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0)
         qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=0)
         qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=0)
         qkv_layer.split_k_iters = q_proj.split_k_iters
-    else:
+    elif isinstance(q_proj, WQLinear_GEMM):
+        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+    elif isinstance(q_proj, WQLinear_Exllama):
+        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+        qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+    elif isinstance(q_proj, WQLinear_ExllamaV2):
         qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
         qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
         qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
