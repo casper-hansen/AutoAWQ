@@ -3,7 +3,17 @@ import torch.nn as nn
 from typing import Dict
 from awq.utils.exllama_utils import unpack_reorder_pack
 
-import exlv2_ext  # with CUDA kernels (AutoAWQ_kernels)
+try:
+    import exlv2_ext  # With CUDA kernels (from AutoAWQ_kernels)
+except ImportError as import_exception:
+
+    def awq_kernel_error_raiser(*args, **kwargs):
+        raise ValueError(
+            f"Trying to use AWQ Kernels but could not import the C++/CUDA "
+            f"dependencies with the following error: {import_exception}"
+        )
+
+    exlv2_ext = awq_kernel_error_raiser
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")

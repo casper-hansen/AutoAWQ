@@ -1,7 +1,17 @@
 import torch
 import torch.nn as nn
 
-import awq_ext  # with CUDA kernels
+try:
+    import awq_ext  # With CUDA kernels (from AutoAWQ_kernels)
+except ImportError as import_exception:
+
+    def awq_kernel_error_raiser(*args, **kwargs):
+        raise ValueError(
+            f"Trying to use AWQ Kernels but could not import the C++/CUDA "
+            f"dependencies with the following error: {import_exception}"
+        )
+
+    awq_ext = awq_kernel_error_raiser
 
 
 def make_divisible(c, divisor):
