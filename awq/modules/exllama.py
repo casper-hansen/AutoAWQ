@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 from awq.utils.packing_utils import unpack_reorder_pack
 
-import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
-
+try:
+    import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
+    AWQ_INSTALLED = True
+except:
+    AWQ_INSTALLED = False
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")

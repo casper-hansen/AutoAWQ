@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
+from awq.utils.packing_utils import dequantize_gemm
 
-import awq_ext  # with CUDA kernels
+try:
+    import awq_ext  # with CUDA kernels
+    AWQ_INSTALLED = True
+except:
+    AWQ_INSTALLED = False
 
 
 def make_divisible(c, divisor):
@@ -154,9 +159,19 @@ class WQLinear_GEMM(nn.Module):
         if input_dtype != torch.float16:
             x = x.half()
 
-        out = awq_ext.gemm_forward_cuda(
-            x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
-        )
+        if AWQ_INSTALLED:
+            out = awq_ext.gemm_forward_cuda(
+                x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
+            )
+        else:
+            out = dequantize_gemm(
+                self.qweight,
+                self.qzeros,
+                self.scales,
+                self.w_bit,
+                self.group_size
+            )
+            out = torch.matmul(x, out)
 
         if input_dtype != torch.float16:
             out = out.to(dtype=input_dtype)
