@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from awq.utils.exllama_utils import unpack_reorder_pack
+from awq.utils.packing_utils import unpack_reorder_pack
 
 import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
 
