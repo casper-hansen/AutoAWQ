@@ -14,6 +14,7 @@ import transformers
 from transformers.modeling_utils import shard_checkpoint
 
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.marlin import WQLinear_Marlin, marlin_post_init
 from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
 from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
@@ -249,6 +250,7 @@ class BaseAWQForCausalLM(nn.Module):
         safetensors=True,
         is_quantized=True,
         fuse_layers=False,
+        use_marlin=False,
         use_exllama=False,
         use_exllama_v2=False,
         version="GEMM",
@@ -285,6 +287,7 @@ class BaseAWQForCausalLM(nn.Module):
             model,
             quant_config,
             quant_config.version,
+            use_marlin=use_marlin,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
         )
@@ -305,8 +308,13 @@ class BaseAWQForCausalLM(nn.Module):
         # Dispath to devices
         if fuse_layers:
             self.fuse_layers(model)
+
+        import time
         
-        if use_exllama:
+        start = time.time()
+        if use_marlin:
+            model = marlin_post_init(model)
+        elif use_exllama:
             # creates q4 handle
             model = exllama_post_init(model)
         elif use_exllama_v2:
@@ -317,7 +325,9 @@ class BaseAWQForCausalLM(nn.Module):
                 max_input_len=max_new_tokens,
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1))
             )
-
+        end = time.time()
+        print(f"Post init took {end - start:.3f}s")
+        
         return self(
             model,
             model_type,
@@ -377,12 +387,11 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(
-        self, model, quant_config, version, use_exllama, use_exllama_v2
+        self, model, quant_config, version, use_marlin, use_exllama, use_exllama_v2
     ):
         # Real quantization of weights
-        assert quant_config.zero_point, "We only support zero_point quantization now."
         assert not (
-            version == "GEMV" and (use_exllama or use_exllama_v2)
+            version == "GEMV" and (use_exllama or use_exllama_v2 or use_marlin)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -404,7 +413,9 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if use_exllama:
+                if use_marlin:
+                    q_linear_module = WQLinear_Marlin
+                elif use_exllama:
                     q_linear_module = WQLinear_Exllama
                 elif use_exllama_v2:
                     q_linear_module = WQLinear_ExllamaV2
