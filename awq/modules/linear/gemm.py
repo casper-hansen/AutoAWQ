@@ -153,9 +153,23 @@ class WQLinear_GEMM(nn.Module):
             x = x.half()
 
         if AWQ_INSTALLED:
-            out = awq_ext.gemm_forward_cuda(
-                x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
-            )
+            FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0]*x.shape[1] >= 1024
+
+            if FP16_MATMUL_HEURISTIC_CONDITION:
+                out = awq_ext.dequantize_weights_cuda(
+                    self.qweight,
+                    self.scales,
+                    self.qzeros,
+                    0,
+                    0,
+                    0,
+                    False
+                )
+                out = torch.matmul(x, out)
+            else:
+                out = awq_ext.gemm_forward_cuda(
+                    x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
+                )
         else:
             out = dequantize_gemm(
                 self.qweight,
