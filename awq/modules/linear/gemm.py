@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
 
 try:
@@ -97,6 +98,13 @@ class WQLinear_GEMM(nn.Module):
         intweight = torch.cat(intweight, dim=1)
         intweight = intweight.t().contiguous()
         intweight = intweight.to(dtype=torch.int32)
+
+        best_device = get_best_device()
+
+        # Avoid: The operator 'aten::__lshift__.Scalar' is not currently implemented for the MPS device
+        if "mps" in best_device:
+            intweight = intweight.to("cpu")
+
         qweight = torch.zeros(
             (intweight.shape[0], intweight.shape[1] // 32 * awq_linear.w_bit),
             dtype=torch.int32,
@@ -113,7 +121,11 @@ class WQLinear_GEMM(nn.Module):
                 qweight[:, col] |= qweight_col << (i * awq_linear.w_bit)
         awq_linear.qweight = qweight
 
-        zeros = zeros.to(dtype=torch.int32)
+        zeros = zeros.to(dtype=torch.int32, device=best_device)
+
+        if "mps" in best_device:
+            zeros = zeros.to("cpu")
+        
         qzeros = torch.zeros(
             (zeros.shape[0], zeros.shape[1] // 32 * awq_linear.w_bit),
             dtype=torch.int32,

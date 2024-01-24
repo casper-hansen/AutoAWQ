@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Tuple, List
+from awq.utils.utils import get_best_device
 from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
@@ -14,7 +15,7 @@ allowed_act_fns = [nn.GELU, BloomGelu, NewGELUActivation, PytorchGELUTanh, GELUA
 def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
     for name, max_val in clip_list:
         layer: nn.Linear = get_op_by_name(module, name)
-        layer.cuda()
+        layer.to(get_best_device())
         max_val = max_val.to(layer.weight.device)
         org_shape = layer.weight.shape
         layer.weight.data = layer.weight.data.reshape(*max_val.shape[:2], -1)
@@ -27,11 +28,12 @@ def apply_scale(module, scales_list, input_feat_dict=None):
     for prev_op_name, layer_names, scales in scales_list:
         prev_op = get_op_by_name(module, prev_op_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
-
-        prev_op.cuda()
+        
+        best_device = get_best_device()
+        prev_op.to(best_device)
         for layer in layers:
-            layer.cuda()
-        scales.cuda()
+            layer.to(best_device)
+        scales.to(best_device)
         
         if isinstance(prev_op, nn.Linear) and type(layers) == list and isinstance(layers[0], nn.Linear):
             scale_fc_fcs(prev_op, layers, scales)
