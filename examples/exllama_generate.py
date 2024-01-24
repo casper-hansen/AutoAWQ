@@ -1,10 +1,10 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+quant_path = "TheBloke/Mistral-7B-Instruct-v0.1-AWQ"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True, use_exllama_v2=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 

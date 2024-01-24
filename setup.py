@@ -1,6 +1,7 @@
 import os
 import sys
 import torch
+import platform
 from pathlib import Path
 from setuptools import setup, find_packages
 
@@ -8,8 +9,9 @@ os.environ["CC"] = "g++"
 os.environ["CXX"] = "g++"
 AUTOAWQ_VERSION = "0.1.8"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
+HAS_CUDA = torch.cuda.is_available()
 
-if not PYPI_BUILD:
+if not PYPI_BUILD and HAS_CUDA:
     try:
         CUDA_VERSION = "".join(os.environ.get("CUDA_VERSION", torch.version.cuda).split("."))[:3]
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
@@ -42,20 +44,16 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "autoawq-kernels",
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "accelerate",
-    "sentencepiece",
-    "lm_eval",
-    "texttable",
-    "toml",
-    "attributedict",
-    "protobuf",
-    "torchvision",
-    "tabulate",
+    "datasets",
 ]
+
+# CUDA kernels
+if platform.system().lower() != "darwin" and HAS_CUDA:
+    requirements.append("autoawq-kernels")
 
 setup(
     packages=find_packages(),

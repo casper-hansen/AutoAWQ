@@ -69,7 +69,7 @@ class LlamaLikeModel(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.embedding = embedding
-        self.blocks: List[LlamaLikeBlock] = blocks
+        self.blocks: List[LlamaLikeBlock] = nn.ModuleList(blocks)
         self.norm = norm
         self.last_forward_num_tokens = 0
     
