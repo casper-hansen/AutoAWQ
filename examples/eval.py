@@ -2,10 +2,12 @@ import argparse
 from lm_eval import evaluator
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
-from awq.evaluation.eval_utils import (
+from awq.evaluation import (
     evaluate_perplexity,
     eval_librispeech,
     eval_mmlu,
+    eval_humaneval,
+    eval_kl_divergence,
 )
 
 def run_eval(
@@ -35,6 +37,12 @@ def run_eval(
     
     elif len(tasks) == 1 and tasks[0] == 'mmlu':
         eval_mmlu(model_path, task_n_shot, task_batch_size, device, task_use_pretrained)
+    
+    elif len(tasks) == 1 and tasks[0] == 'humaneval':
+        eval_humaneval(model, tokenizer)
+    
+    elif len(tasks) == 1 and tasks[0] == 'kldiv':
+        eval_kl_divergence(model.model, model.model, tokenizer, seqlen=1024)
 
     else:
         # Evaluate perplexity of quantized model
