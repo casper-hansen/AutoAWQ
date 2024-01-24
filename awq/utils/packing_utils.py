@@ -78,3 +78,20 @@ def unpack_reorder_pack(qweight, qzeros, bits):
     qweight, qzeros = pack_exllama(iweight, izeros, bits)
 
     return qweight, qzeros
+
+def dequantize_gemm(qweight, qzeros, scales, bits, group_size):
+    # Unpack the qweight and qzeros tensors
+    iweight, izeros = unpack_awq(qweight, qzeros, bits)
+    # Reverse the order of the iweight and izeros tensors
+    iweight, izeros = reverse_awq_order(iweight, izeros, bits)
+
+    # overflow checks
+    iweight = torch.bitwise_and(iweight, (2**bits) - 1)
+    izeros = torch.bitwise_and(izeros, (2**bits) - 1)
+
+    # fp16 weights
+    scales = scales.repeat_interleave(group_size, dim=0)
+    izeros = izeros.repeat_interleave(group_size, dim=0)
+    iweight = (iweight - izeros) * scales
+
+    return iweight
