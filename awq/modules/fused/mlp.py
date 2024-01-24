@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.linear.gemm import WQLinear_GEMM
+from awq.modules.linear.gemv import WQLinear_GEMV
 
 try:
     import awq_ext  # with CUDA kernels

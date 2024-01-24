@@ -9,7 +9,8 @@ from collections import defaultdict
 from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.linear.gemm import WQLinear_GEMM
+from awq.modules.linear.gemv import WQLinear_GEMV
 from awq.utils.module import (
     append_str_prefix,
     get_op_name,
