@@ -13,9 +13,9 @@ from transformers.modeling_utils import shard_checkpoint
 
 from awq.modules.linear.gemm import WQLinear_GEMM
 from awq.modules.linear.gemv import WQLinear_GEMV
-from awq.modules.marlin import WQLinear_Marlin, marlin_post_init
-from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
-from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
+from awq.modules.linear.marlin import WQLinear_Marlin, marlin_post_init
+from awq.modules.linear.exllama import WQLinear_Exllama, exllama_post_init
+from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,

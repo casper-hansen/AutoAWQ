@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import marlin_cuda  # with CUDA kernels
+
+try:
+    import marlin_cuda  # with CUDA kernels (AutoAWQ_kernels)
+    AWQ_INSTALLED = True
+except:
+    AWQ_INSTALLED = False
 
 
 def mul(A, B, C, s, workspace, thread_k=-1, thread_n=-1, sms=-1):

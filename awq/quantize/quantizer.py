@@ -11,7 +11,7 @@ from awq.quantize.scale import apply_scale, apply_clip
 from awq.utils.utils import clear_memory, get_best_device
 from awq.modules.linear.gemm import WQLinear_GEMM
 from awq.modules.linear.gemv import WQLinear_GEMV
-from awq.modules.marlin import WQLinear_Marlin
+from awq.modules.linear.marlin import WQLinear_Marlin
 from awq.utils.module import (
     append_str_prefix,
     get_op_name,
