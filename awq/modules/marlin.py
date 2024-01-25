@@ -164,20 +164,20 @@ class WQLinear_Marlin(nn.Module):
 
         return awq_linear
 
+    def post_init(self):
+        self.register_buffer(
+            "workspace",
+            torch.zeros(
+                self.out_features // 128,
+                dtype=torch.int32,
+                device=self.qweight.device,
+            ),
+            persistent=False,
+        )
+
     @torch.no_grad()
     def forward(self, A):
-        # this should rather be performed in a post_init
-        # here it might make first forward pass slower
-        if not hasattr(self, "workspace"):
-            self.register_buffer(
-                "workspace",
-                torch.zeros(
-                    self.out_features // 128,
-                    dtype=torch.int32,
-                    device=self.qweight.device,
-                ),
-                persistent=False,
-            )
+        assert hasattr(self, "workspace"), "Please call `post_init` first."
 
         A = A.half()
         C = torch.empty(
@@ -203,3 +203,11 @@ class WQLinear_Marlin(nn.Module):
                 self.group_size,
             )
         )
+
+
+def marlin_post_init(model):
+    for _, submodule in model.named_modules():
+        if isinstance(submodule, WQLinear_Marlin):
+            submodule.post_init()
+
+    return model

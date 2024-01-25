@@ -13,8 +13,8 @@ from huggingface_hub import snapshot_download
 import transformers
 from transformers.modeling_utils import shard_checkpoint
 
-from awq.modules.marlin import WQLinear_Marlin
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.marlin import WQLinear_Marlin, marlin_post_init
 from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
 from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
@@ -309,6 +309,9 @@ class BaseAWQForCausalLM(nn.Module):
         # Dispath to devices
         if fuse_layers:
             self.fuse_layers(model)
+
+        if quant_config.version == "Marlin":
+            model = marlin_post_init(model)
 
         if use_exllama:
             # creates q4 handle
