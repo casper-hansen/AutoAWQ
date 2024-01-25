@@ -1,10 +1,10 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
 
-quant_path = "vicuna-7b-v1.5-awq"
+quant_path = "vicuna-7b-v1.5-awq-marlin"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 

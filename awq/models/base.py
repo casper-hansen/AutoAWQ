@@ -13,8 +13,8 @@ from huggingface_hub import snapshot_download
 import transformers
 from transformers.modeling_utils import shard_checkpoint
 
+from awq.modules.marlin import WQLinear_Marlin
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.modules.marlin import WQLinear_Marlin, marlin_post_init
 from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
 from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
@@ -37,8 +37,9 @@ from accelerate.big_modeling import (
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.modules.exllama import WQLinear_Exllama
 from awq.modules.exllamav2 import WQLinear_ExllamaV2
+from awq.modules.exllama import WQLinear_Exllama
+from awq.modules.marlin import WQLinear_Marlin
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
 
@@ -108,6 +109,7 @@ class BaseAWQForCausalLM(nn.Module):
             tokenizer,
             self.quant_config.w_bit,
             self.quant_config.q_group_size,
+            self.quant_config.zero_point,
             self.quant_config.version,
             calib_data,
             split,
@@ -154,6 +156,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         # Save model and config files with empty state dict
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
+        self.model.generation_config.do_sample = True
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
         self.quant_config.save_pretrained(save_dir)
 
@@ -250,7 +253,6 @@ class BaseAWQForCausalLM(nn.Module):
         safetensors=True,
         is_quantized=True,
         fuse_layers=False,
-        use_marlin=False,
         use_exllama=False,
         use_exllama_v2=False,
         version="GEMM",
@@ -287,7 +289,6 @@ class BaseAWQForCausalLM(nn.Module):
             model,
             quant_config,
             quant_config.version,
-            use_marlin=use_marlin,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
         )
@@ -309,12 +310,7 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        import time
-        
-        start = time.time()
-        if use_marlin:
-            model = marlin_post_init(model)
-        elif use_exllama:
+        if use_exllama:
             # creates q4 handle
             model = exllama_post_init(model)
         elif use_exllama_v2:
@@ -322,12 +318,10 @@ class BaseAWQForCausalLM(nn.Module):
             # max_batch_size, which are hardcoded for now but might be worth interfacing
             model = exllamav2_post_init(
                 model,
-                max_input_len=max_new_tokens,
-                max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1))
+                max_input_len=max_new_tokens or 2048,
+                max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
-        end = time.time()
-        print(f"Post init took {end - start:.3f}s")
-        
+
         return self(
             model,
             model_type,
@@ -387,11 +381,11 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(
-        self, model, quant_config, version, use_marlin, use_exllama, use_exllama_v2
+        self, model, quant_config, version, use_exllama, use_exllama_v2
     ):
         # Real quantization of weights
         assert not (
-            version == "GEMV" and (use_exllama or use_exllama_v2 or use_marlin)
+            version == "GEMV" and (use_exllama or use_exllama_v2)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -413,7 +407,7 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if use_marlin:
+                if version == "Marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
                     q_linear_module = WQLinear_Exllama
