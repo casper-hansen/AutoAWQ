@@ -6,10 +6,11 @@ import torch.nn as nn
 from tqdm import tqdm
 from typing import Dict, List, Optional
 from collections import defaultdict
-from awq.utils.utils import clear_memory
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.utils.utils import clear_memory, get_best_device
+from awq.modules.linear.gemm import WQLinear_GEMM
+from awq.modules.linear.gemv import WQLinear_GEMV
 from awq.modules.marlin import WQLinear_Marlin
 from awq.utils.module import (
     append_str_prefix,
@@ -112,9 +113,12 @@ class AwqQuantizer:
             # Move module and inputs to correct device
             common_device = next(self.modules[i].parameters()).device
             if common_device is None or str(common_device) == "cpu":
-                self.modules[i] = self.modules[i].cuda(
-                    "cuda:" + str(i % torch.cuda.device_count())
-                )
+                if torch.cuda.is_available():
+                    best_device = "cuda:" + str(i % torch.cuda.device_count())
+                else:
+                    best_device = get_best_device()
+                
+                self.modules[i] = self.modules[i].to(best_device)
                 common_device = next(self.modules[i].parameters()).device
 
             if self.module_kwargs.get("position_ids") is not None:
@@ -180,7 +184,7 @@ class AwqQuantizer:
     def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
         for name, linear_layer in named_linears.items():
             # NOTE: small regression in perplexity if linear layer uses .cpu().float()
-            linear_layer = linear_layer.cuda().half()
+            linear_layer = linear_layer.to(get_best_device()).half()
 
             linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
                 linear_layer.weight.data
@@ -350,12 +354,9 @@ class AwqQuantizer:
             if any([_ in name for _ in avoid_clipping]):
                 continue
 
-            named_linears[name].cuda()
-            max_val = self._compute_best_clip(
-                named_linears[name].weight, input_feat[name]
-            )
+            named_linears[name].to(get_best_device())
+            max_val = self._compute_best_clip(named_linears[name].weight, input_feat[name])
             clip_list.append((name, max_val))
-
             named_linears[name].cpu()
 
         return clip_list
@@ -432,8 +433,9 @@ class AwqQuantizer:
         inps = []
         layer_kwargs = {}
 
-        modules[0] = modules[0].cuda()
-        self.awq_model.move_embed(self.model, "cuda")
+        best_device = get_best_device()
+        modules[0] = modules[0].to(best_device)
+        self.awq_model.move_embed(self.model, best_device)
 
         # get input and kwargs to layer 0
         # with_kwargs is only supported in PyTorch 2.0
@@ -479,7 +481,7 @@ class AwqQuantizer:
         clear_memory()
 
         if layer_kwargs.get("attention_mask") is not None:
-            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to("cuda")
+            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to(best_device)
 
         return modules, layer_kwargs, inps
 
