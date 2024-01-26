@@ -5,9 +5,10 @@ from awq.utils.packing_utils import unpack_reorder_pack
 
 try:
     import exlv2_ext  # with CUDA kernels (AutoAWQ_kernels)
-    AWQ_INSTALLED = True
+
+    EXLV2_INSTALLED = True
 except:
-    AWQ_INSTALLED = False
+    EXLV2_INSTALLED = False
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")
@@ -21,7 +22,6 @@ class WQLinear_ExllamaV2(nn.Module):
             raise NotImplementedError("Only 4-bit are supported for now.")
 
         self.q_handle = None
-        self.q_tensors = None
 
         self.w_bit = w_bit
         self.in_features = in_features
@@ -131,6 +131,11 @@ class WQLinear_ExllamaV2(nn.Module):
             "module.post_init() must be called before module.forward(). "
             "Use exllamav2_post_init() on the whole model."
         )
+        assert EXLV2_INSTALLED, (
+            "ExllamaV2 kernels are not installed. "
+            "Please install AWQ compatible ExllamaV2 kernels from AutoAWQ_kernels."
+        )
+
         input_dtype = x.dtype
         out_shape = x.shape[:-1] + (self.out_features,)
 

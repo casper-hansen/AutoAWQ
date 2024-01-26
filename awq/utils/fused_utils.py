@@ -94,6 +94,7 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
     elif isinstance(q_proj, WQLinear_Marlin):
         qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
         qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        # workspace is created in post_init
         
     qkv_layer.bias = bias
 

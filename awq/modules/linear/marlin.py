@@ -4,23 +4,10 @@ import numpy as np
 
 try:
     import marlin_cuda  # with CUDA kernels (AutoAWQ_kernels)
-    AWQ_INSTALLED = True
+
+    MARLIN_INSTALLED = True
 except:
-    AWQ_INSTALLED = False
-
-
-def mul(A, B, C, s, workspace, thread_k=-1, thread_n=-1, sms=-1):
-    """Marlin FP16xINT4 multiply; can be used within `torch.compile`.
-    @A: `torch.half` input matrix of shape `(m, k)` in standard row-major layout
-    @B: `torch.int` weight matrix of original shape `(k, n)` in Marlin format; see `Layer.pack()`
-    @C: `torch.half` out matrix of shape `(m, n)` in standard row-major layout
-    @s: `torch.half` scales of shape `(m / group_size, n)`
-    @workspace: `torch.int` tensor with at least as many entries as there a GPU SMs (256 is usually safe)
-    @thread_k: `k` size of a thread_tile in `B` (can usually be left as auto -1)
-    @thread_n: `n` size of a thread_tile in `B` (can usually be left as auto -1)
-    @sms: number of SMs to use for the kernel (can usually be left as auto -1)
-    """
-    marlin_cuda.mul(A, B, C, s, workspace, thread_k, thread_n, sms)
+    MARLIN_INSTALLED = False
 
 
 def _get_perms():
@@ -36,6 +23,7 @@ def _get_perms():
                 2 * (i % 4 + 4) + 1,
             ]:
                 perm1.append(16 * row + col + 8 * block)
+
         for j in range(4):
             perm.extend([p + 256 * j for p in perm1])
 
@@ -71,6 +59,8 @@ class WQLinear_Marlin(nn.Module):
         assert self.in_features % self.group_size == 0
         assert out_features % (32 // self.w_bit) == 0
 
+        ######################################################
+        ## These shapes are only specific for Marlin models ##
         self.register_buffer(
             "qweight",
             torch.zeros(
@@ -87,6 +77,8 @@ class WQLinear_Marlin(nn.Module):
                 device=dev,
             ),
         )
+        ######################################################
+
         if bias:
             self.register_buffer(
                 "bias",
@@ -181,22 +173,47 @@ class WQLinear_Marlin(nn.Module):
         )
 
     @torch.no_grad()
-    def forward(self, A):
-        assert hasattr(self, "workspace"), "Please call `post_init` first."
-
-        A = A.half()
-        C = torch.empty(
-            A.shape[:-1] + (self.scales.shape[1],), dtype=A.dtype, device=A.device
+    def forward(self, x):
+        assert hasattr(self, "workspace"), (
+            "module.post_init() must be called before module.forward(). "
+            "Use marlin_post_init() on the whole model."
         )
-        mul(
-            A.view((-1, A.shape[-1])),
+        assert MARLIN_INSTALLED, (
+            "Marlin kernels are not installed. "
+            "Please install AWQ compatible Marlin kernels from AutoAWQ_kernels."
+        )
+
+        out_shape = x.shape[:-1] + (self.out_features,)
+
+        input_dtype = x.dtype
+        if input_dtype != torch.float16:
+            x = x.half()
+
+        x = x.view(-1, x.shape[-1])
+
+        out = torch.empty(
+            (x.shape[0], self.out_features),
+            dtype=torch.float16,
+            device=x.device,
+        )
+        marlin_cuda.mul(
+            x,
             self.qweight,
-            C.view((-1, C.shape[-1])),
+            out,
             self.scales,
             self.workspace,
+            -1,  # thread_k
+            -1,  # thread_n
+            -1,  # sms
         )
-        C = C + self.bias if self.bias is not None else C
-        return C
+
+        if input_dtype != torch.float16:
+            out = out.to(dtype=input_dtype)
+
+        if self.bias is not None:
+            out.add_(self.bias)
+
+        return out.view(out_shape)
 
     def extra_repr(self) -> str:
         return (
