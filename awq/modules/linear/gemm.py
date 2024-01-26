@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Function
 from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
 
@@ -9,9 +10,81 @@ try:
 except:
     AWQ_INSTALLED = False
 
+# Adapted from https://github.com/compressa-ai/AutoAWQ/tree/dev
+class WQLinearMMFunction(Function):
+    @staticmethod
+    # ctx is the first argument to forward
+    def forward(
+        ctx,
+        x,
+        qweight,
+        qzeros,
+        scales,
+        w_bit=4,
+        group_size=128,
+        bias=None,
+        out_features=0
+    ):
+        # The forward pass can use ctx.
+        ctx.save_for_backward(x, qweight, qzeros, scales, bias)
+        ctx.out_features = out_features
+
+        out_shape = x.shape[:-1] + (out_features, )
+        x = x.to(torch.float16)
+
+        if AWQ_INSTALLED:
+            FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0]*x.shape[1] >= 1024
+
+            if FP16_MATMUL_HEURISTIC_CONDITION:
+                out = awq_ext.dequantize_weights_cuda(
+                    qweight,
+                    scales,
+                    qzeros,
+                    0,
+                    0,
+                    0,
+                    False
+                )
+                out = torch.matmul(x, out)
+            else:
+                out = awq_ext.gemm_forward_cuda(
+                    x.reshape(-1, x.shape[-1]),
+                    qweight,
+                    scales,
+                    qzeros,
+                    8
+                )
+        else:
+            out = dequantize_gemm(
+                qweight,
+                qzeros,
+                scales,
+                w_bit,
+                group_size
+            )
+            out = torch.matmul(x, out)
+
+        out = out + bias if bias is not None else out
+
+        return out.reshape(out_shape)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, qweight, qzeros, scales, bias = ctx.saved_tensors
+        out_features = ctx.out_features
+        grad_input = grad_weight = grad_zeros = grad_scales = grad_bias = grad_out_features = None
+        weight = awq_ext.dequantize_weights_cuda(qweight, scales, qzeros, 1, 0, 0, False)
+
+        if ctx.needs_input_grad[0]:
+            grad_input = grad_output[0].mm(weight.t()).unsqueeze(0)
+        if bias is not None and ctx.needs_input_grad[4]:
+            grad_bias = grad_output.sum(0)
+
+        return grad_input, grad_weight, grad_zeros, grad_scales, grad_bias, grad_out_features
+
 
 class WQLinear_GEMM(nn.Module):
-    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev, training=False):
         super().__init__()
 
         if w_bit not in [4]:
@@ -21,6 +94,7 @@ class WQLinear_GEMM(nn.Module):
         self.out_features = out_features
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
+        self.training = training
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0
@@ -144,7 +218,6 @@ class WQLinear_GEMM(nn.Module):
 
         return awq_linear
 
-    @torch.no_grad()
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.out_features,)
 
@@ -152,33 +225,29 @@ class WQLinear_GEMM(nn.Module):
         if input_dtype != torch.float16:
             x = x.half()
 
-        if AWQ_INSTALLED:
-            FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0]*x.shape[1] >= 1024
-
-            if FP16_MATMUL_HEURISTIC_CONDITION:
-                out = awq_ext.dequantize_weights_cuda(
-                    self.qweight,
-                    self.scales,
-                    self.qzeros,
-                    0,
-                    0,
-                    0,
-                    False
-                )
-                out = torch.matmul(x, out)
-            else:
-                out = awq_ext.gemm_forward_cuda(
-                    x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
-                )
-        else:
-            out = dequantize_gemm(
+        if self.training:
+            out = WQLinearMMFunction.apply(
+                x,
                 self.qweight,
                 self.qzeros,
                 self.scales,
                 self.w_bit,
-                self.group_size
+                self.group_size,
+                self.bias,
+                self.out_features,
             )
-            out = torch.matmul(x, out)
+        else:
+            with torch.no_grad():
+                out = WQLinearMMFunction.apply(
+                    x,
+                    self.qweight,
+                    self.qzeros,
+                    self.scales,
+                    self.w_bit,
+                    self.group_size,
+                    self.bias,
+                    self.out_features,
+                )
 
         if input_dtype != torch.float16:
             out = out.to(dtype=input_dtype)
