@@ -65,22 +65,35 @@ class WQLinearMMFunction(Function):
             out = torch.matmul(x, out)
 
         out = out + bias if bias is not None else out
+        out = out.reshape(out_shape)
 
-        return out.reshape(out_shape)
+        # always want 3D tensor if tensor is 2D
+        if len(out.shape) == 2:
+            out = out.unsqueeze(0)
+        
+        return out
 
     @staticmethod
     def backward(ctx, grad_output):
         input, qweight, qzeros, scales, bias = ctx.saved_tensors
-        out_features = ctx.out_features
-        grad_input = grad_weight = grad_zeros = grad_scales = grad_bias = grad_out_features = None
-        weight = awq_ext.dequantize_weights_cuda(qweight, scales, qzeros, 1, 0, 0, False)
+
+        weights = awq_ext.dequantize_weights_cuda(
+            qweight,
+            scales,
+            qzeros,
+            1,
+            0,
+            0,
+            False
+        )
 
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output[0].mm(weight.t()).unsqueeze(0)
-        if bias is not None and ctx.needs_input_grad[4]:
-            grad_bias = grad_output.sum(0)
+            # 2D matrix multiplication, unsqueeze to 3D
+            grad_input = grad_output.squeeze(0).mm(
+                weights.transpose(0, 1)
+            ).unsqueeze(0)
 
-        return grad_input, grad_weight, grad_zeros, grad_scales, grad_bias, grad_out_features
+        return grad_input, None, None, None, None, None, None, None
 
 
 class WQLinear_GEMM(nn.Module):
