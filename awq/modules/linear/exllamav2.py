@@ -1,19 +1,15 @@
 import torch
 import torch.nn as nn
 from typing import Dict
-from awq.utils.exllama_utils import unpack_reorder_pack
+from awq.utils.packing_utils import unpack_reorder_pack
 
 try:
-    import exlv2_ext  # With CUDA kernels (from AutoAWQ_kernels)
-except ImportError as import_exception:
+    import exlv2_ext  # with CUDA kernels (AutoAWQ_kernels)
 
-    def awq_kernel_error_raiser(*args, **kwargs):
-        raise ValueError(
-            f"Trying to use AWQ Kernels but could not import the C++/CUDA "
-            f"dependencies with the following error: {import_exception}"
-        )
+    EXLV2_INSTALLED = True
+except:
+    EXLV2_INSTALLED = False
 
-    exlv2_ext = awq_kernel_error_raiser
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")
@@ -137,6 +133,11 @@ class WQLinear_ExllamaV2(nn.Module):
             "module.post_init() must be called before module.forward(). "
             "Use exllamav2_post_init() on the whole model."
         )
+        assert EXLV2_INSTALLED, (
+            "Exllama kernels could not be loaded. "
+            "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
+        )
+
         input_dtype = x.dtype
         out_shape = x.shape[:-1] + (self.out_features,)
 

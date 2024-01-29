@@ -1,21 +1,20 @@
 import os
 import gc
 import json
-import time
 import torch
+import transformers
 import torch.nn as nn
 
 from tqdm import tqdm
 from typing import List, Union
 from safetensors.torch import save_file
-
 from huggingface_hub import snapshot_download
-import transformers
 from transformers.modeling_utils import shard_checkpoint
 
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.modules.exllama import WQLinear_Exllama, exllama_post_init
-from awq.modules.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
+from awq.modules.linear.gemm import WQLinear_GEMM
+from awq.modules.linear.gemv import WQLinear_GEMV
+from awq.modules.linear.exllama import WQLinear_Exllama, exllama_post_init
+from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
@@ -35,9 +34,6 @@ from accelerate.big_modeling import (
 
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
-from awq.modules.exllama import WQLinear_Exllama
-from awq.modules.exllamav2 import WQLinear_ExllamaV2
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
 

@@ -1,7 +1,8 @@
 import torch
-from awq.modules.exllama import WQLinear_Exllama
-from awq.modules.exllamav2 import WQLinear_ExllamaV2
-from awq.modules.linear import WQLinear_GEMM, WQLinear_GEMV
+from awq.modules.linear.gemm import WQLinear_GEMM
+from awq.modules.linear.gemv import WQLinear_GEMV
+from awq.modules.linear.exllama import WQLinear_Exllama
+from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2
 
 def prepare_correct_devices(next_layer, hidden_states, mask):
     hidden_states = hidden_states.to(next_layer.device)

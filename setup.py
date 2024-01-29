@@ -1,5 +1,6 @@
 import os
 import torch
+import platform
 from pathlib import Path
 from setuptools import setup, find_packages
 
@@ -8,13 +9,14 @@ os.environ["CXX"] = "g++"
 AUTOAWQ_VERSION = "0.1.8"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
-ROCM_VERSION = os.environ.get("ROCM_VERSION", None) or torch.version.hip
+ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
 
 
 if not PYPI_BUILD:
-    # only adding CUDA/ROCM version if we are not building for PyPI to comply with PEP 440
     if CUDA_VERSION:
-        CUDA_VERSION = "".join(CUDA_VERSION.split("."))[:3]
+        CUDA_VERSION = "".join(
+            os.environ.get("CUDA_VERSION", torch.version.cuda).split(".")
+        )[:3]
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     elif ROCM_VERSION:
         ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
@@ -52,7 +54,6 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "autoawq-kernels",
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
@@ -60,4 +61,15 @@ requirements = [
     "datasets",
 ]
 
-setup(packages=find_packages(), install_requires=requirements, **common_setup_kwargs)
+# kernels can be downloaded from pypi for cuda+(linux or windows)
+if platform.system().lower() != "darwin" and CUDA_VERSION:
+    requirements.append("autoawq-kernels")
+
+setup(
+    packages=find_packages(),
+    install_requires=requirements,
+    extras_require={
+        "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
+    },
+    **common_setup_kwargs,
+)
