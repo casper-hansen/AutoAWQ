@@ -34,12 +34,6 @@ def get_kernels_whl_url(
 AUTOAWQ_VERSION = "0.1.8"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 
-try:
-    importlib.metadata.version("autoawq-kernels")
-    KERNELS_INSTALLED = True
-except importlib.metadata.PackageNotFoundError:
-    KERNELS_INSTALLED = False
-
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 if CUDA_VERSION:
     CUDA_VERSION = "".join(CUDA_VERSION.split("."))[:3]
@@ -52,7 +46,6 @@ if ROCM_VERSION:
         ROCM_VERSION = "5.7.1"
 
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
-
 
 if not PYPI_BUILD:
     if CUDA_VERSION:
@@ -99,9 +92,15 @@ requirements = [
     "datasets",
 ]
 
-# kernels can be downloaded from pypi for cuda+121+(linux or windows) only
-# for everything else, we need to download the kernels wheel from github
-if platform.system().lower() != "darwin" and not KERNELS_INSTALLED:
+try:
+    importlib.metadata.version("autoawq-kernels")
+    KERNELS_INSTALLED = True
+except importlib.metadata.PackageNotFoundError:
+    KERNELS_INSTALLED = False
+
+# kernels can be downloaded from pypi for cuda+121 only
+# for everything else, we need to download the wheels from github
+if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
     if CUDA_VERSION.startswith("12"):
         requirements.append("autoawq-kernels")
     elif CUDA_VERSION.startswith("11") or ROCM_VERSION in ["561", "571"]:
@@ -122,7 +121,8 @@ if platform.system().lower() != "darwin" and not KERNELS_INSTALLED:
         requirements.append(f"autoawq-kernels@{latest_rocm_kernels_wheels}")
     else:
         raise RuntimeError(
-            "Your system must have either Nvidia or AMD GPU to build this package."
+            "Your system have a GPU with an unsupported CUDA or ROCm version. "
+            "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 
 setup(
