@@ -1,22 +1,48 @@
 import os
 import torch
 import platform
+import requests
 from pathlib import Path
 from setuptools import setup, find_packages
 
-os.environ["CC"] = "g++"
-os.environ["CXX"] = "g++"
+
+def get_latest_kernels_version(repo):
+    """
+    Get the latest version of the kernels from the github repo.
+    """
+    response = requests.get(f"https://api.github.com/repos/{repo}/releases/latest")
+    data = response.json()
+    return data["tag_name"]
+
+
+def get_kernels_whl_url(
+    gpu_system_version,
+    release_version,
+    python_version,
+    platform,
+    architecture,
+):
+    """
+    Get the url for the kernels wheel file.
+    """
+    return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/{release_version}/autoawq_kernels-{release_version[1:]}+{gpu_system_version}-{python_version}-{python_version}-{platform}_{architecture}.whl"
+
+
 AUTOAWQ_VERSION = "0.1.8"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
 
+if isinstance(ROCM_VERSION, str):
+    if ROCM_VERSION.startswith("5.6"):
+        ROCM_VERSION = "5.6.1"
+    elif ROCM_VERSION.startswith("5.7"):
+        ROCM_VERSION = "5.7.1"
+
 
 if not PYPI_BUILD:
     if CUDA_VERSION:
-        CUDA_VERSION = "".join(
-            os.environ.get("CUDA_VERSION", torch.version.cuda).split(".")
-        )[:3]
+        CUDA_VERSION = "".join(CUDA_VERSION.split("."))[:3]
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     elif ROCM_VERSION:
         ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
@@ -61,9 +87,23 @@ requirements = [
     "datasets",
 ]
 
+
 # kernels can be downloaded from pypi for cuda+(linux or windows)
 if platform.system().lower() != "darwin" and CUDA_VERSION:
     requirements.append("autoawq-kernels")
+elif platform.system().lower() != "darwin" and ROCM_VERSION:
+    kernels_version = get_latest_kernels_version("casper-hansen/AutoAWQ_kernels")
+    python_version = ".".join(platform.python_version_tuple()[:2])
+    platform_name = platform.system().lower()
+    architecture = platform.machine().lower()
+    latest_rocm_kernels_wheels = get_kernels_whl_url(
+        f"rocm{ROCM_VERSION}",
+        kernels_version,
+        python_version,
+        platform_name,
+        architecture,
+    )
+    requirements.append(latest_rocm_kernels_wheels)
 
 setup(
     packages=find_packages(),
