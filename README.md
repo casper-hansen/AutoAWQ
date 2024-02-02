@@ -46,13 +46,19 @@ pip install autoawq
 
 ### Build from source
 
-For CUDA 11.8, ROCm 5.6, and ROCm 5.7, you can install from source with:
+For CUDA 11.8, ROCm 5.6, and ROCm 5.7, you can install wheels from the [release page](https://github.com/casper-hansen/AutoAWQ/releases/latest):
+
+```
+pip install autoawq@https://github.com/casper-hansen/AutoAWQ/releases/download/v0.2.0/autoawq-0.2.0+cu118-cp310-cp310-linux_x86_64.whl
+```
+
+Or from the main branch directly:
 
 ```
 pip install autoawq@https://github.com/casper-hansen/AutoAWQ.git
 ```
 
-or in editable local mode:
+Or by cloning the repository and installing from source:
 
 ```
 git clone https://github.com/casper-hansen/AutoAWQ
@@ -60,7 +66,9 @@ cd AutoAWQ
 pip install -e .
 ```
 
-Which will install the latest and correct kernels for your system from [AutoAWQ_Kernels](https://github.com/casper-hansen/AutoAWQ_kernels/releases).
+All three methods will install the latest and correct kernels for your system from [AutoAWQ_Kernels](https://github.com/casper-hansen/AutoAWQ_kernels/releases). 
+
+If your system is not supported (i.e. not on the release page), you can build the kernels yourself by following the instructions in [AutoAWQ_Kernels](https://github.com/casper-hansen/AutoAWQ_kernels/releases) and then install AutoAWQ from source.
 
 ## Supported models
 
