@@ -4,7 +4,8 @@ from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
 
 try:
-    import awq_ext  # with CUDA kernels
+    import awq_ext  # with CUDA kernels (AutoAWQ_kernels)
+
     AWQ_INSTALLED = True
 except:
     AWQ_INSTALLED = False
@@ -125,7 +126,7 @@ class WQLinear_GEMM(nn.Module):
 
         if "mps" in best_device:
             zeros = zeros.to("cpu")
-        
+
         qzeros = torch.zeros(
             (zeros.shape[0], zeros.shape[1] // 32 * awq_linear.w_bit),
             dtype=torch.int32,
@@ -153,7 +154,7 @@ class WQLinear_GEMM(nn.Module):
             x = x.half()
 
         if AWQ_INSTALLED:
-            FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0]*x.shape[1] >= 1024
+            FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0] * x.shape[1] >= 1024
 
             if FP16_MATMUL_HEURISTIC_CONDITION:
                 out = awq_ext.dequantize_weights_cuda(
@@ -163,12 +164,16 @@ class WQLinear_GEMM(nn.Module):
                     0,
                     0,
                     0,
-                    False
+                    False,
                 )
                 out = torch.matmul(x, out)
             else:
                 out = awq_ext.gemm_forward_cuda(
-                    x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8
+                    x.reshape(-1, x.shape[-1]),
+                    self.qweight,
+                    self.scales,
+                    self.qzeros,
+                    8,
                 )
         else:
             out = dequantize_gemm(
@@ -176,7 +181,7 @@ class WQLinear_GEMM(nn.Module):
                 self.qzeros,
                 self.scales,
                 self.w_bit,
-                self.group_size
+                self.group_size,
             )
             out = torch.matmul(x, out)
 

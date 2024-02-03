@@ -3,6 +3,7 @@ import torch.nn as nn
 
 try:
     import awq_ext  # with CUDA kernels
+
     AWQ_INSTALLED = True
 except:
     AWQ_INSTALLED = False
@@ -158,6 +159,11 @@ class WQLinear_GEMV(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
+        assert AWQ_INSTALLED, (
+            "AWQ kernels could not be loaded. "
+            "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
+        )
+
         out_shape = x.shape[:-1] + (self.out_features,)
         inputs = x.reshape(-1, x.shape[-1])
 

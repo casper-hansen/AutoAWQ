@@ -104,6 +104,10 @@ class WQLinear_Exllama(nn.Module):
             "module.post_init() must be called before module.forward(). "
             "Use exllama_post_init() on the whole model."
         )
+        assert EXL_INSTALLED, (
+            "Exllama kernels could not be loaded. "
+            "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
+        )
 
         assert EXL_INSTALLED, (
             "ExllamaV2 kernels are not installed. "
