@@ -54,6 +54,7 @@ class WQLinear_Marlin(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.group_size = group_size if group_size != -1 else in_features
+        self.max_par = 8 # partitioning for large inputs
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0
@@ -165,7 +166,7 @@ class WQLinear_Marlin(nn.Module):
         self.register_buffer(
             "workspace",
             torch.zeros(
-                self.out_features // 128,
+                self.out_features // 128 * self.max_par,
                 dtype=torch.int32,
                 device=self.qweight.device,
             ),
@@ -205,6 +206,7 @@ class WQLinear_Marlin(nn.Module):
             -1,  # thread_k
             -1,  # thread_n
             -1,  # sms
+            self.max_par,
         )
 
         if input_dtype != torch.float16:
