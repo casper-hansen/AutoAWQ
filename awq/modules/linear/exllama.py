@@ -109,6 +109,11 @@ class WQLinear_Exllama(nn.Module):
             "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 
+        assert EXL_INSTALLED, (
+            "ExllamaV2 kernels are not installed. "
+            "Please install AWQ compatible ExllamaV2 kernels from AutoAWQ_kernels."
+        )
+
         input_dtype = x.dtype
         out_shape = x.shape[:-1] + (self.out_features,)
 
