@@ -1,6 +1,8 @@
 import torch
+
 from awq.modules.linear.gemm import WQLinear_GEMM
 from awq.modules.linear.gemv import WQLinear_GEMV
+from awq.modules.linear.marlin import WQLinear_Marlin
 from awq.modules.linear.exllama import WQLinear_Exllama
 from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2
 
@@ -58,8 +60,10 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         q_linear = WQLinear_GEMM
     elif isinstance(q_proj, WQLinear_Exllama):
         q_linear = WQLinear_Exllama
-    else:
+    elif isinstance(q_proj, WQLinear_ExllamaV2):
         q_linear = WQLinear_ExllamaV2
+    elif isinstance(q_proj, WQLinear_Marlin):
+        q_linear = WQLinear_Marlin
 
     qkv_layer = q_linear(
         q_proj.w_bit,
@@ -87,7 +91,11 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
         qkv_layer.qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
         qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
-    
+    elif isinstance(q_proj, WQLinear_Marlin):
+        qkv_layer.qweight = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+        qkv_layer.scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+        # workspace is created in post_init
+        
     qkv_layer.bias = bias
 
     return qkv_layer

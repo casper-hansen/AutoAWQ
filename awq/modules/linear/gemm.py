@@ -5,7 +5,8 @@ from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
 
 try:
-    import awq_ext  # with CUDA kernels
+    import awq_ext  # with CUDA kernels (AutoAWQ_kernels)
+
     AWQ_INSTALLED = True
 except:
     AWQ_INSTALLED = False
@@ -212,7 +213,7 @@ class WQLinear_GEMM(nn.Module):
 
         if "mps" in best_device:
             zeros = zeros.to("cpu")
-        
+
         qzeros = torch.zeros(
             (zeros.shape[0], zeros.shape[1] // 32 * awq_linear.w_bit),
             dtype=torch.int32,
