@@ -139,7 +139,7 @@ class BaseAWQForCausalLM(nn.Module):
     def fuse_layers(model):
         pass
 
-    def save_quantized(self, save_dir, safetensors=True, shard_size="10GB"):
+    def save_quantized(self, save_dir, safetensors=True, shard_size="5GB"):
         save_dir = save_dir[:-1] if save_dir[-1] == "/" else save_dir
 
         # Save model
