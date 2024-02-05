@@ -198,7 +198,7 @@ class BaseAWQForCausalLM(nn.Module):
         model_type,
         torch_dtype: torch.dtype = torch.float16,
         trust_remote_code=True,
-        safetensors=False,
+        safetensors=True,
         device_map=None,
         **model_init_kwargs,
     ):
