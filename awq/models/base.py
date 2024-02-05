@@ -154,7 +154,6 @@ class BaseAWQForCausalLM(nn.Module):
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.generation_config.do_sample = True
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
-        self.quant_config.save_pretrained(save_dir)
 
         # Vision transformers have a processor
         if self.processor is not None:
