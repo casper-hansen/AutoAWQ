@@ -96,7 +96,7 @@ class FalconFuser:
                 o_proj=module.self_attention.dense,
                 mlp=module.mlp,
                 dev=next(iter(module.state_dict().values())).device,
-                max_seq_len=self.model.config.max_new_tokens,
+                max_seq_len=self.model.config.max_seq_len,
                 input_layernorm=input_layernorm,
                 ln_attn=ln_attn,
                 ln_mlp=ln_mlp,

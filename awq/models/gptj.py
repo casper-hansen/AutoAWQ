@@ -3,7 +3,7 @@ from transformers.models.gptj.modeling_gptj import GPTJForCausalLM, GPTJBlock
 
 class GPTJAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "GPTJBlock"
-    max_new_tokens_key = "n_positions"
+    max_seq_len_key = "n_positions"
 
     @staticmethod
     def get_model_layers(model: GPTJForCausalLM):

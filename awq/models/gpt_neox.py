@@ -3,7 +3,7 @@ from transformers.models.gpt_neox.modeling_gpt_neox import GPTNeoXLayer, GPTNeoX
 
 class GPTNeoXAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "GPTNeoXDecoderLayer"
-    max_new_tokens_key = "max_position_embeddings"
+    max_seq_len_key = "max_position_embeddings"
 
     @staticmethod
     def get_model_layers(model: GPTNeoXForCausalLM):

@@ -242,7 +242,7 @@ class BaseAWQForCausalLM(nn.Module):
         model_path,
         model_type,
         model_filename="",
-        max_new_tokens=None,
+        max_seq_len=None,
         torch_dtype=torch.float16,
         trust_remote_code=True,
         safetensors=True,
@@ -261,7 +261,7 @@ class BaseAWQForCausalLM(nn.Module):
             model_filename,
             safetensors,
             trust_remote_code,
-            max_new_tokens=max_new_tokens,
+            max_seq_len=max_seq_len,
             **config_kwargs,
         )
 
@@ -313,7 +313,7 @@ class BaseAWQForCausalLM(nn.Module):
             # creates q4 handle and allocates scratch spaces wrt max_input_len and max_batch_size
             model = exllamav2_post_init(
                 model,
-                max_input_len=max_new_tokens or 2048,
+                max_input_len=max_seq_len or 2048,
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
 
@@ -332,7 +332,7 @@ class BaseAWQForCausalLM(nn.Module):
         model_filename,
         safetensors=True,
         trust_remote_code=True,
-        max_new_tokens=4096,
+        max_seq_len=4096,
         **config_kwargs,
     ):
         # [STEP 1] Download model if path is not a directory
@@ -355,22 +355,22 @@ class BaseAWQForCausalLM(nn.Module):
         quant_config = AwqConfig.from_pretrained(model_path)
 
         # Load model config and set max generation length
-        if max_new_tokens is None and hasattr(self, "max_new_tokens_key"):
+        if max_seq_len is None and hasattr(self, "max_seq_len_key"):
             config = AutoConfig.from_pretrained(
                 model_path, trust_remote_code=trust_remote_code, **config_kwargs
             )
-            config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
+            config.max_seq_len = getattr(config, self.max_seq_len_key, 2048)
             # To add the generate support for Multi-modal models as well
             if hasattr(config, "text_config"):
-                config.text_config.max_new_tokens = getattr(
-                    config, self.max_new_tokens_key, 2048
+                config.text_config.max_seq_len = getattr(
+                    config, self.max_seq_len_key, 2048
                 )
         else:
-            max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
+            max_seq_len = 2048 if max_seq_len is None else max_seq_len
             config = AutoConfig.from_pretrained(
                 model_path, trust_remote_code=trust_remote_code, **config_kwargs
             )
-            config.max_new_tokens = max_new_tokens
+            config.max_seq_len = max_seq_len
 
         return model_weights_path, config, quant_config
 

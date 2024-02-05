@@ -122,7 +122,7 @@ Fused modules are a large part of the speedup you get from AutoAWQ. The idea is 
 - Fused modules are activated when you use `fuse_layers=True`.
 - A custom cache is implemented. It preallocates based on batch size and sequence length.
     - You cannot change the sequence length after you have created your model.
-    - Reference: `AutoAWQForCausalLM.from_quantized(max_new_tokens=seq_len, batch_size=batch_size)`
+    - Reference: `AutoAWQForCausalLM.from_quantized(max_seq_len=seq_len, batch_size=batch_size)`
 - The main accelerator in the fused modules comes from FasterTransformer, which is only compatible with Linux.
 - The `past_key_values` from `model.generate()` are only dummy values, so they cannot be used after generation.
 
@@ -194,7 +194,7 @@ tokens = tokenizer(
 generation_output = model.generate(
     tokens, 
     streamer=streamer,
-    max_new_tokens=512
+    max_seq_len=512
 )
 ```
 

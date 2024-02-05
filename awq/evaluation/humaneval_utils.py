@@ -82,7 +82,7 @@ def generate_batch_completion(
     generated_ids = model.generate(
         **inputs,
         use_cache=True,
-        max_new_tokens=512,
+        max_seq_len=512,
         temperature=0.2,
         top_p=0.95,
         do_sample=True,
@@ -426,6 +426,6 @@ if __name__ == '__main__':
 
     from awq import AutoAWQForCausalLM
     model_path = 'TheBloke/zephyr-7B-beta-AWQ'
-    model = AutoAWQForCausalLM.from_quantized(model_path, device_map="auto", max_new_tokens=2048)
+    model = AutoAWQForCausalLM.from_quantized(model_path, device_map="auto", max_seq_len=2048)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     eval_humaneval(model, tokenizer)

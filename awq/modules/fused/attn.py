@@ -98,8 +98,8 @@ class ALiBi(nn.Module):
         return scores
 
 class QuantAttentionFused(nn.Module):
-    def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, dev, max_seq_len, 
-                       use_alibi=False, attention_shapes=None, rope_theta=10000):
+    def __init__(self, hidden_size, n_heads, n_kv_heads, qkv_layer, o_proj, dev, max_seq_len=2048, 
+                       use_alibi=False, attention_shapes=None, rope_theta=10000, **kwargs):
         super().__init__()
         self.hidden_size = hidden_size
         self.n_heads = n_heads
@@ -111,6 +111,10 @@ class QuantAttentionFused(nn.Module):
         self.start_pos = 0
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
+
+        if kwargs.get("max_new_tokens") is not None:
+            max_seq_len = kwargs["max_new_tokens"]
+
         self.max_seq_len = max_seq_len
         self.is_hf_transformers = False
         self.rope_theta = rope_theta

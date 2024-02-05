@@ -3,7 +3,7 @@ from transformers.models.mpt.modeling_mpt import MptBlock as OldMptBlock, MptFor
 
 class MptAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MPTBlock"
-    max_new_tokens_key = "max_seq_len"
+    max_seq_len_key = "max_seq_len"
 
     @staticmethod
     def fuse_layers(model: MptForCausalLM):
@@ -96,7 +96,7 @@ class MptFuser:
                 module.norm_1,
                 module.norm_2,
                 next(iter(module.state_dict().values())).device, 
-                self.model.config.max_new_tokens
+                self.model.config.max_seq_len
             ))
 
         self.model.transformer = MPTModel(

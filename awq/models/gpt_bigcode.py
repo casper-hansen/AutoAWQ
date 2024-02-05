@@ -3,7 +3,7 @@ from transformers.models.gpt_bigcode.modeling_gpt_bigcode import GPTBigCodeForCa
 
 class GptBigCodeAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "GPTBigCodeBlock"
-    max_new_tokens_key = "n_positions"
+    max_seq_len_key = "n_positions"
 
     @staticmethod
     def get_model_layers(model: GPTBigCodeForCausalLM):

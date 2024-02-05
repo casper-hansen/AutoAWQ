@@ -3,8 +3,8 @@ import torch
 class WindowedCache:
     def __init__(self, cache_v_shape, cache_k_shape, max_seq_len, device):
         """
-        The window size is the same as the max_new_tokens. The window will
-        automatically roll once max_new_tokens is exceeded.
+        The window size is the same as the max_seq_len. The window will
+        automatically roll once max_seq_len is exceeded.
         """
         # [batch_size, n_kv_heads, max_seq_len, head_dim]
         self.v = torch.zeros(cache_v_shape).to(device).half()

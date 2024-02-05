@@ -12,7 +12,7 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MixtralDecoderLayer"
-    max_new_tokens_key = "max_position_embeddings"
+    max_seq_len_key = "max_position_embeddings"
     
     @staticmethod
     def fuse_layers(model: OldMixtralForCausalLM):
@@ -115,7 +115,7 @@ class MixtralFuser:
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
-                max_seq_len=self.model.config.max_new_tokens,
+                max_seq_len=self.model.config.max_seq_len,
                 rope_theta=self.model.config.rope_theta
             ))
         
