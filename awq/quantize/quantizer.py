@@ -253,7 +253,7 @@ class AwqQuantizer:
         # [STEP 3]: Compute output of module
         with torch.no_grad():
             module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
-
+            module2inspect.to(inp.device)
             fp16_output = module2inspect(inp, **module_kwargs)
             if isinstance(fp16_output, tuple):
                 fp16_output = fp16_output[0]
