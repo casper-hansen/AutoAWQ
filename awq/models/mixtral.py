@@ -13,6 +13,7 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "MixtralDecoderLayer"
     max_seq_len_key = "max_position_embeddings"
+    modules_to_not_convert = ["gate"]
     
     @staticmethod
     def fuse_layers(model: OldMixtralForCausalLM):
