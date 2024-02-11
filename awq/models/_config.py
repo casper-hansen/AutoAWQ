@@ -1,8 +1,7 @@
 import os
 import json
-import logging
 from typing import Dict, Optional, List
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from transformers.utils.hub import PushToHubMixin, cached_file
 
 @dataclass
@@ -11,8 +10,8 @@ class AwqConfig(PushToHubMixin):
     zero_point: bool = field(default=True)
     q_group_size: int = field(default=128)
     w_bit: int = field(default=4)
-    version: str = field(default="GEMM")
-    config_file_name = "quant_config.json"
+    version: str = field(default="gemm")
+    config_file_name = "config.json"
     modules_to_not_convert: Optional[List] = None
 
     @classmethod
@@ -21,6 +20,7 @@ class AwqConfig(PushToHubMixin):
             quant_config = cls()
         else:
             quant_config = cls(**quant_config)
+            quant_config.version = quant_config.version.lower()
         
         return quant_config
 
@@ -58,7 +58,10 @@ class AwqConfig(PushToHubMixin):
         if os.path.exists(resolved_config_file):
             with open(resolved_config_file, 'r', encoding="utf-8") as file:
                 loaded_config = json.loads(file.read())
-                quant_config = cls(**loaded_config)
+                awq_config = cls.from_transformers_dict(
+                    cls, loaded_config["quantization_config"]
+                )
+                quant_config = cls(**awq_config)
         else:
             quant_config = cls()
         
@@ -81,4 +84,14 @@ class AwqConfig(PushToHubMixin):
             "bits": self.w_bit,
             "version": self.version.lower(),
             "modules_to_not_convert": self.modules_to_not_convert,
+        }
+
+    def from_transformers_dict(self, transformers_dict: Dict):
+        return {
+            "quant_method": transformers_dict["quant_method"],
+            "zero_point": transformers_dict["zero_point"],
+            "q_group_size": transformers_dict["group_size"],
+            "w_bit": transformers_dict["bits"],
+            "version": transformers_dict["version"],
+            "modules_to_not_convert": transformers_dict["modules_to_not_convert"],
         }

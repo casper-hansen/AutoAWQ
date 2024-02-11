@@ -190,15 +190,15 @@ class AwqQuantizer:
                 linear_layer.weight.data
             )
 
-            if self.version == "GEMM":
+            if self.version == "gemm":
                 scales = scales.t().contiguous()
                 zeros = zeros.t().contiguous()
                 q_linear_module = WQLinear_GEMM
 
-            elif self.version == "GEMV":
+            elif self.version == "gemv":
                 q_linear_module = WQLinear_GEMV
 
-            elif self.version == "Marlin":
+            elif self.version == "marlin":
                 q_linear_module = WQLinear_Marlin
 
             else:

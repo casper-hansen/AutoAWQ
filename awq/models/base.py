@@ -305,7 +305,7 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        if quant_config.version == "Marlin":
+        if quant_config.version == "marlin":
             model = marlin_post_init(model)
 
         elif use_exllama:
@@ -381,7 +381,7 @@ class BaseAWQForCausalLM(nn.Module):
     ):
         # Real quantization of weights
         assert not (
-            version == "GEMV" and (use_exllama or use_exllama_v2)
+            version == "gemv" and (use_exllama or use_exllama_v2)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -403,15 +403,15 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if version == "Marlin":
+                if version == "marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
                     q_linear_module = WQLinear_Exllama
                 elif use_exllama_v2:
                     q_linear_module = WQLinear_ExllamaV2
-                elif version == "GEMM":
+                elif version == "gemm":
                     q_linear_module = WQLinear_GEMM
-                elif version == "GEMV":
+                elif version == "gemv":
                     q_linear_module = WQLinear_GEMV
 
                 q_linear = q_linear_module.from_linear(
