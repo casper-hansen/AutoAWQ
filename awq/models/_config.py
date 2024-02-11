@@ -55,14 +55,18 @@ class AwqConfig(PushToHubMixin):
                 _commit_hash=commit_hash,
             )
         
+        quant_config = None
         if os.path.exists(resolved_config_file):
             with open(resolved_config_file, 'r', encoding="utf-8") as file:
                 loaded_config = json.loads(file.read())
-                awq_config = cls.from_transformers_dict(
-                    cls, loaded_config["quantization_config"]
-                )
+
+            quant_config = loaded_config.get("quantization_config")
+
+            if quant_config is not None:
+                awq_config = cls.from_transformers_dict(cls, quant_config)
                 quant_config = cls(**awq_config)
-        else:
+        
+        if quant_config is None:
             quant_config = cls()
         
         return quant_config
