@@ -73,3 +73,14 @@ def get_best_device():
         return 'cuda:0'
     else:
         return 'cpu'
+
+def get_lowest_memory_device_index():
+    device = None
+    curr_device_memory_pct = 0
+    for device_index in range(torch.cuda.device_count()):
+        device_memory_pct = compute_memory_used_pct(device_index)
+        if device is None or device_memory_pct < curr_device_memory_pct:
+            device = device_index
+            curr_device_memory_pct = device_memory_pct
+    
+    return device

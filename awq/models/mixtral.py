@@ -2,14 +2,15 @@ import tqdm
 import torch
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
-from awq.utils.fused_utils import fuse_qkv, fuse_w1w3
 from awq.modules.fused.block import MixtralBlock
 from awq.modules.fused.model import MixtralModel
 from awq.modules.fused.moe import FusedSparseMoeBlock
+from awq.utils.fused_utils import fuse_qkv, fuse_linears
 from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
     MixtralForCausalLM as OldMixtralForCausalLM
 )
+from awq.utils.utils import get_lowest_memory_device_index
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 class MixtralAWQForCausalLM(BaseAWQForCausalLM):
@@ -93,7 +94,8 @@ class MixtralFuser:
 
         module: OldMixtralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
-            device = next(iter(module.state_dict().values())).device
+            device = get_lowest_memory_device_index()
+
             qkv = fuse_qkv(
                 module,
                 module.self_attn.q_proj,
@@ -111,50 +113,33 @@ class MixtralFuser:
             )
 
             with torch.no_grad():
-                fused_linears = [
-                    fuse_w1w3(
-                        module.block_sparse_moe.experts[i].w1,
-                        module.block_sparse_moe.experts[i].w3,
+                fused_w1w3s = [
+                    fuse_linears(
+                        [module.block_sparse_moe.experts[i].w1, module.block_sparse_moe.experts[i].w3],
                         device,
-                    )
-                    for i in range(len(module.block_sparse_moe.experts))
+                    ) for i in range(len(module.block_sparse_moe.experts))
                 ]
 
-                from awq.modules.linear import WQLinear_GEMM
-
-                w1w3 = WQLinear_GEMM(
-                    fused_linears[0].w_bit,
-                    fused_linears[0].group_size,
-                    fused_linears[0].in_features,
-                    fused_linears[0].out_features,
-                    bias=None,
-                    dev=device,
+                stacked_w1w3s = fuse_linears(
+                    fused_w1w3s,
+                    device,
+                    dim=0,
+                    operation=torch.stack
                 )
 
-                w1w3.qweight = torch.stack([w1w3.qweight for w1w3 in fused_linears], dim=0)
-                w1w3.qzeros = torch.stack([w1w3.qzeros for w1w3 in fused_linears], dim=0)
-                w1w3.scales = torch.stack([w1w3.scales for w1w3 in fused_linears], dim=0)
-
-                w2s = WQLinear_GEMM(
-                    module.block_sparse_moe.experts[0].w2.w_bit,
-                    module.block_sparse_moe.experts[0].w2.group_size,
-                    module.block_sparse_moe.experts[0].w2.in_features,
-                    module.block_sparse_moe.experts[0].w2.out_features,
-                    bias=None,
-                    dev=device,
+                stacked_w2s = fuse_linears(
+                    [expert.w2 for expert in module.block_sparse_moe.experts],
+                    device,
+                    dim=0,
+                    operation=torch.stack
                 )
-
-                w2s.qweight = torch.stack([expert.w2.qweight for expert in module.block_sparse_moe.experts], dim=0)
-                w2s.qzeros = torch.stack([expert.w2.qzeros for expert in module.block_sparse_moe.experts], dim=0)
-                w2s.scales = torch.stack([expert.w2.scales for expert in module.block_sparse_moe.experts], dim=0)
 
                 fused_block_sparse_moe = FusedSparseMoeBlock(
                     top_k=module.block_sparse_moe.top_k,
                     gate=module.block_sparse_moe.gate,
-                    ws=w1w3,
-                    w2s=w2s,
+                    ws=stacked_w1w3s,
+                    w2s=stacked_w2s,
                 )
-                del module.block_sparse_moe.experts
             
             blocks.append(MixtralBlock(
                 hidden_size=self.model.config.hidden_size,

@@ -17,12 +17,11 @@ class FusedSparseMoeBlock(torch.nn.Module):
         top_k,
         gate,
         ws,
-        w2s
+        w2s,
     ):
         super().__init__()
-        self.gate = gate
+        self.gate= gate
         self.top_k = top_k
-
         self.ws = ws
         self.w2s = w2s
 
