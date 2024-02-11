@@ -31,7 +31,7 @@ class MixtralBlock(nn.Module):
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
-        out, _ = self.moe.forward(self.norm_2(h))
+        out = self.moe.forward(self.norm_2(h))
         out = h + out
 
         return out, None, past_key_value

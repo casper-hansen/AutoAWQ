@@ -100,6 +100,21 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
 
     return qkv_layer
 
+def fuse_w1w3(w1, w3, device):
+    w1w3 = WQLinear_GEMM(
+        w1.w_bit,
+        w1.group_size,
+        w1.in_features,
+        w1.out_features + w3.out_features,
+        bias=None,
+        dev=device,
+    )
+    w1w3.qweight = torch.cat([w1.qweight, w3.qweight], dim=1)
+    w1w3.qzeros = torch.cat([w1.qzeros, w3.qzeros], dim=1)
+    w1w3.scales = torch.cat([w1.scales, w3.scales], dim=1)
+
+    return w1w3
+
 def get_attention_shapes(attention_shapes, max_seq_len, cache_batch_size, n_heads, n_kv_heads, head_dim):
     if attention_shapes is not None:
         attention_shapes = attention_shapes

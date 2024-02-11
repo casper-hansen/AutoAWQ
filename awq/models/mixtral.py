@@ -1,9 +1,11 @@
 import tqdm
+import torch
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
-from awq.utils.fused_utils import fuse_qkv
+from awq.utils.fused_utils import fuse_qkv, fuse_w1w3
 from awq.modules.fused.block import MixtralBlock
 from awq.modules.fused.model import MixtralModel
+from awq.modules.fused.moe import FusedSparseMoeBlock
 from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
     MixtralForCausalLM as OldMixtralForCausalLM
@@ -102,17 +104,65 @@ class MixtralFuser:
                 module.input_layernorm.weight,
                 module.input_layernorm.variance_epsilon
             )
+
             norm_2 = FasterTransformerRMSNorm(
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.variance_epsilon
             )
+
+            with torch.no_grad():
+                fused_linears = [
+                    fuse_w1w3(
+                        module.block_sparse_moe.experts[i].w1,
+                        module.block_sparse_moe.experts[i].w3,
+                        device,
+                    )
+                    for i in range(len(module.block_sparse_moe.experts))
+                ]
+
+                from awq.modules.linear import WQLinear_GEMM
+
+                w1w3 = WQLinear_GEMM(
+                    fused_linears[0].w_bit,
+                    fused_linears[0].group_size,
+                    fused_linears[0].in_features,
+                    fused_linears[0].out_features,
+                    bias=None,
+                    dev=device,
+                )
+
+                w1w3.qweight = torch.stack([w1w3.qweight for w1w3 in fused_linears], dim=0)
+                w1w3.qzeros = torch.stack([w1w3.qzeros for w1w3 in fused_linears], dim=0)
+                w1w3.scales = torch.stack([w1w3.scales for w1w3 in fused_linears], dim=0)
+
+                w2s = WQLinear_GEMM(
+                    module.block_sparse_moe.experts[0].w2.w_bit,
+                    module.block_sparse_moe.experts[0].w2.group_size,
+                    module.block_sparse_moe.experts[0].w2.in_features,
+                    module.block_sparse_moe.experts[0].w2.out_features,
+                    bias=None,
+                    dev=device,
+                )
+
+                w2s.qweight = torch.stack([expert.w2.qweight for expert in module.block_sparse_moe.experts], dim=0)
+                w2s.qzeros = torch.stack([expert.w2.qzeros for expert in module.block_sparse_moe.experts], dim=0)
+                w2s.scales = torch.stack([expert.w2.scales for expert in module.block_sparse_moe.experts], dim=0)
+
+                fused_block_sparse_moe = FusedSparseMoeBlock(
+                    top_k=module.block_sparse_moe.top_k,
+                    gate=module.block_sparse_moe.gate,
+                    ws=w1w3,
+                    w2s=w2s,
+                )
+                del module.block_sparse_moe.experts
+            
             blocks.append(MixtralBlock(
                 hidden_size=self.model.config.hidden_size,
                 n_heads=self.model.config.num_attention_heads,
                 n_kv_heads=self.model.config.num_key_value_heads,
                 qkv_layer=qkv,
                 o_proj=module.self_attn.o_proj,
-                moe=module.block_sparse_moe,
+                moe=fused_block_sparse_moe,
                 norm_1=norm_1,
                 norm_2=norm_2,
                 dev=device,
