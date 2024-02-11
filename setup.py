@@ -90,6 +90,7 @@ requirements = [
     "tokenizers>=0.12.1",
     "accelerate",
     "datasets",
+    "zstandard",
 ]
 
 try:
