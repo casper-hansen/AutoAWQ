@@ -70,7 +70,7 @@ class AutoAWQForCausalLM:
         self,
         quant_path,
         quant_filename="",
-        max_seq_len=None,
+        max_seq_len=2048,
         trust_remote_code=True,
         fuse_layers=True,
         use_exllama=False,

@@ -56,7 +56,6 @@ training_arguments = TrainingArguments(
     optim="adamw_torch",
     num_train_epochs=1,
     learning_rate=1e-4,
-    # fp16=True,
     evaluation_strategy="no",
     save_strategy="epoch",
     save_steps=100,
