@@ -115,7 +115,7 @@ def dequantize(imatrix, scales, zeros, group_size):
     ) * scales.repeat_interleave(group_size, dim=0)
 
     fmatrix = fmatrix.to(torch.float16)
-    
+
     return fmatrix
 
 

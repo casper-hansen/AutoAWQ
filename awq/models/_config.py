@@ -4,6 +4,7 @@ from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 from transformers.utils.hub import PushToHubMixin, cached_file
 
+
 @dataclass
 class AwqConfig(PushToHubMixin):
     quant_method: str = field(default="awq")
@@ -15,13 +16,13 @@ class AwqConfig(PushToHubMixin):
     modules_to_not_convert: Optional[List] = None
 
     @classmethod
-    def from_dict(cls, quant_config: Dict={}):
+    def from_dict(cls, quant_config: Dict = {}):
         if not quant_config:
             quant_config = cls()
         else:
             quant_config = cls(**quant_config)
             quant_config.version = quant_config.version.lower()
-        
+
         return quant_config
 
     @classmethod
@@ -38,7 +39,7 @@ class AwqConfig(PushToHubMixin):
 
         if os.path.isdir(save_dir):  # Local
             resolved_config_file = os.path.join(save_dir, cls.config_file_name)
-        else: # Remote
+        else:  # Remote
             resolved_config_file = cached_file(
                 save_dir,
                 cls.config_file_name,
@@ -54,10 +55,10 @@ class AwqConfig(PushToHubMixin):
                 _raise_exceptions_for_connection_errors=False,
                 _commit_hash=commit_hash,
             )
-        
+
         quant_config = None
         if os.path.exists(resolved_config_file):
-            with open(resolved_config_file, 'r', encoding="utf-8") as file:
+            with open(resolved_config_file, "r", encoding="utf-8") as file:
                 loaded_config = json.loads(file.read())
 
             quant_config = loaded_config.get("quantization_config")
@@ -65,10 +66,10 @@ class AwqConfig(PushToHubMixin):
             if quant_config is not None:
                 awq_config = cls.from_transformers_dict(cls, quant_config)
                 quant_config = cls(**awq_config)
-        
+
         if quant_config is None:
             quant_config = cls()
-        
+
         return quant_config
 
     def to_dict(self):

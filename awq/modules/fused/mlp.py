@@ -5,9 +5,11 @@ from awq.modules.linear.gemv import WQLinear_GEMV
 
 try:
     import awq_ext  # with CUDA kernels
+
     AWQ_INSTALLED = True
 except:
     AWQ_INSTALLED = False
+
 
 class QuantFusedMLP(nn.Module):
     def __init__(
@@ -15,16 +17,16 @@ class QuantFusedMLP(nn.Module):
         gate_proj,
         down_proj,
         up_proj,
-        activation = F.silu,
+        activation=F.silu,
     ):
         super().__init__()
 
-        self.register_buffer('gate_proj_qweight', gate_proj.qweight)
-        self.register_buffer('gate_proj_scales', gate_proj.scales)
-        self.register_buffer('gate_proj_qzeros', gate_proj.qzeros)
-        self.register_buffer('up_proj_qweight', up_proj.qweight)
-        self.register_buffer('up_proj_scales', up_proj.scales)
-        self.register_buffer('up_proj_qzeros', up_proj.qzeros)
+        self.register_buffer("gate_proj_qweight", gate_proj.qweight)
+        self.register_buffer("gate_proj_scales", gate_proj.scales)
+        self.register_buffer("gate_proj_qzeros", gate_proj.qzeros)
+        self.register_buffer("up_proj_qweight", up_proj.qweight)
+        self.register_buffer("up_proj_scales", up_proj.scales)
+        self.register_buffer("up_proj_qzeros", up_proj.qzeros)
 
         self.in_features = gate_proj.in_features
         self.intermediate_size = gate_proj.out_features
@@ -66,17 +68,13 @@ class QuantFusedMLP(nn.Module):
             x = routing_weights * x
 
         return x
-        
+
 
 class QuantLlamaMLP(QuantFusedMLP):
     r"""
-    QuantLlamaMLP class kept for backward compatibilty, in the future, users 
+    QuantLlamaMLP class kept for backward compatibilty, in the future, users
     should always use `QuantFusedMLP` class instead.
     """
-    def __init__(
-        self,
-        gate_proj,
-        down_proj,
-        up_proj
-    ):
+
+    def __init__(self, gate_proj, down_proj, up_proj):
         super().__init__(gate_proj, down_proj, up_proj)

@@ -20,7 +20,7 @@ class FusedSparseMoeBlock(torch.nn.Module):
         w2s,
     ):
         super().__init__()
-        self.gate= gate
+        self.gate = gate
         self.top_k = top_k
         self.ws = ws
         self.w2s = w2s
@@ -42,7 +42,7 @@ class FusedSparseMoeBlock(torch.nn.Module):
         )
 
         return final_hidden_states.view(batch_size, sequence_length, hidden_dim)
-        
+
 
 def apply_moe_weights(
     w1: Dict[str, torch.Tensor],
@@ -328,23 +328,16 @@ def fused_topk(
     M = gating_output.shape[0]
     if torch.version.hip is not None:
         # The MoE kernels are not yet supported on ROCm.
-        routing_weights = torch.softmax(gating_output,
-                                        dim=-1,
-                                        dtype=torch.float32)
+        routing_weights = torch.softmax(gating_output, dim=-1, dtype=torch.float32)
         topk_weights, topk_ids = torch.topk(routing_weights, topk, dim=-1)
     else:
-        topk_weights = torch.empty(M,
-                                   topk,
-                                   dtype=torch.float32,
-                                   device=gating_output.device)
-        topk_ids = torch.empty(M,
-                               topk,
-                               dtype=torch.int32,
-                               device=gating_output.device)
-        token_expert_indicies = torch.empty(M,
-                                            topk,
-                                            dtype=torch.int32,
-                                            device=gating_output.device)
+        topk_weights = torch.empty(
+            M, topk, dtype=torch.float32, device=gating_output.device
+        )
+        topk_ids = torch.empty(M, topk, dtype=torch.int32, device=gating_output.device)
+        token_expert_indicies = torch.empty(
+            M, topk, dtype=torch.int32, device=gating_output.device
+        )
         awq_ext.topk_softmax(
             topk_weights,
             topk_ids,

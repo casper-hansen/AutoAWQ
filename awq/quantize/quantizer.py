@@ -117,7 +117,7 @@ class AwqQuantizer:
                     best_device = "cuda:" + str(i % torch.cuda.device_count())
                 else:
                     best_device = get_best_device()
-                
+
                 self.modules[i] = self.modules[i].to(best_device)
                 common_device = next(self.modules[i].parameters()).device
 
@@ -355,7 +355,9 @@ class AwqQuantizer:
                 continue
 
             named_linears[name].to(get_best_device())
-            max_val = self._compute_best_clip(named_linears[name].weight, input_feat[name])
+            max_val = self._compute_best_clip(
+                named_linears[name].weight, input_feat[name]
+            )
             clip_list.append((name, max_val))
             named_linears[name].cpu()
 
@@ -481,7 +483,9 @@ class AwqQuantizer:
         clear_memory()
 
         if layer_kwargs.get("attention_mask") is not None:
-            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to(best_device)
+            layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to(
+                best_device
+            )
 
         return modules, layer_kwargs, inps
 

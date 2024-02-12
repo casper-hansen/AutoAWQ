@@ -8,6 +8,7 @@ def get_module_by_name_suffix(model, module_name: str):
         if name.endswith(module_name):
             return module
 
+
 def simple_dispatch_model(model, device_map):
     from accelerate.hooks import add_hook_to_module, AlignDevicesHook
 
@@ -18,7 +19,10 @@ def simple_dispatch_model(model, device_map):
         return model
 
     tied_params = accelerate.utils.modeling.find_tied_parameters(model)
-    if set(device_map.values()) == {"cpu"} or set(device_map.values()) == {"cpu", "disk"}:
+    if set(device_map.values()) == {"cpu"} or set(device_map.values()) == {
+        "cpu",
+        "disk",
+    }:
         main_device = "cpu"
     else:
         main_device = [d for d in device_map.values() if d not in ["cpu", "disk"]][0]
@@ -27,10 +31,14 @@ def simple_dispatch_model(model, device_map):
     prev_hook = None
     for idx, (n, d) in enumerate(cpu_offload_group):
         m = get_module_by_name_suffix(model, n)
-        _, prev_hook = accelerate.cpu_offload_with_hook(m, execution_device=main_device, prev_module_hook=prev_hook)
+        _, prev_hook = accelerate.cpu_offload_with_hook(
+            m, execution_device=main_device, prev_module_hook=prev_hook
+        )
     # set first cpu offload module's prev_module_hook to the last cpu offload module's hook
     if len(cpu_offload_group) > 1:
-        get_module_by_name_suffix(model, cpu_offload_group[0][0])._hf_hook.prev_module_hook = prev_hook
+        get_module_by_name_suffix(
+            model, cpu_offload_group[0][0]
+        )._hf_hook.prev_module_hook = prev_hook
 
     for n, d in device_map.items():
         m = get_module_by_name_suffix(model, n)
@@ -43,17 +51,19 @@ def simple_dispatch_model(model, device_map):
 
     return model
 
+
 def set_module_name(model, name, value):
-    if '.' in name:
-        parent_name = name.rsplit('.', 1)[0]
-        child_name = name[len(parent_name) + 1:]
+    if "." in name:
+        parent_name = name.rsplit(".", 1)[0]
+        child_name = name[len(parent_name) + 1 :]
         parent = model.get_submodule(parent_name)
     else:
-        parent_name = ''
+        parent_name = ""
         parent = model
         child_name = name
 
     setattr(parent, child_name, value)
+
 
 def clear_memory(weight=None):
     if weight is not None:
@@ -61,18 +71,25 @@ def clear_memory(weight=None):
     gc.collect()
     torch.cuda.empty_cache()
 
+
 def compute_memory_used_pct(device):
-    memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
-    memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
+    memory_used = torch.cuda.max_memory_allocated(device) / (1024**3)
+    memory_pct = (
+        memory_used
+        / (torch.cuda.get_device_properties(device).total_memory / (1024**3))
+        * 100
+    )
     return memory_pct
+
 
 def get_best_device():
     if torch.backends.mps.is_available():
-        return 'mps'
+        return "mps"
     elif torch.cuda.is_available():
-        return 'cuda:0'
+        return "cuda:0"
     else:
-        return 'cpu'
+        return "cpu"
+
 
 def get_lowest_memory_device_index():
     device = None
@@ -82,5 +99,5 @@ def get_lowest_memory_device_index():
         if device is None or device_memory_pct < curr_device_memory_pct:
             device = device_index
             curr_device_memory_pct = device_memory_pct
-    
+
     return device
