@@ -89,10 +89,10 @@ class WQLinearMMFunction(Function):
         )
 
         if ctx.needs_input_grad[0]:
-            # 2D matrix multiplication, unsqueeze to 3D
-            grad_input = grad_output.squeeze(0).mm(
-                weights.transpose(0, 1)
-            ).unsqueeze(0)
+            # 3D matmul using torch.bmm: https://pytorch.org/docs/stable/generated/torch.bmm.html#torch.bmm
+            # to propagate gradient across all batch sizes.
+            batch_size = grad_output.shape[0]
+            grad_input = grad_output.bmm(weights.transpose(0, 1).unsqueeze(0).repeat(batch_size, 1, 1))
 
         return grad_input, None, None, None, None, None, None, None
 
