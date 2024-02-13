@@ -171,11 +171,16 @@ class MixtralFuser:
                     rope_theta=self.model.config.rope_theta,
                 )
             )
+        
+        model_norm = FasterTransformerRMSNorm(
+            self.model.model.norm.weight,
+            self.model.model.norm.variance_epsilon,
+        )
 
         self.model.model = MixtralModel(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,
-            self.model.model.norm,
+            model_norm,
         )
         setattr(self.model.model, "blocks", self.model.model.blocks)
