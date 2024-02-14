@@ -10,7 +10,7 @@ from transformers.models.mixtral.modeling_mixtral import (
     MixtralDecoderLayer as OldMixtralDecoderLayer,
     MixtralForCausalLM as OldMixtralForCausalLM,
 )
-from awq.utils.utils import get_lowest_memory_device_index
+from awq.modules.linear import WQLinear_GEMM
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
@@ -109,7 +109,7 @@ class MixtralFuser:
 
         module: OldMixtralDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
-            device = get_lowest_memory_device_index()
+            device = next(iter(module.state_dict().values())).device
 
             qkv = fuse_qkv(
                 module,
@@ -126,16 +126,17 @@ class MixtralFuser:
                 module.post_attention_layernorm.variance_epsilon,
             )
 
-            with torch.no_grad():
+            sparse_moe = module.block_sparse_moe
+            if isinstance(sparse_moe.experts[0].w1, WQLinear_GEMM):
                 fused_w1w3s = [
                     fuse_linears(
                         [
-                            module.block_sparse_moe.experts[i].w1,
-                            module.block_sparse_moe.experts[i].w3,
+                            sparse_moe.experts[i].w1,
+                            sparse_moe.experts[i].w3,
                         ],
                         device,
                     )
-                    for i in range(len(module.block_sparse_moe.experts))
+                    for i in range(len(sparse_moe.experts))
                 ]
 
                 stacked_w1w3s = fuse_linears(
@@ -143,15 +144,15 @@ class MixtralFuser:
                 )
 
                 stacked_w2s = fuse_linears(
-                    [expert.w2 for expert in module.block_sparse_moe.experts],
+                    [expert.w2 for expert in sparse_moe.experts],
                     device,
                     dim=0,
                     operation=torch.stack,
                 )
 
-                fused_block_sparse_moe = FusedSparseMoeBlock(
-                    top_k=module.block_sparse_moe.top_k,
-                    gate=module.block_sparse_moe.gate,
+                sparse_moe = FusedSparseMoeBlock(
+                    top_k=sparse_moe.top_k,
+                    gate=sparse_moe.gate,
                     ws=stacked_w1w3s,
                     w2s=stacked_w2s,
                 )
@@ -163,7 +164,7 @@ class MixtralFuser:
                     n_kv_heads=self.model.config.num_key_value_heads,
                     qkv_layer=qkv,
                     o_proj=module.self_attn.o_proj,
-                    moe=fused_block_sparse_moe,
+                    moe=sparse_moe,
                     norm_1=norm_1,
                     norm_2=norm_2,
                     dev=device,

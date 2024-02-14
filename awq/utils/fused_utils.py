@@ -135,6 +135,9 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
 
     qkv_layer.bias = bias
 
+    for layer in [q_proj, k_proj, v_proj]:
+        del (layer.qweight, layer.qzeros, layer.scales)
+
     return qkv_layer
 
 
@@ -153,7 +156,7 @@ def fuse_linears(linears, device, dim=1, operation=torch.cat):
     fused.scales = operation([layer.scales for layer in linears], dim=dim)
 
     for layer in linears:
-        del (layer.qweight, layer.qzeros, layer.scales)
+        del (layer.qweight, layer.qzeros, layer.scales, layer)
 
     return fused
 
