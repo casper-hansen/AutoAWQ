@@ -41,6 +41,7 @@ from awq.utils.module import get_named_linears, set_op_by_name
 # Since we support different `AutoModelForxxx` from transformers
 # we need to define a custom mapping dict as below:
 TRANSFORMERS_AUTO_MAPPING_DICT = {
+    "bert": "AutoModel",
     "mpt": "AutoModelForCausalLM",
     "llama": "AutoModelForCausalLM",
     "opt": "AutoModelForCausalLM",
@@ -152,7 +153,8 @@ class BaseAWQForCausalLM(nn.Module):
 
         # Save model and config files with empty state dict
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
-        self.model.generation_config.do_sample = True
+        if self.model.generation_config is not None:
+                self.model.generation_config.do_sample = True
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
         self.quant_config.save_pretrained(save_dir)
 
@@ -441,3 +443,10 @@ class BaseAWQForCausalLM(nn.Module):
                 # scale activation
                 scaled_act = ScaledActivation(scale_dict["scale_layer"], scale_like)
                 set_op_by_name(layer, scale_dict["scale_name"], scaled_act)
+
+class BaseBetterTransformerAWQModel(BaseAWQForCausalLM):
+    def __init__(
+        self, model, model_type, is_quantized, config, quant_config, processor
+    ):
+        super().__init__(model, model_type, is_quantized, config, quant_config, processor)
+        self.model.to_bettertransformer()

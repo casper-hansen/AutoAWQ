@@ -38,7 +38,7 @@ def get_calib_dataset(data: Union[str, List[str], List[List[int]]] = "pileval",
         else:
             line = data[text_column]
             line = line.strip()
-            line_encoded = tokenizer.encode(line)
+            line_encoded = tokenizer.encode(line, truncation=True)
         if len(line_encoded) > 512:
             continue
         sample = torch.tensor([line_encoded])
