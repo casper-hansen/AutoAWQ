@@ -10,7 +10,6 @@ try:
 except:
     AWQ_INSTALLED = False
 
-DEVICE_COUNT = torch.cuda.device_count()
 
 class FusedSparseMoeBlock(torch.nn.Module):
     def __init__(
@@ -33,9 +32,6 @@ class FusedSparseMoeBlock(torch.nn.Module):
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
 
-        if DEVICE_COUNT > 1:
-            torch.cuda.synchronize()
-
         final_hidden_states = apply_moe_weights(
             self.ws,
             self.w2s,
@@ -44,9 +40,6 @@ class FusedSparseMoeBlock(torch.nn.Module):
             self.top_k,
             renormalize=True,
         )
-
-        if DEVICE_COUNT > 1:
-            torch.cuda.synchronize()
 
         return final_hidden_states.view(batch_size, sequence_length, hidden_dim)
 

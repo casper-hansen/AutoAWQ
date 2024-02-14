@@ -127,7 +127,7 @@ class MixtralFuser:
             )
 
             sparse_moe = module.block_sparse_moe
-            if isinstance(sparse_moe.experts[0].w1, WQLinear_GEMM):
+            if isinstance(sparse_moe.experts[0].w1, WQLinear_GEMM) and torch.cuda.device_count() == 1:
                 fused_w1w3s = [
                     fuse_linears(
                         [
