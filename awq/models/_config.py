@@ -93,10 +93,10 @@ class AwqConfig(PushToHubMixin):
 
     def from_transformers_dict(self, transformers_dict: Dict):
         return {
-            "quant_method": transformers_dict["quant_method"],
-            "zero_point": transformers_dict["zero_point"],
-            "q_group_size": transformers_dict["group_size"],
-            "w_bit": transformers_dict["bits"],
-            "version": transformers_dict["version"],
-            "modules_to_not_convert": transformers_dict["modules_to_not_convert"],
+            "quant_method": transformers_dict.get("quant_method"),
+            "zero_point": transformers_dict.get("zero_point"),
+            "q_group_size": transformers_dict.get("group_size"),
+            "w_bit": transformers_dict.get("bits"),
+            "version": transformers_dict.get("version"),
+            "modules_to_not_convert": transformers_dict.get("modules_to_not_convert"),
         }
