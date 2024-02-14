@@ -9,6 +9,20 @@ Example inference speed (RTX 4090, Ryzen 9 7950X, 64 tokens):
 - Mistral 7B (GEMM kernel): 156.317 tokens/s
 - Mistral 7B (ExLlamaV2 kernel): 188.865 tokens/s
 
+## Installation notes
+
+- Install: `pip install autoawq`.
+- Your torch version must match the build version, i.e. you cannot use torch 2.0.1 with a wheel that was built with 2.2.0.
+- For AMD GPUs, inference will run through ExLlamaV2 kernels without fused layers. You need to pass the following arguments to run with AMD GPUs:
+
+```python
+model = AutoAWQForCausalLM.from_quantized(
+    ...,
+    fuse_layers=False,
+    use_exllama_v2=True
+)
+```
+
 ## Supported models
 
 The detailed support list:
