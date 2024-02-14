@@ -26,7 +26,7 @@ def prepare_split(tokenizer):
 
     return data
 
-model_path = "ybelkada/opt-125m-awq"
+model_path = "TheBloke/Mistral-7B-v0.1-AWQ"
 
 # Load model
 model = AutoAWQForCausalLM.from_quantized(model_path, fuse_layers=False)
