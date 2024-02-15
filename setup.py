@@ -4,7 +4,7 @@ import platform
 import requests
 from pathlib import Path
 from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension
+from torch.utils.cpp_extension import CUDAExtension
 
 
 def get_latest_kernels_version(repo):
@@ -137,6 +137,11 @@ setup(
         "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
-    cmdclass={"build_ext": BuildExtension},
+    ext_modules=[
+        CUDAExtension(
+            name="kernels",
+            sources=[],
+        )
+    ],
     **common_setup_kwargs,
 )
