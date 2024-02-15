@@ -88,6 +88,7 @@ requirements = [
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
+    "typing_extensions>=4.8.0"
     "accelerate",
     "datasets",
     "zstandard",
@@ -137,9 +138,12 @@ setup(
         "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
+    # NOTE: We create an empty CUDAExtension because torch helps us with
+    # creating the right boilerplate to enable correct targeting of
+    # the autoawq-kernels package
     ext_modules=[
         CUDAExtension(
-            name="kernels",
+            name="__build_artifact_for_awq_kernel_targeting",
             sources=[],
         )
     ],
