@@ -88,7 +88,7 @@ requirements = [
     "torch>=2.0.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
-    "typing_extensions>=4.8.0"
+    "typing_extensions>=4.8.0",
     "accelerate",
     "datasets",
     "zstandard",
