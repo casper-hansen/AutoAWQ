@@ -113,8 +113,9 @@ jobs:
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
-
-          python setup.py sdist bdist_wheel
+          
+          if (${{ runner.os }} -eq "Linux") { $platform_name = "manylinux2014_x86_64" } else {$platform_name = "win_amd64"}
+          python setup.py sdist bdist_wheel --plat-name $platform_name --python-version ${{ matrix.pyver }}
 
       - uses: actions/upload-artifact@v3
         if: runner.os == 'Linux'
@@ -236,8 +237,9 @@ jobs:
           echo "Using python for build:"
           python --version
           which python
-
-          ROCM_VERSION=${{ matrix.rocm }} python setup.py sdist bdist_wheel
+          
+          if ("${{ runner.os }}" == "Linux") { platform_name="manylinux2014_x86_64" } else {platform_name="win_amd64"}
+          ROCM_VERSION=${{ matrix.rocm }} python setup.py sdist bdist_wheel --plat-name $platform_name --python-version ${{ matrix.python }}
 
       - uses: actions/upload-artifact@v3
         if: runner.os == 'Linux'
