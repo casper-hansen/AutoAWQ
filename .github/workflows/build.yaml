@@ -237,8 +237,13 @@ jobs:
           echo "Using python for build:"
           python --version
           which python
+
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            platform_name="manylinux2014_x86_64"
+          else
+            platform_name="win_amd64"
+          fi
           
-          if ("${{ runner.os }}" == "Linux") { platform_name="manylinux2014_x86_64" } else {platform_name="win_amd64"}
           ROCM_VERSION=${{ matrix.rocm }} python setup.py sdist bdist_wheel --plat-name $platform_name --python-version ${{ matrix.python }}
 
       - uses: actions/upload-artifact@v3
