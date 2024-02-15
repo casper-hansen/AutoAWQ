@@ -1,4 +1,5 @@
 import os
+import logging
 from transformers import AutoConfig
 from awq.models import *
 from awq.models.base import BaseAWQForCausalLM
@@ -21,7 +22,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "qwen": QwenAWQForCausalLM,
     "baichuan": BaichuanAWQForCausalLM,
     "llava": LlavaAWQForCausalLM,
-    "qwen2": Qwen2AWQForCausalLM
+    "qwen2": Qwen2AWQForCausalLM,
 }
 
 
@@ -47,7 +48,7 @@ class AutoAWQForCausalLM:
         self,
         model_path,
         trust_remote_code=True,
-        safetensors=False,
+        safetensors=True,
         device_map=None,
         **model_init_kwargs,
     ) -> BaseAWQForCausalLM:
@@ -69,7 +70,7 @@ class AutoAWQForCausalLM:
         self,
         quant_path,
         quant_filename="",
-        max_new_tokens=None,
+        max_seq_len=2048,
         trust_remote_code=True,
         fuse_layers=True,
         use_exllama=False,
@@ -83,11 +84,18 @@ class AutoAWQForCausalLM:
         os.environ["AWQ_BATCH_SIZE"] = str(batch_size)
         model_type = check_and_get_model_type(quant_path, trust_remote_code)
 
+        if config_kwargs.get("max_new_tokens") is not None:
+            max_seq_len = config_kwargs["max_new_tokens"]
+            logging.warning(
+                "max_new_tokens argument is deprecated... gracefully "
+                "setting max_seq_len=max_new_tokens."
+            )
+
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_quantized(
             quant_path,
             model_type,
             quant_filename,
-            max_new_tokens,
+            max_seq_len,
             trust_remote_code=trust_remote_code,
             fuse_layers=fuse_layers,
             use_exllama=use_exllama,

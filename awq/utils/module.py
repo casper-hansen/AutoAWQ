@@ -1,7 +1,9 @@
 import torch.nn as nn
 
+
 def get_named_linears(module):
     return {name: m for name, m in module.named_modules() if isinstance(m, nn.Linear)}
+
 
 def get_op_by_name(module, op_name):
     # get the op by its name relative to the module
@@ -12,10 +14,10 @@ def get_op_by_name(module, op_name):
 
 
 def set_op_by_name(layer, name, new_module):
-    levels = name.split('.')
+    levels = name.split(".")
     if len(levels) > 1:
         mod_ = layer
-        for l_idx in range(len(levels)-1):
+        for l_idx in range(len(levels) - 1):
             if levels[l_idx].isdigit():
                 mod_ = mod_[int(levels[l_idx])]
             else:
@@ -42,6 +44,7 @@ def append_str_prefix(x, prefix):
         return [append_str_prefix(y, prefix) for y in x]
     else:
         return x
+
 
 def exclude_layers_to_not_quantize(linear_layers, modules_to_not_convert):
     if modules_to_not_convert is None:

@@ -8,9 +8,10 @@ from transformers.models.llama.modeling_llama import (
 )
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
+
 class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "BaichuanLayer"
-    max_new_tokens_key = "model_max_length"
+    max_seq_len_key = "model_max_length"
 
     @staticmethod
     def fuse_layers(model):
@@ -20,29 +21,30 @@ class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def get_model_layers(model):
         return model.model.layers
-    
+
     @staticmethod
     def get_act_for_scaling(module):
-        return dict(
-            is_scalable=False
-        )
-    
+        return dict(is_scalable=False)
+
     @staticmethod
     def move_embed(model, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
-    
+
     @staticmethod
     # def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
     def get_layers_for_scaling(module, input_feat, module_kwargs):
         layers = []
 
         # attention input
-        layers.append(dict(
-            prev_op=module.input_layernorm,
-            layers=[module.self_attn.W_pack],
-            inp=input_feat['self_attn.W_pack'],
-            module2inspect=module.self_attn, kwargs=module_kwargs,
-        ))
+        layers.append(
+            dict(
+                prev_op=module.input_layernorm,
+                layers=[module.self_attn.W_pack],
+                inp=input_feat["self_attn.W_pack"],
+                module2inspect=module.self_attn,
+                kwargs=module_kwargs,
+            )
+        )
 
         # # attention out
         # # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
@@ -55,26 +57,32 @@ class BaichuanAWQForCausalLM(BaseAWQForCausalLM):
 
         # attention out
         # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
-        layers.append(dict(
-            prev_op=module.self_attn.W_pack,
-            layers=[module.self_attn.o_proj],
-            inp=input_feat['self_attn.o_proj'],
-        ))
-        
+        layers.append(
+            dict(
+                prev_op=module.self_attn.W_pack,
+                layers=[module.self_attn.o_proj],
+                inp=input_feat["self_attn.o_proj"],
+            )
+        )
+
         # linear 1
-        layers.append(dict(
-            prev_op=module.post_attention_layernorm,
-            layers=[module.mlp.gate_proj, module.mlp.up_proj],
-            inp=input_feat['mlp.gate_proj'],
-            module2inspect=module.mlp,
-        ))
+        layers.append(
+            dict(
+                prev_op=module.post_attention_layernorm,
+                layers=[module.mlp.gate_proj, module.mlp.up_proj],
+                inp=input_feat["mlp.gate_proj"],
+                module2inspect=module.mlp,
+            )
+        )
 
         # linear 2
-        layers.append(dict(
-            prev_op=module.mlp.up_proj,
-            layers=[module.mlp.down_proj],
-            inp=input_feat['mlp.down_proj'],
-        ))
+        layers.append(
+            dict(
+                prev_op=module.mlp.up_proj,
+                layers=[module.mlp.down_proj],
+                inp=input_feat["mlp.down_proj"],
+            )
+        )
 
         return layers
 
@@ -84,10 +92,11 @@ class BaichuanFuser:
         self.model = model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
-            (name, module) for name, module in self.model.named_modules()
-            if 'LlamaDecoderLayer'.lower() in module.__class__.__name__.lower()
+            (name, module)
+            for name, module in self.model.named_modules()
+            if "LlamaDecoderLayer".lower() in module.__class__.__name__.lower()
         ]
-    
+
     def fuse_transformer(self):
         blocks = []
 
@@ -101,27 +110,28 @@ class BaichuanFuser:
             # )
             qkv = module.self_attn.W_pack
             norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight,
-                module.input_layernorm.epsilon
+                module.input_layernorm.weight, module.input_layernorm.epsilon
             )
             norm_2 = FasterTransformerRMSNorm(
                 module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.epsilon
+                module.post_attention_layernorm.epsilon,
             )
-            blocks.append(LlamaLikeBlock(
-                hidden_size=self.model.config.hidden_size,
-                n_heads=self.model.config.num_attention_heads,
-                n_kv_heads=self.model.config.num_attention_heads,
-                qkv_layer=qkv,
-                o_proj=module.self_attn.o_proj,
-                mlp=module.mlp,
-                norm_1=norm_1,
-                norm_2=norm_2,
-                dev=device,
-                max_seq_len=self.model.config.max_new_tokens,
-                use_alibi=True
-            ))
-        
+            blocks.append(
+                LlamaLikeBlock(
+                    hidden_size=self.model.config.hidden_size,
+                    n_heads=self.model.config.num_attention_heads,
+                    n_kv_heads=self.model.config.num_attention_heads,
+                    qkv_layer=qkv,
+                    o_proj=module.self_attn.o_proj,
+                    mlp=module.mlp,
+                    norm_1=norm_1,
+                    norm_2=norm_2,
+                    dev=device,
+                    max_seq_len=self.model.config.max_seq_len,
+                    use_alibi=True,
+                )
+            )
+
         self.model.model = LlamaLikeModel(
             self.model.config.vocab_size,
             blocks,

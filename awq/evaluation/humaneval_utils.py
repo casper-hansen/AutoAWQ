@@ -30,25 +30,27 @@ from transformers import (
     PreTrainedTokenizer,
 )
 
+
 def eval_humaneval(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     out_path: str = "humaneval_out.jsonl",
     format_tabs: bool = True,
 ):
-    problems = {example["task_id"]: example for example in load_dataset("openai_humaneval")["test"]}
-    
+    problems = {
+        example["task_id"]: example
+        for example in load_dataset("openai_humaneval")["test"]
+    }
+
     samples = []
 
-    for i, (task_id, task) in tqdm(enumerate(problems.items()), total=len(problems) ):
+    for i, (task_id, task) in tqdm(enumerate(problems.items()), total=len(problems)):
         if format_tabs:
             prompt = task["prompt"].replace("    ", "\t")
         else:
             prompt = task["prompt"]
 
-        batch_completions = generate_batch_completion(
-            model, tokenizer, prompt, 1
-        )
+        batch_completions = generate_batch_completion(model, tokenizer, prompt, 1)
 
         for sample in batch_completions:
             result = dict(
@@ -58,10 +60,10 @@ def eval_humaneval(
 
             samples += [result]
 
-    with open(out_path, 'wb') as fp:
+    with open(out_path, "wb") as fp:
         for x in samples:
-            fp.write((json.dumps(x) + "\n").encode('utf-8'))
-    
+            fp.write((json.dumps(x) + "\n").encode("utf-8"))
+
     results = evaluate_functional_correctness(
         sample_file=out_path,
         k=[1],
@@ -70,6 +72,7 @@ def eval_humaneval(
     )
 
     print(results)
+
 
 @torch.inference_mode()
 def generate_batch_completion(
@@ -82,7 +85,7 @@ def generate_batch_completion(
     generated_ids = model.generate(
         **inputs,
         use_cache=True,
-        max_new_tokens=512,
+        max_seq_len=512,
         temperature=0.2,
         top_p=0.95,
         do_sample=True,
@@ -106,11 +109,12 @@ def generate_batch_completion(
     return [filter_code(fix_indents(completion)) for completion in batch_completions]
 
 
-def check_correctness(problem: Dict, completion: str, timeout: float,
-                      completion_id: Optional[int] = None) -> Dict:
+def check_correctness(
+    problem: Dict, completion: str, timeout: float, completion_id: Optional[int] = None
+) -> Dict:
     """
     Evaluates the functional correctness of a completion by running the test
-    suite provided in the problem. 
+    suite provided in the problem.
 
     :param completion_id: an optional completion ID so we can match
         the results later even if execution finishes asynchronously.
@@ -121,6 +125,7 @@ def check_correctness(problem: Dict, completion: str, timeout: float,
             # These system calls are needed when cleaning up tempdir.
             import os
             import shutil
+
             rmtree = shutil.rmtree
             rmdir = os.rmdir
             chdir = os.chdir
@@ -130,11 +135,14 @@ def check_correctness(problem: Dict, completion: str, timeout: float,
 
             # Construct the check program and run it.
             check_program = (
-                problem["prompt"] + completion + "\n" +
-                problem["test"] + "\n" +
-                f"check({problem['entry_point']})"
+                problem["prompt"]
+                + completion
+                + "\n"
+                + problem["test"]
+                + "\n"
+                + f"check({problem['entry_point']})"
             )
-            
+
             try:
                 exec_globals = {}
                 with swallow_io():
@@ -175,6 +183,7 @@ def check_correctness(problem: Dict, completion: str, timeout: float,
 def time_limit(seconds: float):
     def signal_handler(signum, frame):
         raise TimeoutException("Timed out!")
+
     signal.setitimer(signal.ITIMER_REAL, seconds)
     signal.signal(signal.SIGALRM, signal_handler)
     try:
@@ -204,7 +213,7 @@ class TimeoutException(Exception):
 
 
 class WriteOnlyStringIO(io.StringIO):
-    """ StringIO that throws an exception when it's read from """
+    """StringIO that throws an exception when it's read from"""
 
     def read(self, *args, **kwargs):
         raise IOError
@@ -216,12 +225,12 @@ class WriteOnlyStringIO(io.StringIO):
         raise IOError
 
     def readable(self, *args, **kwargs):
-        """ Returns True if the IO object can be read. """
+        """Returns True if the IO object can be read."""
         return False
 
 
 class redirect_stdin(contextlib._RedirectStream):  # type: ignore
-    _stream = 'stdin'
+    _stream = "stdin"
 
 
 @contextlib.contextmanager
@@ -238,13 +247,14 @@ def chdir(root):
     finally:
         os.chdir(cwd)
 
+
 def stream_jsonl(filename: str) -> Iterable[Dict]:
     """
     Parses each jsonl line and yields it as a dictionary
     """
     if filename.endswith(".gz"):
         with open(filename, "rb") as gzfp:
-            with gzip.open(gzfp, 'rt') as fp:
+            with gzip.open(gzfp, "rt") as fp:
                 for line in fp:
                     if any(not x.isspace() for x in line):
                         yield json.loads(line)
@@ -253,6 +263,7 @@ def stream_jsonl(filename: str) -> Iterable[Dict]:
             for line in fp:
                 if any(not x.isspace() for x in line):
                     yield json.loads(line)
+
 
 def estimate_pass_at_k(
     num_samples: Union[int, List[int], np.ndarray],
@@ -288,7 +299,10 @@ def evaluate_functional_correctness(
     n_workers: int = 4,
     timeout: float = 3.0,
 ):
-    problems = {example["task_id"]: example for example in load_dataset("openai_humaneval")["test"]}
+    problems = {
+        example["task_id"]: example
+        for example in load_dataset("openai_humaneval")["test"]
+    }
 
     # Check the generated samples against test suites.
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
@@ -308,9 +322,11 @@ def evaluate_functional_correctness(
             n_samples += 1
 
         if len(completion_id) < len(problems):
-            include_keys = list(problems.keys())[:len(completion_id)]
-            print(f"Only found {len(completion_id)} solutions, reducing problems from {len(problems)}...")
-            problems = {k:v for k,v in problems.items() if k in include_keys}
+            include_keys = list(problems.keys())[: len(completion_id)]
+            print(
+                f"Only found {len(completion_id)} solutions, reducing problems from {len(problems)}..."
+            )
+            problems = {k: v for k, v in problems.items() if k in include_keys}
 
         assert len(completion_id) == len(problems), "Some problems are not attempted."
 
@@ -347,6 +363,7 @@ def evaluate_functional_correctness(
 
     return pass_at_k
 
+
 def reliability_guard(maximum_memory_bytes: Optional[int] = None):
     """
     This disables various destructive functions and prevents the generated code
@@ -355,7 +372,7 @@ def reliability_guard(maximum_memory_bytes: Optional[int] = None):
 
     WARNING
     This function is NOT a security sandbox. Untrusted code, including, model-
-    generated code, should not be blindly executed outside of one. See the 
+    generated code, should not be blindly executed outside of one. See the
     Codex paper for more information about OpenAI's code sandbox, and proceed
     with caution.
     """
@@ -364,19 +381,28 @@ def reliability_guard(maximum_memory_bytes: Optional[int] = None):
 
     if maximum_memory_bytes is not None:
         import resource
-        resource.setrlimit(resource.RLIMIT_AS, (maximum_memory_bytes, maximum_memory_bytes))
-        resource.setrlimit(resource.RLIMIT_DATA, (maximum_memory_bytes, maximum_memory_bytes))
-        if not platform.uname().system == 'Darwin':
-            resource.setrlimit(resource.RLIMIT_STACK, (maximum_memory_bytes, maximum_memory_bytes))
+
+        resource.setrlimit(
+            resource.RLIMIT_AS, (maximum_memory_bytes, maximum_memory_bytes)
+        )
+        resource.setrlimit(
+            resource.RLIMIT_DATA, (maximum_memory_bytes, maximum_memory_bytes)
+        )
+        if not platform.uname().system == "Darwin":
+            resource.setrlimit(
+                resource.RLIMIT_STACK, (maximum_memory_bytes, maximum_memory_bytes)
+            )
 
     faulthandler.disable()
 
     import builtins
+
     builtins.exit = None
     builtins.quit = None
 
     import os
-    os.environ['OMP_NUM_THREADS'] = '1'
+
+    os.environ["OMP_NUM_THREADS"] = "1"
 
     os.kill = None
     os.system = None
@@ -407,25 +433,32 @@ def reliability_guard(maximum_memory_bytes: Optional[int] = None):
     os.chdir = None
 
     import shutil
+
     shutil.rmtree = None
     shutil.move = None
     shutil.chown = None
 
     import subprocess
+
     subprocess.Popen = None  # type: ignore
 
     import sys
-    sys.modules['ipdb'] = None
-    sys.modules['joblib'] = None
-    sys.modules['resource'] = None
-    sys.modules['psutil'] = None
-    sys.modules['tkinter'] = None
 
-if __name__ == '__main__':
+    sys.modules["ipdb"] = None
+    sys.modules["joblib"] = None
+    sys.modules["resource"] = None
+    sys.modules["psutil"] = None
+    sys.modules["tkinter"] = None
+
+
+if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
     from awq import AutoAWQForCausalLM
-    model_path = 'TheBloke/zephyr-7B-beta-AWQ'
-    model = AutoAWQForCausalLM.from_quantized(model_path, device_map="auto", max_new_tokens=2048)
+
+    model_path = "TheBloke/zephyr-7B-beta-AWQ"
+    model = AutoAWQForCausalLM.from_quantized(
+        model_path, device_map="auto", max_seq_len=2048
+    )
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     eval_humaneval(model, tokenizer)

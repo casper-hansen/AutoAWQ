@@ -10,11 +10,10 @@ from peft import get_peft_model, LoraConfig, TaskType
 
 def prepare_split(tokenizer):
     data = datasets.load_dataset("mhenrichsen/alpaca_2k_test", split="train")
-    prompt_template = "<s>[INST] {system} {prompt} [/INST] {output}</s>"
+    prompt_template = "<s>[INST] {prompt} [/INST] {output}</s>"
 
     def format_prompt(x):
         return prompt_template.format(
-            system="",
             prompt=x["instruction"],
             output=x["output"]
         )
@@ -26,7 +25,7 @@ def prepare_split(tokenizer):
 
     return data
 
-model_path = "ybelkada/opt-125m-awq"
+model_path = "TheBloke/Mistral-7B-v0.1-AWQ"
 
 # Load model
 model = AutoAWQForCausalLM.from_quantized(model_path, fuse_layers=False)
@@ -56,7 +55,6 @@ training_arguments = TrainingArguments(
     optim="adamw_torch",
     num_train_epochs=1,
     learning_rate=1e-4,
-    # fp16=True,
     evaluation_strategy="no",
     save_strategy="epoch",
     save_steps=100,

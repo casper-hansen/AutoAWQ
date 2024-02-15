@@ -6,8 +6,9 @@ import transformers
 import torch.nn as nn
 
 from tqdm import tqdm
-from typing import List, Union
+from typing import List, Union, Dict
 from safetensors.torch import save_file
+from typing_extensions import Doc, Annotated
 from huggingface_hub import snapshot_download
 from transformers.modeling_utils import shard_checkpoint
 
@@ -27,6 +28,7 @@ from transformers import (
     PretrainedConfig,
     AutoProcessor,
     CLIPImageProcessor,
+    PreTrainedTokenizer,
 )
 from accelerate.big_modeling import (
     init_empty_weights,
@@ -64,8 +66,21 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
 
 class BaseAWQForCausalLM(nn.Module):
     def __init__(
-        self, model, model_type, is_quantized, config, quant_config, processor
+        self,
+        model: Annotated[PreTrainedModel, Doc("The pretrained or quantized model.")],
+        model_type: Annotated[str, Doc("The model type, found in config.json.")],
+        is_quantized: Annotated[
+            bool, Doc("Indicates if the current model is quantized.")
+        ],
+        config: Annotated[PretrainedConfig, Doc("The config of the model.")],
+        quant_config: Annotated[
+            AwqConfig, Doc("The quantization config of the model.")
+        ],
+        processor: Annotated[
+            AutoProcessor, Doc("An optional processor, e.g. for vision models.")
+        ],
     ):
+        """The base model for all AutoAWQ models."""
         super().__init__()
         self.model: PreTrainedModel = model
         self.model_type: str = model_type
@@ -75,29 +90,67 @@ class BaseAWQForCausalLM(nn.Module):
         self.quant_config: AwqConfig = quant_config
         self.processor: CLIPImageProcessor = processor
 
-    def to(self, device: str):
+    def to(self, device: Annotated[str, Doc("The device to move your model to.")]):
+        """A utility function for moving the model to a device."""
         return self.model.to(device)
 
     def forward(self, *args, **kwargs):
+        """A forward function that mimics the torch forward."""
         return self.model(*args, **kwargs)
 
     def generate(self, *args, **kwargs):
+        """A generate function that mimics the HF generate function."""
         with torch.inference_mode():
             return self.model.generate(*args, **kwargs)
 
     @torch.no_grad()
     def quantize(
         self,
-        tokenizer=None,
-        quant_config={},
-        calib_data: Union[str, List[str]] = "pileval",
-        split="train",
-        text_column="text",
-        duo_scaling=True,
-        modules_to_not_convert=None,
-        export_compatible=False,
+        tokenizer: Annotated[
+            PreTrainedTokenizer, Doc("The tokenizer to use for quantization.")
+        ] = None,
+        quant_config: Annotated[
+            Dict, Doc("The quantization config you want to use.")
+        ] = {},
+        calib_data: Annotated[
+            Union[str, List[str]],
+            Doc(
+                "The calibration dataset. Either a string pointing to Huggingface or a list of preloaded examples."
+            ),
+        ] = "pileval",
+        split: Annotated[str, Doc("The split of calib_data.")] = "train",
+        text_column: Annotated[str, Doc("The text column of calib_data.")] = "text",
+        duo_scaling: Annotated[
+            bool, Doc("Whether to scale using both w/x or just x.")
+        ] = True,
+        export_compatible: Annotated[
+            bool,
+            Doc(
+                "This argument avoids real quantization by only applying the scales without quantizing down to FP16."
+            ),
+        ] = False,
     ):
+        """
+        The main quantization function that you can use to quantize your model.
+
+        Example:
+
+        ```python
+        from awq import AutoAWQForCausalLM
+        from transformers import AutoTokenizer
+
+        model_path = "..."
+        model = AutoAWQForCausalLM.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+        quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+        model.quantize(tokenizer, quant_config)
+        ```
+        """
         self.quant_config: AwqConfig = AwqConfig.from_dict(quant_config)
+
+        if hasattr(self, "modules_to_not_convert"):
+            self.quant_config.modules_to_not_convert = self.modules_to_not_convert
 
         self.quantizer = AwqQuantizer(
             self,
@@ -111,7 +164,7 @@ class BaseAWQForCausalLM(nn.Module):
             split,
             text_column,
             duo_scaling,
-            modules_to_not_convert=modules_to_not_convert,
+            modules_to_not_convert=self.quant_config.modules_to_not_convert,
             export_compatible=export_compatible,
         )
         self.quantizer.quantize()
@@ -124,6 +177,9 @@ class BaseAWQForCausalLM(nn.Module):
         A utility function for the following scenario. Note that save_quantized will
         overwrite existing weights if you use the same quant_path.
 
+        Example:
+
+        ```python
         model.quantize(
             tokenizer,
             quant_config=quant_config,
@@ -132,6 +188,7 @@ class BaseAWQForCausalLM(nn.Module):
         model.save_quantized(...)  # produces GGUF/other compat weights
         model.pack(...) # makes the model CUDA compat
         model.save_quantized(...)  # produces CUDA compat weights
+        ```
         """
         self.quantizer.pack()
 
@@ -139,7 +196,16 @@ class BaseAWQForCausalLM(nn.Module):
     def fuse_layers(model):
         pass
 
-    def save_quantized(self, save_dir, safetensors=True, shard_size="10GB"):
+    def save_quantized(
+        self,
+        save_dir: Annotated[str, Doc("The directory to save your model to.")],
+        safetensors: Annotated[
+            bool, Doc("Whether to save the model as safetensors or torch files.")
+        ] = True,
+        shard_size: Annotated[
+            str, Doc("The shard size for sharding large models into multiple chunks.")
+        ] = "5GB",
+    ):
         save_dir = save_dir[:-1] if save_dir[-1] == "/" else save_dir
 
         # Save model
@@ -154,7 +220,6 @@ class BaseAWQForCausalLM(nn.Module):
         self.model.config.quantization_config = self.quant_config.to_transformers_dict()
         self.model.generation_config.do_sample = True
         self.model.save_pretrained(save_dir, state_dict=EmptyModule().state_dict())
-        self.quant_config.save_pretrained(save_dir)
 
         # Vision transformers have a processor
         if self.processor is not None:
@@ -195,14 +260,37 @@ class BaseAWQForCausalLM(nn.Module):
     @classmethod
     def from_pretrained(
         self,
-        model_path,
-        model_type,
-        torch_dtype: torch.dtype = torch.float16,
-        trust_remote_code=True,
-        safetensors=False,
-        device_map=None,
-        **model_init_kwargs,
+        model_path: Annotated[str, Doc("A Huggingface path or local path to a model.")],
+        model_type: Annotated[str, Doc("The model type, loaded from config.json.")],
+        torch_dtype: Annotated[
+            torch.dtype,
+            Doc(
+                "The dtype to load the model as. May not work with other values than float16."
+            ),
+        ] = torch.float16,
+        trust_remote_code: Annotated[
+            bool,
+            Doc(
+                "Useful for Huggingface repositories that have not been integrated into transformers yet."
+            ),
+        ] = True,
+        safetensors: Annotated[
+            bool, Doc("Whether to download/load safetensors instead of torch weights.")
+        ] = True,
+        device_map: Annotated[
+            Union[str, Dict],
+            Doc(
+                "A device map that will be passed onto the model loading method from transformers."
+            ),
+        ] = None,
+        **model_init_kwargs: Annotated[
+            Dict,
+            Doc(
+                "Additional kwargs that are passed to the model during initialization."
+            ),
+        ],
     ):
+        """A method for initialization of pretrained models, usually in FP16."""
         # Get weights path and quant config
         model_weights_path, config, quant_config = self._load_config(
             self, model_path, "", safetensors, trust_remote_code=trust_remote_code
@@ -240,31 +328,70 @@ class BaseAWQForCausalLM(nn.Module):
     @classmethod
     def from_quantized(
         self,
-        model_path,
-        model_type,
-        model_filename="",
-        max_new_tokens=None,
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-        safetensors=True,
-        is_quantized=True,
-        fuse_layers=False,
-        use_exllama=False,
-        use_exllama_v2=False,
-        version="GEMM",
-        device_map="balanced",
-        offload_folder=None,
-        **config_kwargs,
+        model_path: Annotated[str, Doc("A Huggingface path or local path to a model.")],
+        model_type: Annotated[str, Doc("The model type, loaded from config.json.")],
+        model_filename: Annotated[
+            str, Doc("Load a specific model's filename by specifying this argument.")
+        ] = "",
+        max_seq_len: Annotated[
+            int,
+            Doc(
+                "The maximum sequence cached sequence length of the model. Larger values may increase loading time and memory usage."
+            ),
+        ] = None,
+        torch_dtype: Annotated[
+            torch.dtype,
+            Doc(
+                "The dtype to load the model as. May not work with other values than float16."
+            ),
+        ] = torch.float16,
+        trust_remote_code: Annotated[
+            bool,
+            Doc(
+                "Useful for Huggingface repositories that have not been integrated into transformers yet."
+            ),
+        ] = True,
+        safetensors: Annotated[
+            bool, Doc("Whether to download/load safetensors instead of torch weights.")
+        ] = True,
+        fuse_layers: Annotated[
+            bool,
+            Doc(
+                "Whether to use fused/optimized combination of layers for increased speed."
+            ),
+        ] = True,
+        use_exllama: Annotated[
+            bool, Doc("Whether to map the weights to ExLlamaV1 kernels.")
+        ] = False,
+        use_exllama_v2: Annotated[
+            bool, Doc("Whether to map the weights to ExLlamaV2 kernels.")
+        ] = False,
+        device_map: Annotated[
+            Union[str, Dict],
+            Doc(
+                "A device map that will be passed onto the model loading method from transformers."
+            ),
+        ] = "balanced",
+        offload_folder: Annotated[
+            str,
+            Doc("The folder ot offload the model to."),
+        ] = None,
+        **config_kwargs: Annotated[
+            Dict,
+            Doc(
+                "Additional kwargs that are passed to the config during initialization."
+            ),
+        ],
     ):
+        """A method for initialization of a quantized model, usually in INT4."""
         # [STEP 1-2] Load weights path and configs
         model_weights_path, config, quant_config = self._load_config(
             self,
             model_path,
             model_filename,
             safetensors,
-            version,
             trust_remote_code,
-            max_new_tokens=max_new_tokens,
+            max_seq_len=max_seq_len,
             **config_kwargs,
         )
 
@@ -306,7 +433,7 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        if quant_config.version == "Marlin":
+        if quant_config.version == "marlin":
             model = marlin_post_init(model)
 
         elif use_exllama:
@@ -316,14 +443,14 @@ class BaseAWQForCausalLM(nn.Module):
             # creates q4 handle and allocates scratch spaces wrt max_input_len and max_batch_size
             model = exllamav2_post_init(
                 model,
-                max_input_len=max_new_tokens or 2048,
+                max_input_len=max_seq_len or 2048,
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
 
         return self(
             model,
             model_type,
-            is_quantized=is_quantized,
+            is_quantized=True,
             config=config,
             quant_config=quant_config,
             processor=None,
@@ -334,9 +461,8 @@ class BaseAWQForCausalLM(nn.Module):
         model_path,
         model_filename,
         safetensors=True,
-        version="GEMM",
         trust_remote_code=True,
-        max_new_tokens=4096,
+        max_seq_len=4096,
         **config_kwargs,
     ):
         # [STEP 1] Download model if path is not a directory
@@ -359,22 +485,22 @@ class BaseAWQForCausalLM(nn.Module):
         quant_config = AwqConfig.from_pretrained(model_path)
 
         # Load model config and set max generation length
-        if max_new_tokens is None and hasattr(self, "max_new_tokens_key"):
+        if max_seq_len is None and hasattr(self, "max_seq_len_key"):
             config = AutoConfig.from_pretrained(
                 model_path, trust_remote_code=trust_remote_code, **config_kwargs
             )
-            config.max_new_tokens = getattr(config, self.max_new_tokens_key, 2048)
+            config.max_seq_len = getattr(config, self.max_seq_len_key, 2048)
             # To add the generate support for Multi-modal models as well
             if hasattr(config, "text_config"):
-                config.text_config.max_new_tokens = getattr(
-                    config, self.max_new_tokens_key, 2048
+                config.text_config.max_seq_len = getattr(
+                    config, self.max_seq_len_key, 2048
                 )
         else:
-            max_new_tokens = 2048 if max_new_tokens is None else max_new_tokens
+            max_seq_len = 2048 if max_seq_len is None else max_seq_len
             config = AutoConfig.from_pretrained(
                 model_path, trust_remote_code=trust_remote_code, **config_kwargs
             )
-            config.max_new_tokens = max_new_tokens
+            config.max_seq_len = max_seq_len
 
         return model_weights_path, config, quant_config
 
@@ -383,7 +509,7 @@ class BaseAWQForCausalLM(nn.Module):
     ):
         # Real quantization of weights
         assert not (
-            version == "GEMV" and (use_exllama or use_exllama_v2)
+            version == "gemv" and (use_exllama or use_exllama_v2)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -405,15 +531,15 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if version == "Marlin":
+                if version == "marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
                     q_linear_module = WQLinear_Exllama
                 elif use_exllama_v2:
                     q_linear_module = WQLinear_ExllamaV2
-                elif version == "GEMM":
+                elif version == "gemm":
                     q_linear_module = WQLinear_GEMM
-                elif version == "GEMV":
+                elif version == "gemv":
                     q_linear_module = WQLinear_GEMV
 
                 q_linear = q_linear_module.from_linear(

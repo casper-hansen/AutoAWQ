@@ -1,17 +1,15 @@
-import torch
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 
-model_path = "llava-hf/llava-1.5-7b-hf"
-quant_path = "llava-1.5-7b-hf-awq"
-
-quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version":"GEMM"}
+model_path = 'mistralai/Mistral-7B-Instruct-v0.2'
+quant_path = 'mistral-instruct-v0.2-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, safetensors=True, torch_dtype=torch.float16, device_map="auto"
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
 )
-tokenizer = AutoTokenizer.from_pretrained(model_path)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Quantize
 model.quantize(tokenizer, quant_config=quant_config)

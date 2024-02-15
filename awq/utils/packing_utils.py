@@ -79,6 +79,7 @@ def unpack_reorder_pack(qweight, qzeros, bits):
 
     return qweight, qzeros
 
+
 def dequantize_gemm(qweight, qzeros, scales, bits, group_size):
     # Unpack the qweight and qzeros tensors
     iweight, izeros = unpack_awq(qweight, qzeros, bits)

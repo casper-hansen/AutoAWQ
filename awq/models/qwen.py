@@ -3,7 +3,7 @@ from .base import BaseAWQForCausalLM
 
 class QwenAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "QWenBlock"
-    max_new_tokens_key = "seq_length"
+    max_seq_len_key = "seq_length"
 
     @staticmethod
     def get_model_layers(model):

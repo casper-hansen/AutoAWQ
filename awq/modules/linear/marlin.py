@@ -54,7 +54,7 @@ class WQLinear_Marlin(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.group_size = group_size if group_size != -1 else in_features
-        self.max_par = 8 # partitioning for large inputs
+        self.max_par = 8  # partitioning for large inputs
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0

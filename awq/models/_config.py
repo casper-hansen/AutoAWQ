@@ -1,9 +1,9 @@
 import os
 import json
-import logging
 from typing import Dict, Optional, List
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from transformers.utils.hub import PushToHubMixin, cached_file
+
 
 @dataclass
 class AwqConfig(PushToHubMixin):
@@ -11,25 +11,18 @@ class AwqConfig(PushToHubMixin):
     zero_point: bool = field(default=True)
     q_group_size: int = field(default=128)
     w_bit: int = field(default=4)
-    version: str = field(default="GEMM")
-    config_file_name = "quant_config.json"
+    version: str = field(default="gemm")
+    config_file_name = "config.json"
     modules_to_not_convert: Optional[List] = None
 
-    def save_pretrained(self, save_dir: str, **kwargs):
-        logging.warning(
-            "`quant_config.json` is being deprecated in the future"
-            " in favor of quantization_config in config.json."
-        )
-        with open(os.path.join(save_dir, self.config_file_name), "w+", encoding="utf-8") as file:
-            file.write(json.dumps(self.to_dict(), indent=4))
-    
     @classmethod
-    def from_dict(cls, quant_config: Dict={}):
+    def from_dict(cls, quant_config: Dict = {}):
         if not quant_config:
             quant_config = cls()
         else:
             quant_config = cls(**quant_config)
-        
+            quant_config.version = quant_config.version.lower()
+
         return quant_config
 
     @classmethod
@@ -46,7 +39,7 @@ class AwqConfig(PushToHubMixin):
 
         if os.path.isdir(save_dir):  # Local
             resolved_config_file = os.path.join(save_dir, cls.config_file_name)
-        else: # Remote
+        else:  # Remote
             resolved_config_file = cached_file(
                 save_dir,
                 cls.config_file_name,
@@ -62,14 +55,21 @@ class AwqConfig(PushToHubMixin):
                 _raise_exceptions_for_connection_errors=False,
                 _commit_hash=commit_hash,
             )
-        
+
+        quant_config = None
         if os.path.exists(resolved_config_file):
-            with open(resolved_config_file, 'r', encoding="utf-8") as file:
+            with open(resolved_config_file, "r", encoding="utf-8") as file:
                 loaded_config = json.loads(file.read())
-                quant_config = cls(**loaded_config)
-        else:
+
+            quant_config = loaded_config.get("quantization_config")
+
+            if quant_config is not None:
+                awq_config = cls.from_transformers_dict(cls, quant_config)
+                quant_config = cls(**awq_config)
+
+        if quant_config is None:
             quant_config = cls()
-        
+
         return quant_config
 
     def to_dict(self):
@@ -89,4 +89,14 @@ class AwqConfig(PushToHubMixin):
             "bits": self.w_bit,
             "version": self.version.lower(),
             "modules_to_not_convert": self.modules_to_not_convert,
+        }
+
+    def from_transformers_dict(self, transformers_dict: Dict):
+        return {
+            "quant_method": transformers_dict.get("quant_method"),
+            "zero_point": transformers_dict.get("zero_point"),
+            "q_group_size": transformers_dict.get("group_size"),
+            "w_bit": transformers_dict.get("bits"),
+            "version": transformers_dict.get("version"),
+            "modules_to_not_convert": transformers_dict.get("modules_to_not_convert"),
         }

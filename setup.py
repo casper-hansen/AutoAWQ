@@ -31,7 +31,7 @@ def get_kernels_whl_url(
     return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
 
 
-AUTOAWQ_VERSION = "0.1.8"
+AUTOAWQ_VERSION = "0.2.0"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
@@ -90,6 +90,7 @@ requirements = [
     "tokenizers>=0.12.1",
     "accelerate",
     "datasets",
+    "zstandard",
 ]
 
 try:
@@ -101,9 +102,9 @@ except importlib.metadata.PackageNotFoundError:
 # kernels can be downloaded from pypi for cuda+121 only
 # for everything else, we need to download the wheels from github
 if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
-    if CUDA_VERSION.startswith("12"):
+    if CUDA_VERSION and CUDA_VERSION.startswith("12"):
         requirements.append("autoawq-kernels")
-    elif CUDA_VERSION.startswith("11") or ROCM_VERSION in ["561", "571"]:
+    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["561", "571"]:
         gpu_system_version = (
             f"cu{CUDA_VERSION}" if CUDA_VERSION else f"rocm{ROCM_VERSION}"
         )
@@ -130,6 +131,7 @@ setup(
     install_requires=requirements,
     extras_require={
         "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
+        "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
     **common_setup_kwargs,
 )
