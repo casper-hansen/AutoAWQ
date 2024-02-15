@@ -10,11 +10,10 @@ from peft import get_peft_model, LoraConfig, TaskType
 
 def prepare_split(tokenizer):
     data = datasets.load_dataset("mhenrichsen/alpaca_2k_test", split="train")
-    prompt_template = "<s>[INST] {system} {prompt} [/INST] {output}</s>"
+    prompt_template = "<s>[INST] {prompt} [/INST] {output}</s>"
 
     def format_prompt(x):
         return prompt_template.format(
-            system="",
             prompt=x["instruction"],
             output=x["output"]
         )
