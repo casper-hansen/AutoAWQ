@@ -93,7 +93,7 @@ jobs:
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
           if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.2.0" } else {$pytorchVersion = "torch==2.0.1"}
           python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
-          python -m pip install build setuptools wheel ninja
+          python -m pip install build setuptools wheel ninja requests
 
           # Print version information
           python --version
@@ -206,7 +206,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends rocsparse-dev rocthrust-dev rocblas-dev hipblas-dev hipsparse-dev
 
-          python -m pip install --upgrade build setuptools wheel
+          python -m pip install --upgrade build setuptools wheel requests
 
           if [[ "${{ matrix.rocm }}" == "5.7.1" ]]; then
             python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/rocm5.7
