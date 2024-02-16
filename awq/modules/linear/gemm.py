@@ -63,9 +63,16 @@ class WQLinearMMFunction(Function):
     def backward(ctx, grad_output):
         input, qweight, qzeros, scales, bias = ctx.saved_tensors
 
+        if awq_ext is None:
+            raise ValueError(
+                "auto-awq kernels is needed to be installed to use `.backward()`. Make sure to install the auto-awq kernels"
+                " by following the installation guides in https://github.com/casper-hansen/AutoAWQ_kernels"
+            )
+
+        # Cast to correct dtype for mixed precision training
         weights = awq_ext.dequantize_weights_cuda(
             qweight, scales, qzeros, 1, 0, 0, False
-        )
+        ).to(grad_output.dtype)
 
         if ctx.needs_input_grad[0]:
             # 3D matmul using torch.bmm: https://pytorch.org/docs/stable/generated/torch.bmm.html#torch.bmm
@@ -74,7 +81,6 @@ class WQLinearMMFunction(Function):
             grad_input = grad_output.bmm(weights.transpose(0, 1).unsqueeze(0).repeat(batch_size, 1, 1))
 
         return grad_input, None, None, None, None, None, None, None
-
 
 class WQLinear_GEMM(nn.Module):
     def __init__(
