@@ -132,6 +132,18 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 
+force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
+if force_extension == "1":
+    # NOTE: We create an empty CUDAExtension because torch helps us with
+    # creating the right boilerplate to enable correct targeting of
+    # the autoawq-kernels package
+    common_setup_kwargs["ext_modules"] = [
+        CUDAExtension(
+            name="test_kernel",
+            sources=[],
+        )
+    ]
+
 setup(
     packages=find_packages(),
     install_requires=requirements,
@@ -139,14 +151,5 @@ setup(
         "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
-    # NOTE: We create an empty CUDAExtension because torch helps us with
-    # creating the right boilerplate to enable correct targeting of
-    # the autoawq-kernels package
-    ext_modules=[
-        CUDAExtension(
-            name="__build_artifact_for_awq_kernel_targeting",
-            sources=[],
-        )
-    ],
     **common_setup_kwargs,
 )
