@@ -52,7 +52,8 @@ def apply_moe_weights(
     topk: int,
     renormalize: bool,
 ) -> torch.Tensor:
-    FP16_MATMUL_HEURISTIC_CONDITION = x.shape[:-1].numel() >= 1024
+    # NOTE: DISABLED FOR NOW
+    FP16_MATMUL_HEURISTIC_CONDITION = x.shape[:-1].numel() >= 1e9 #1024
     if FP16_MATMUL_HEURISTIC_CONDITION:
         dequant_w1 = awq_ext.dequantize_weights_cuda(
             w1.qweight, w1.scales, w1.qzeros, 0, 0, 0, False

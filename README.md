@@ -217,6 +217,21 @@ These benchmarks showcase the speed and memory usage of processing context (pref
 | DeepSeek   | 33B  | 🔵GEMM   | 1          | 64             | 64            | 1160.18          | 40.29           | 18.92 GB (80.00%) |
 | DeepSeek   | 33B  | 🔵GEMM   | 1          | 2048           | 2048          | 1012.1           | 34.0093         | 19.87 GB (84.02%) |
 
+### Multi-GPU
+
+GPU: 2x NVIDIA GeForce RTX 4090
+
+| Model | Size    | Version       |   Batch Size |   Prefill Length |   Decode Length |   Prefill tokens/s |   Decode tokens/s | Memory (VRAM)     |
+|--------:|------:|--------------:|-------------:|-----------------:|----------------:|-------------------:|------------------:|:------------------|
+| Mixtral | 46.7B | 🔵GEMM        |            1 |               32 |              32 |            149.742 |           93.406  | 25.28 GB (53.44%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |               64 |              64 |           1489.64  |           93.184  | 25.32 GB (53.53%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |              128 |             128 |           2082.95  |           92.9444 | 25.33 GB (53.55%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |              256 |             256 |           2428.59  |           91.5187 | 25.35 GB (53.59%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |              512 |             512 |           2633.11  |           89.1457 | 25.39 GB (53.67%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |             1024 |            1024 |           2598.95  |           84.6753 | 25.75 GB (54.44%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |             2048 |            2048 |           2446.15  |           77.0516 | 27.98 GB (59.15%) |
+| Mixtral | 46.7B | 🔵GEMM        |            1 |             4096 |            4096 |           1985.78  |           77.5689 | 34.65 GB (73.26%) |
+
 ## Reference
 
 If you find AWQ useful or relevant to your research, you can cite their [paper](https://arxiv.org/abs/2306.00978):

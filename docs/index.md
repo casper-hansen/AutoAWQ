@@ -8,6 +8,7 @@ Example inference speed (RTX 4090, Ryzen 9 7950X, 64 tokens):
 - Vicuna 7B (GEMV kernel): 198.848 tokens/s
 - Mistral 7B (GEMM kernel): 156.317 tokens/s
 - Mistral 7B (ExLlamaV2 kernel): 188.865 tokens/s
+- Mixtral 46.7B (GEMM kernel): 93 tokens/s (2x 4090)
 
 ## Installation notes
 

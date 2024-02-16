@@ -116,6 +116,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         else:
             raise RuntimeError(ex)
 
+    total_memory_used = 0
     if successful_generate:
         # number of tokens in context / time for processing context * batch size
         prefill_tokens_per_second = input_ids.shape[1] / context_time * batch_size
@@ -127,6 +128,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
 
         for device in range(torch.cuda.device_count()):
             memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+            total_memory_used += memory_used
             memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
             print(f" ** Max Memory (device: {device}): {memory_used:.2f} GB ({memory_pct:.2f}%)")
     else:
@@ -144,7 +146,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         "Decode Length": n_generate,
         "Prefill tokens/s": prefill_tokens_per_second,
         "Decode tokens/s": decode_tokens_per_second,
-        "Memory (VRAM)": f"{memory_used:.2f} GB ({memory_pct:.2f}%)"
+        "Memory (VRAM)": f"{total_memory_used:.2f} GB ({memory_pct:.2f}%)"
     }, version
 
 def main(args):
