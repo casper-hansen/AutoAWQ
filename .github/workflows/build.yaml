@@ -111,6 +111,7 @@ jobs:
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
+          $env:PYPI_FORCE_TAGS = 1
 
           python setup.py sdist bdist_wheel
 
@@ -223,7 +224,7 @@ jobs:
           python --version
           which python
 
-          ROCM_VERSION=${{ matrix.rocm }} python setup.py sdist bdist_wheel
+          ROCM_VERSION=${{ matrix.rocm }} PYPI_FORCE_TAGS=1 python setup.py sdist bdist_wheel
 
       - name: Upload Assets
         uses: shogo82148/actions-upload-release-asset@v1
