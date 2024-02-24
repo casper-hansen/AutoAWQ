@@ -12,11 +12,17 @@ from typing_extensions import Doc, Annotated
 from huggingface_hub import snapshot_download
 from transformers.modeling_utils import shard_checkpoint
 
-from awq.modules.linear.gemm import WQLinear_GEMM
-from awq.modules.linear.gemv import WQLinear_GEMV
-from awq.modules.linear.marlin import WQLinear_Marlin, marlin_post_init
-from awq.modules.linear.exllama import WQLinear_Exllama, exllama_post_init
-from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2, exllamav2_post_init
+from awq.modules.linear import (
+    WQLinear_GEMM,
+    WQLinear_GEMV,
+    WQLinear_Marlin,
+    WQLinear_Exllama,
+    WQLinear_ExllamaV2,
+    WQLinear_GEMVFast,
+    marlin_post_init,
+    exllama_post_init,
+    exllamav2_post_init,
+)
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
@@ -541,6 +547,8 @@ class BaseAWQForCausalLM(nn.Module):
                     q_linear_module = WQLinear_GEMM
                 elif version == "gemv":
                     q_linear_module = WQLinear_GEMV
+                elif version == "gemv_fast":
+                    q_linear_module = WQLinear_GEMVFast
 
                 q_linear = q_linear_module.from_linear(
                     module, quant_config.w_bit, quant_config.q_group_size, True

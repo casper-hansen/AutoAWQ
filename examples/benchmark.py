@@ -117,11 +117,12 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
             raise RuntimeError(ex)
 
     total_memory_used = 0
+    memory_pct = 100
     if successful_generate:
         # number of tokens in context / time for processing context * batch size
-        prefill_tokens_per_second = input_ids.shape[1] / context_time * batch_size
+        prefill_tokens_per_second = round(input_ids.shape[1] / context_time * batch_size, 2)
         # 1 second / median time per token in seconds * batch size
-        decode_tokens_per_second = 1 / np.median(generate_time) * batch_size
+        decode_tokens_per_second = round(1 / np.median(generate_time) * batch_size, 2)
 
         print(f" ** Speed (Prefill): {prefill_tokens_per_second:.2f} tokens/second")
         print(f" ** Speed (Decode): {decode_tokens_per_second:.2f} tokens/second")

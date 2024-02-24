@@ -1,10 +1,13 @@
 import torch
 
-from awq.modules.linear.gemm import WQLinear_GEMM
-from awq.modules.linear.gemv import WQLinear_GEMV
-from awq.modules.linear.marlin import WQLinear_Marlin
-from awq.modules.linear.exllama import WQLinear_Exllama
-from awq.modules.linear.exllamav2 import WQLinear_ExllamaV2
+from awq.modules.linear import (
+    WQLinear_GEMM,
+    WQLinear_GEMV,
+    WQLinear_Marlin,
+    WQLinear_Exllama,
+    WQLinear_ExllamaV2,
+    WQLinear_GEMVFast,
+)
 
 
 def prepare_correct_devices(next_layer, hidden_states, mask):
@@ -73,6 +76,8 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         q_linear = WQLinear_ExllamaV2
     elif isinstance(q_proj, WQLinear_Marlin):
         q_linear = WQLinear_Marlin
+    elif isinstance(q_proj, WQLinear_GEMVFast):
+        q_linear = WQLinear_GEMVFast
 
     qkv_layer = q_linear(
         q_proj.w_bit,
@@ -132,6 +137,17 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
             [q_proj.scales, k_proj.scales, v_proj.scales], dim=1
         )
         # workspace is created in post_init
+    elif isinstance(q_proj, WQLinear_GEMVFast):
+        qkv_layer.qweight = torch.cat(
+            [q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=0
+        )
+        qkv_layer.qzeros = torch.cat(
+            [q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1
+        ).contiguous()
+        qkv_layer.scales = torch.cat(
+            [q_proj.scales, k_proj.scales, v_proj.scales], dim=1
+        ).contiguous()
+        qkv_layer.split_k_iters = q_proj.split_k_iters
 
     qkv_layer.bias = bias
 
