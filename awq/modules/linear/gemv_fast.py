@@ -110,7 +110,7 @@ class WQLinear_GEMVFast(torch.nn.Module):
             ),
         )
         self.register_buffer(
-            "scaled_zeros",
+            "qzeros",
             torch.zeros(
                 (
                     calculate_zeros_width(in_features, self.group_size) * pack_num,
@@ -177,12 +177,12 @@ class WQLinear_GEMVFast(torch.nn.Module):
         )
 
         zeros = zeros.to(dtype=torch.int32)
-        scaled_zeros = torch.zeros_like(qscales)
+        qzeros = torch.zeros_like(qscales)
 
-        scaled_zeros[:, : scales.shape[1]] = -(
+        qzeros[:, : scales.shape[1]] = -(
             qscales[:, : scales.shape[1]] * (zeros.to(torch.float32))
         ).to(torch.float16)
-        awq_linear.scaled_zeros = scaled_zeros.transpose(1, 0).contiguous()
+        awq_linear.qzeros = qzeros.transpose(1, 0).contiguous()
 
         return awq_linear
 
@@ -194,7 +194,7 @@ class WQLinear_GEMVFast(torch.nn.Module):
                 inputs,
                 self.qweight,
                 self.scales,
-                self.scaled_zeros,
+                self.qzeros,
                 inputs.numel() // inputs.shape[-1],
                 self.out_features,
                 self.in_features,
@@ -202,7 +202,7 @@ class WQLinear_GEMVFast(torch.nn.Module):
             )
         else:
             out = awq_v2_ext.gemm_forward_cuda_new(
-                inputs, self.qweight, self.scales, self.scaled_zeros
+                inputs, self.qweight, self.scales, self.qzeros
             )
         out = out + self.bias if self.bias is not None else out
 
