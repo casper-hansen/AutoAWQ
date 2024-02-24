@@ -9,9 +9,12 @@ from collections import defaultdict
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.utils.utils import clear_memory, get_best_device
-from awq.modules.linear.gemm import WQLinear_GEMM
-from awq.modules.linear.gemv import WQLinear_GEMV
-from awq.modules.linear.marlin import WQLinear_Marlin
+from awq.modules.linear import (
+    WQLinear_GEMM,
+    WQLinear_GEMV,
+    WQLinear_Marlin,
+    WQLinear_GEMVFast,
+)
 from awq.utils.module import (
     append_str_prefix,
     get_op_name,
@@ -200,6 +203,9 @@ class AwqQuantizer:
 
             elif self.version == "marlin":
                 q_linear_module = WQLinear_Marlin
+            
+            elif self.version == "gemv_fast":
+                q_linear_module = WQLinear_GEMVFast
 
             else:
                 raise ValueError(f"Unknown version {self.version}")

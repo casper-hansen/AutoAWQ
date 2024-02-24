@@ -69,7 +69,7 @@ def pack_intweight(unpacked_qweight, interleave, kstride):
     return qweight
 
 
-class WQLinear(torch.nn.Module):
+class WQLinear_GEMVFast(torch.nn.Module):
     def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
         super().__init__()
 
