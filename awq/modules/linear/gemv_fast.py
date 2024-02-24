@@ -190,7 +190,7 @@ class WQLinear_GEMVFast(torch.nn.Module):
     def forward(self, x):
         inputs = x
         if inputs.numel() / inputs.shape[-1] < 8:
-            out = awq_v2_ext.gemv_forward_cuda_new(
+            out = awq_v2_ext.gemv_forward_cuda_decode(
                 inputs,
                 self.qweight,
                 self.scales,
@@ -201,7 +201,7 @@ class WQLinear_GEMVFast(torch.nn.Module):
                 self.group_size,
             )
         else:
-            out = awq_v2_ext.gemm_forward_cuda_new(
+            out = awq_v2_ext.gemm_forward_cuda_prefill(
                 inputs, self.qweight, self.scales, self.qzeros
             )
         out = out + self.bias if self.bias is not None else out
