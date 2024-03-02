@@ -253,7 +253,6 @@ class WQLinear_GEMM(nn.Module):
         if input_dtype != torch.float16:
             out = out.to(dtype=input_dtype)
 
-        out = out + self.bias if self.bias is not None else out
         return out.reshape(out_shape)
 
     def extra_repr(self) -> str:
