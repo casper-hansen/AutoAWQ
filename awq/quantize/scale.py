@@ -92,9 +92,9 @@ def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
     # GemmaRMSNorm is different from Llama's in that it multiplies
     # (1 + weight) to the output, instead of just weight.
     if isinstance(ln, GemmaRMSNorm):
-        ln.weight.copy_(ln.weight + 1)
+        ln.weight += 1
         ln.weight.div_(scales)
-        ln.weight.copy_(ln.weight - 1)
+        ln.weight -= 1
     else:
         ln.weight.div_(scales)
 
