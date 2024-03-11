@@ -116,14 +116,14 @@ class LlamaLikeModel(nn.Module):
                 h,
                 mask,
             )
-            h, _, past_key_value = layer(
+            h, _, _ = layer(
                 h, None, attention_mask=mask, is_causal=is_causal
             )
         h = self.norm(h)
 
         return BaseModelOutputWithPast(
             last_hidden_state=h,
-            past_key_values=past_key_value,
+            past_key_values=None,
             hidden_states=(),
             attentions=(),
         )

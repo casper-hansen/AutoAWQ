@@ -6,9 +6,10 @@ from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
 
-allowed_norms = [nn.LayerNorm, LlamaRMSNorm]
+allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm]
 allowed_act_fns = [
     nn.GELU,
     BloomGelu,
@@ -88,7 +89,15 @@ def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
 
     scales = scales.to(ln.weight.device)
 
-    ln.weight.div_(scales)
+    # GemmaRMSNorm is different from Llama's in that it multiplies
+    # (1 + weight) to the output, instead of just weight.
+    if isinstance(ln, GemmaRMSNorm):
+        ln.weight += 1
+        ln.weight.div_(scales)
+        ln.weight -= 1
+    else:
+        ln.weight.div_(scales)
+
     if hasattr(ln, "bias") and ln.bias is not None:
         ln.bias.div_(scales)
 

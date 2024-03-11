@@ -25,12 +25,12 @@ if HF_NEW_CACHE_FORMAT:
 
 
 class RoPE(nn.Module):
-    def __init__(self, hidden_size, n_heads, max_seq_len, device, rope_theta):
+    def __init__(self, head_dim, max_seq_len, device, rope_theta):
         super(RoPE, self).__init__()
 
         self.freqs_cis = nn.Parameter(
             self.precompute_freqs_cis(
-                hidden_size // n_heads, max_seq_len * 2, rope_theta
+                head_dim, max_seq_len * 2, rope_theta
             ).to(device),
             requires_grad=False,
         )
@@ -118,6 +118,7 @@ class QuantAttentionFused(nn.Module):
         use_alibi=False,
         attention_shapes=None,
         rope_theta=10000,
+        head_dim=None,
         **kwargs
     ):
         super().__init__()
@@ -125,7 +126,11 @@ class QuantAttentionFused(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.n_kv_groups = n_heads // n_kv_heads if n_kv_heads != 0 else 0
-        self.head_dim = self.hidden_size // n_heads
+        self.head_dim = head_dim
+        
+        if head_dim is None:
+            self.head_dim = hidden_size // n_heads
+
         self.qkv_proj = qkv_layer
         self.o_proj = o_proj
         self.start_pos = 0
@@ -162,7 +167,7 @@ class QuantAttentionFused(nn.Module):
             self.is_neox = False
         else:
             self.alibi = None
-            self.rope = RoPE(hidden_size, n_heads, max_seq_len, dev, rope_theta)
+            self.rope = RoPE(self.head_dim, max_seq_len, dev, rope_theta)
             self.rotary_dim = self.head_dim
             self.is_neox = True
 
