@@ -80,10 +80,17 @@ class LlamaLikeBlock(nn.Module):
         max_seq_len,
         rope_theta=10000,
         use_alibi=False,
+        head_dim=None,
     ):
         super().__init__()
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
+        self.head_dim = hidden_size // n_heads
+
+        # To support gemma-7b, its head_dim is separate
+        if head_dim:
+            self.head_dim = head_dim
+
         self.hidden_size = hidden_size
         self.norm_1 = norm_1.to(dev)
         self.attn = QuantAttentionFused(
@@ -96,6 +103,7 @@ class LlamaLikeBlock(nn.Module):
             max_seq_len=max_seq_len,
             use_alibi=use_alibi,
             rope_theta=rope_theta,
+            head_dim=head_dim,
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)

@@ -132,6 +132,7 @@ class GemmaFuser:
                     dev=device,
                     max_seq_len=self.model.config.max_seq_len,
                     rope_theta=self.model.config.rope_theta,
+                    head_dim=self.model.config.head_dim,
                 )
             )
         
