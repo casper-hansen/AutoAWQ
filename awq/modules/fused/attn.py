@@ -198,7 +198,7 @@ class QuantAttentionFused(nn.Module):
         # to 0. We detect it by checking if `past_key_values` is set to None,
         # which indicates that we are on the first step of `generate()`.
         # This is only applicable for `transformers` integration
-        if self.is_hf_transformers and "past_key_value" in kwargs and kwargs["past_key_value"] is None:
+        if (self.is_hf_transformers and "past_key_value" in kwargs and kwargs["past_key_value"] is None) or (self.is_hf_transformers and not hf_is_generating):
             self.start_pos = 0
     
 
@@ -224,12 +224,11 @@ class QuantAttentionFused(nn.Module):
                 .contiguous()
             )
 
-            if hf_is_generating:
-                self.cache.to(xq)
-                self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
+            self.cache.to(xq)
+            self.cache.update_kv(values_store, keys_store, bsz, self.start_pos, seqlen)
 
             # Only necessary to retrieve from cache when we are not processing context
-            if seqlen == 1 and hf_is_generating:
+            if seqlen == 1:
                 xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
 
             keys = xk
@@ -284,18 +283,18 @@ class QuantAttentionFused(nn.Module):
             attention_weight = attention_weight.reshape(bsz, 1, -1)
 
         attn_output = self.o_proj(attention_weight)
-        if hf_is_generating:
-            self.start_pos += seqlen
-        else:
+        self.start_pos += seqlen
+
+        if self.is_hf_transformers and not hf_is_generating:
             self.start_pos = 0
 
         # past_key_value is replaced with cache_v, cache_k, returning empty data
         # we pass a dummy past kv cache for transformers to be able to retrieve the correct info
         # about past key length
-        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)] if hf_is_generating else None
+        past_key_value = [torch.zeros(1, 1, self.start_pos, 1)]
 
 
-        if HF_NEW_CACHE_FORMAT and self.is_hf_transformers and hf_is_generating:
+        if HF_NEW_CACHE_FORMAT and self.is_hf_transformers:
             new_cache = DynamicCache()
             new_cache.update(past_key_value[0], past_key_value[0], layer_idx=0)
             past_key_value = new_cache
