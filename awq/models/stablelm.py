@@ -90,10 +90,10 @@ class StableLmFuser:
     def __init__(self, model: OldStableLmForCausalLM):
         self.model = model
 
-        self.qwen2_blocks: List[Tuple[str, OldStableLmDecoderLayer]] = [
+        self.stablelm_blocks: List[Tuple[str, OldStableLmDecoderLayer]] = [
             (name, module)
             for name, module in self.model.named_modules()
-            if "Qwen2DecoderLayer".lower() in module.__class__.__name__.lower()
+            if "StableLmDecoderLayer".lower() in module.__class__.__name__.lower()
         ]
 
     def fuse_transformer(self):
