@@ -32,6 +32,7 @@ class Starcoder2AWQForCausalLM(BaseAWQForCausalLM):
             scale_layer=module.mlp.act,
             scale_shape=module.mlp.c_fc.out_features,
         )
+        # return dict(is_scalable=False)
 
     @staticmethod
     def move_embed(model: OldStarcoder2ForCausalLM, device):
@@ -91,7 +92,7 @@ class Starcoder2Fuser:
     def __init__(self, model: OldStarcoder2ForCausalLM):
         self.model = model
 
-        self.qwen2_blocks: List[Tuple[str, OldStarcoder2DecoderLayer]] = [
+        self.starcoder2_blocks: List[Tuple[str, OldStarcoder2DecoderLayer]] = [
             (name, module)
             for name, module in self.model.named_modules()
             if "Starcoder2DecoderLayer".lower() in module.__class__.__name__.lower()
@@ -110,11 +111,11 @@ class Starcoder2Fuser:
                 module.self_attn.v_proj,
             )
             norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight, module.input_layernorm.variance_epsilon
+                module.input_layernorm.weight, module.input_layernorm.eps
             )
             norm_2 = FasterTransformerRMSNorm(
                 module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.variance_epsilon,
+                module.post_attention_layernorm.eps,
             )
             blocks.append(
                 LlamaLikeBlock(
