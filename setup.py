@@ -86,7 +86,7 @@ common_setup_kwargs = {
 
 requirements = [
     "torch>=2.0.1",
-    "transformers>=4.35.0",
+    "transformers>=4.35.0,<=4.38.2",
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
     "accelerate",
