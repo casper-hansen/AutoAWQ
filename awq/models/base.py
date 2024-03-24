@@ -290,6 +290,9 @@ class BaseAWQForCausalLM(nn.Module):
                 "A device map that will be passed onto the model loading method from transformers."
             ),
         ] = None,
+        download_kwargs: Annotated[
+            Dict, Doc("Used for configure download model"),
+        ] = None,
         **model_init_kwargs: Annotated[
             Dict,
             Doc(
@@ -300,7 +303,9 @@ class BaseAWQForCausalLM(nn.Module):
         """A method for initialization of pretrained models, usually in FP16."""
         # Get weights path and quant config
         model_weights_path, config, quant_config = self._load_config(
-            self, model_path, "", safetensors, trust_remote_code=trust_remote_code
+            self, model_path, "", safetensors,
+            trust_remote_code=trust_remote_code,
+            download_kwargs=download_kwargs
         )
 
         target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
@@ -383,6 +388,9 @@ class BaseAWQForCausalLM(nn.Module):
             str,
             Doc("The folder ot offload the model to."),
         ] = None,
+        download_kwargs: Annotated[
+            Dict, Doc("Used for configure download model"),
+        ] = None,
         **config_kwargs: Annotated[
             Dict,
             Doc(
@@ -399,6 +407,7 @@ class BaseAWQForCausalLM(nn.Module):
             safetensors,
             trust_remote_code,
             max_seq_len=max_seq_len,
+            download_kwargs=download_kwargs,
             **config_kwargs,
         )
 
@@ -470,6 +479,7 @@ class BaseAWQForCausalLM(nn.Module):
         safetensors=True,
         trust_remote_code=True,
         max_seq_len=4096,
+        download_kwargs=None,
         **config_kwargs,
     ):
         # [STEP 1] Download model if path is not a directory
@@ -479,8 +489,19 @@ class BaseAWQForCausalLM(nn.Module):
                 ignore_patterns.extend(["*.pt*", "*.bin*", "consolidated*"])
             else:
                 ignore_patterns.append("*.safetensors*")
+            
+            if download_kwargs is None:
+                download_kwargs = {}
+            
+            if "ignore_patterns" in download_kwargs:
+                download_kwargs_ignore_patterns = download_kwargs.pop("ignore_patterns")
 
-            model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns)
+                if isinstance(download_kwargs_ignore_patterns, str):
+                    ignore_patterns.append(download_kwargs_ignore_patterns)
+                elif isinstance(download_kwargs_ignore_patterns, list):
+                    ignore_patterns.extend(download_kwargs_ignore_patterns)
+
+            model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns, **download_kwargs)
 
         if model_filename != "":
             model_weights_path = model_path + f"/{model_filename}"
