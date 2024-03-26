@@ -68,6 +68,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "llava": "AutoModelForVision2Seq",
     "qwen2": "AutoModelForCausalLM",
     "gemma": "AutoModelForCausalLM",
+    "stablelm": "AutoModelForCausalLM",
 }
 
 

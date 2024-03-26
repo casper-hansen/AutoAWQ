@@ -15,3 +15,4 @@ from .llava import LlavaAWQForCausalLM
 from .mixtral import MixtralAWQForCausalLM
 from .qwen2 import Qwen2AWQForCausalLM
 from .gemma import GemmaAWQForCausalLM
+from .stablelm import StableLmAWQForCausalLM

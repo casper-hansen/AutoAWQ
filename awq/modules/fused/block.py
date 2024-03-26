@@ -79,6 +79,7 @@ class LlamaLikeBlock(nn.Module):
         dev,
         max_seq_len,
         rope_theta=10000,
+        partial_rotary_factor=1.0,
         use_alibi=False,
         head_dim=None,
     ):
@@ -103,6 +104,7 @@ class LlamaLikeBlock(nn.Module):
             max_seq_len=max_seq_len,
             use_alibi=use_alibi,
             rope_theta=rope_theta,
+            partial_rotary_factor=partial_rotary_factor,
             head_dim=head_dim,
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
