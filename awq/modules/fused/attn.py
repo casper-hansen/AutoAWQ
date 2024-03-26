@@ -29,9 +29,7 @@ class RoPE(nn.Module):
         super(RoPE, self).__init__()
 
         self.freqs_cis = nn.Parameter(
-            self.precompute_freqs_cis(
-                head_dim, max_seq_len * 2, rope_theta
-            ).to(device),
+            self.precompute_freqs_cis(head_dim, max_seq_len * 2, rope_theta).to(device),
             requires_grad=False,
         )
 
@@ -118,6 +116,7 @@ class QuantAttentionFused(nn.Module):
         use_alibi=False,
         attention_shapes=None,
         rope_theta=10000,
+        partial_rotary_factor=1.0,
         head_dim=None,
         **kwargs
     ):
@@ -127,7 +126,7 @@ class QuantAttentionFused(nn.Module):
         self.n_kv_heads = n_kv_heads
         self.n_kv_groups = n_heads // n_kv_heads if n_kv_heads != 0 else 0
         self.head_dim = head_dim
-        
+
         if head_dim is None:
             self.head_dim = hidden_size // n_heads
 
@@ -167,8 +166,9 @@ class QuantAttentionFused(nn.Module):
             self.is_neox = False
         else:
             self.alibi = None
-            self.rope = RoPE(self.head_dim, max_seq_len, dev, rope_theta)
-            self.rotary_dim = self.head_dim
+            self.partial_rotary_factor = partial_rotary_factor
+            self.rotary_dim = int(self.head_dim * self.partial_rotary_factor)
+            self.rope = RoPE(self.rotary_dim, max_seq_len, dev, rope_theta)
             self.is_neox = True
 
     def forward(
@@ -206,13 +206,27 @@ class QuantAttentionFused(nn.Module):
         xk = self.attention_shapes["xk_slice"](xqkv)
         xv = self.attention_shapes["xv_slice"](xqkv)
 
-        if seqlen > 1 or not FT_INSTALLED:
+        if seqlen > 1 or self.partial_rotary_factor < 1 or not FT_INSTALLED:
             xq = xq.view((bsz, seqlen) + self.attention_shapes["xq_view"])
             xk = xk.view((bsz, seqlen) + self.attention_shapes["xk_view"])
             xv = xv.view((bsz, seqlen) + self.attention_shapes["xv_view"])
 
             if not self.use_alibi:
-                xq, xk = self.rope.forward(xq, xk, self.start_pos, seqlen)
+                # Partial rotary embedding
+                if self.partial_rotary_factor < 1:
+                    xq_rot, xq_pass = (
+                        xq[..., : self.rotary_dim],
+                        xq[..., self.rotary_dim :],
+                    )
+                    xk_rot, xk_pass = (
+                        xk[..., : self.rotary_dim],
+                        xk[..., self.rotary_dim :],
+                    )
+                    xq_rot, xk_rot = self.rope.forward(xq_rot, xk_rot, self.start_pos, seqlen)
+                    xq = torch.cat((xq_rot, xq_pass), dim=-1)
+                    xk = torch.cat((xk_rot, xk_pass), dim=-1)
+                else:
+                    xq, xk = self.rope.forward(xq, xk, self.start_pos, seqlen)
 
             self.cache.to(xq)
 
@@ -269,7 +283,7 @@ class QuantAttentionFused(nn.Module):
                 None,  # length per sample
                 alibi_slopes,  # alibi slopes
                 self.start_pos,  # timestep
-                self.rotary_dim,  # rotary embedding dimension
+                self.rotary_dim//self.partial_rotary_factor,  # rotary embedding dimension
                 self.rope_theta,  # rotary embedding base
                 self.is_neox,  # is neox
             )

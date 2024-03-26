@@ -108,13 +108,8 @@ class StableLmFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj,
             )
-            norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight, module.input_layernorm.eps
-            )
-            norm_2 = FasterTransformerRMSNorm(
-                module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.eps,
-            )
+            norm_1 = module.input_layernorm
+            norm_2 = module.post_attention_layernorm
             blocks.append(
                 LlamaLikeBlock(
                     hidden_size=self.model.config.hidden_size,
@@ -127,6 +122,8 @@ class StableLmFuser:
                     norm_2=norm_2,
                     dev=device,
                     max_seq_len=self.model.config.max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
+                    partial_rotary_factor=self.model.config.partial_rotary_factor,
                 )
             )
 
