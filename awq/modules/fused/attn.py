@@ -283,7 +283,7 @@ class QuantAttentionFused(nn.Module):
                 None,  # length per sample
                 alibi_slopes,  # alibi slopes
                 self.start_pos,  # timestep
-                self.rotary_dim//self.partial_rotary_factor,  # rotary embedding dimension
+                self.rotary_dim,  # rotary embedding dimension
                 self.rope_theta,  # rotary embedding base
                 self.is_neox,  # is neox
             )
