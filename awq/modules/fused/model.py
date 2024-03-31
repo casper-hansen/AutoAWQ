@@ -83,6 +83,14 @@ class LlamaLikeModel(nn.Module):
         self.blocks: List[LlamaLikeBlock] = nn.ModuleList(blocks)
         self.norm = norm
         self.last_forward_num_tokens = 0
+        
+    @property
+    def embed_tokens(self):
+        return self.embedding
+    
+    @property
+    def layers(self):
+        return self.blocks
 
     @torch.inference_mode()
     def forward(
