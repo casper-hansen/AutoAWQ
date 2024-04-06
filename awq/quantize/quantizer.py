@@ -362,7 +362,7 @@ class AwqQuantizer:
     @torch.no_grad()
     def _search_best_clip(self, layer, named_linears, input_feat):
         clip_list = []
-        avoid_clipping = ["q_", "k_", "query", "key", "Wqkv"]
+        avoid_clipping = ["q_", "k_", "query", "key", "Wqkv", "c_attn"]
 
         for name in named_linears:
             # due to qk bmm, it is hard to clip precisely
