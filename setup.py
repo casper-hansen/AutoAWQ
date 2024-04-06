@@ -147,7 +147,7 @@ setup(
     packages=find_packages(),
     install_requires=requirements,
     extras_require={
-        "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
+        "eval": ["lm_eval==0.4.1", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
     **common_setup_kwargs,
