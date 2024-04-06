@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set variables
-AWQ_VERSION="0.2.3"
+AWQ_VERSION="0.2.4"
 RELEASE_URL="https://api.github.com/repos/casper-hansen/AutoAWQ/releases/tags/v${AWQ_VERSION}"
 
 # Create a directory to download the wheels

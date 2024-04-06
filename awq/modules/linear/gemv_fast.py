@@ -189,7 +189,8 @@ class WQLinear_GEMVFast(torch.nn.Module):
     @torch.no_grad()
     def forward(self, x):
         inputs = x
-        if inputs.numel() / inputs.shape[-1] < 8:
+        batch_size, n_tokens, _ = inputs.shape
+        if batch_size < 8 and n_tokens == 1:
             out = awq_v2_ext.gemv_forward_cuda_decode(
                 inputs,
                 self.qweight,

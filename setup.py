@@ -31,7 +31,7 @@ def get_kernels_whl_url(
     return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
 
 
-AUTOAWQ_VERSION = "0.2.3"
+AUTOAWQ_VERSION = "0.2.4"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
@@ -147,7 +147,7 @@ setup(
     packages=find_packages(),
     install_requires=requirements,
     extras_require={
-        "eval": ["lm_eval>=0.4.0", "tabulate", "protobuf", "evaluate", "scipy"],
+        "eval": ["lm_eval==0.4.1", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
     },
     **common_setup_kwargs,

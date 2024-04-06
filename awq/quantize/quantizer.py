@@ -40,6 +40,7 @@ class AwqQuantizer:
         duo_scaling,
         modules_to_not_convert=None,
         export_compatible=False,
+        apply_clip=True,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -53,6 +54,7 @@ class AwqQuantizer:
         self.text_column = text_column
         self.duo_scaling = duo_scaling
         self.export_compatible = export_compatible
+        self.apply_clip = apply_clip
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
@@ -161,13 +163,14 @@ class AwqQuantizer:
             )
 
             # [STEP 3]: Compute and apply clipping list
-            clip_list = self._search_best_clip(
-                self.modules[i], named_linears, input_feat
-            )
-            apply_clip(self.modules[i], clip_list)
-            clip_list = append_str_prefix(
-                clip_list, get_op_name(self.model, self.modules[i]) + "."
-            )
+            if self.apply_clip:
+                clip_list = self._search_best_clip(
+                    self.modules[i], named_linears, input_feat
+                )
+                apply_clip(self.modules[i], clip_list)
+                clip_list = append_str_prefix(
+                    clip_list, get_op_name(self.model, self.modules[i]) + "."
+                )
 
             # [STEP 4]: Quantize weights
             if not self.export_compatible:
