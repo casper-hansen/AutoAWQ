@@ -24,6 +24,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "llava": LlavaAWQForCausalLM,
     "qwen2": Qwen2AWQForCausalLM,
     "gemma": GemmaAWQForCausalLM,
+    "stablelm": StableLmAWQForCausalLM,
     "starcoder2": Starcoder2AWQForCausalLM,
 }
 
