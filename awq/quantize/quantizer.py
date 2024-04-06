@@ -41,6 +41,7 @@ class AwqQuantizer:
         modules_to_not_convert=None,
         export_compatible=False,
         apply_clip=True,
+        n_calib_samples=None,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -55,6 +56,7 @@ class AwqQuantizer:
         self.duo_scaling = duo_scaling
         self.export_compatible = export_compatible
         self.apply_clip = apply_clip
+        self.n_calib_samples = n_calib_samples
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
@@ -206,7 +208,7 @@ class AwqQuantizer:
 
             elif self.version == "marlin":
                 q_linear_module = WQLinear_Marlin
-            
+
             elif self.version == "gemv_fast":
                 q_linear_module = WQLinear_GEMVFast
 
@@ -226,6 +228,31 @@ class AwqQuantizer:
             q_linear.to(next(module.parameters()).device)
             set_op_by_name(module, name, q_linear)
             clear_memory()
+
+    @torch.no_grad()
+    def _module_forward(
+        self, x: torch.Tensor, module: torch.Module, module_kwargs: Dict
+    ) -> torch.Tensor:
+        if self.n_calib_samples is None:
+            # runs through all samples at once
+            module_output = module(x, **module_kwargs)
+            if isinstance(module_output, tuple):
+                module_output = module_output[0]
+        else:
+            # memory efficiently runs through all calibration samples
+            # but only n_calib_samples at a time
+            module_output = []
+            for i in range(0, x.shape[0], self.n_calib_samples):
+                x_partial = x[i : i + self.n_calib_samples]
+                fp16_partial_output = module(x_partial, **module_kwargs)
+                module_output.append(
+                    fp16_partial_output[0]
+                    if isinstance(module_output, tuple)
+                    else fp16_partial_output
+                )
+            module_output = torch.cat(module_output, dim=0)
+
+        return module_output
 
     @torch.no_grad()
     def _search_best_scale(
@@ -253,7 +280,7 @@ class AwqQuantizer:
         org_shape = weight.shape
         # The weights are reshaped to be organised by quantization group
         weight = weight.view(-1, self.group_size)
-        # Calculates the relative magnitude of the weights within each of the quantization groups, 
+        # Calculates the relative magnitude of the weights within each of the quantization groups,
         # and rescales each group individually so that each group has weights on a 0-1 scale.
         w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
         # Resizes the rescaled weight matrix back up to its original dimensions
@@ -268,10 +295,7 @@ class AwqQuantizer:
         # [STEP 3]: Compute output of module
         with torch.no_grad():
             module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
-
-            fp16_output = module2inspect(inp, **module_kwargs)
-            if isinstance(fp16_output, tuple):
-                fp16_output = fp16_output[0]
+            fp16_output = self._module_forward(inp, module2inspect, module_kwargs)
 
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
@@ -335,9 +359,7 @@ class AwqQuantizer:
                 )
 
             # W * X
-            int_w_output = module2inspect(x, **kwargs)
-            if isinstance(int_w_output, tuple):
-                int_w_output = int_w_output[0]
+            int_w_output = self._module_forward(x, module2inspect, kwargs)
 
             # compute mean squared error (L2 norm)
             loss = (
