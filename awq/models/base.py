@@ -136,6 +136,12 @@ class BaseAWQForCausalLM(nn.Module):
                 "This argument avoids real quantization by only applying the scales without quantizing down to FP16."
             ),
         ] = False,
+        apply_clip: Annotated[
+            bool,
+            Doc(
+                "Whether to apply clipping to the model during quantization. Some models may perform better with this set to False."
+            ),
+        ] = True,
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -173,6 +179,7 @@ class BaseAWQForCausalLM(nn.Module):
             duo_scaling,
             modules_to_not_convert=self.quant_config.modules_to_not_convert,
             export_compatible=export_compatible,
+            apply_clip=apply_clip,
         )
         self.quantizer.quantize()
 
