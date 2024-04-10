@@ -198,7 +198,8 @@ class AwqQuantizer:
 
             if self.version == "gemm":
                 scales = scales.t().contiguous()
-                zeros = zeros.t().contiguous()
+                if zeros is not None:
+                    zeros = zeros.t().contiguous()
                 q_linear_module = WQLinear_GEMM
 
             elif self.version == "gemv":

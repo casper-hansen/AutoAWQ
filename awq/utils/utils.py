@@ -1,6 +1,10 @@
 import gc
+import importlib
 import torch
 import accelerate
+
+
+qbits_available = importlib.util.find_spec("intel_extension_for_transformers") is not None
 
 
 def get_module_by_name_suffix(model, module_name: str):

@@ -3,9 +3,23 @@ import torch
 import argparse
 import numpy as np
 import pandas as pd
+import psutil
 from awq import AutoAWQForCausalLM
 from awq.models.base import BaseAWQForCausalLM
+from awq.utils.utils import get_best_device, qbits_available
 from transformers import AutoTokenizer, GenerationConfig, LogitsProcessor, LogitsProcessorList
+
+DEVICE = get_best_device()
+if DEVICE == "cpu":
+    if qbits_available:
+        from intel_extension_for_transformers.qbits import check_isa_supported
+        torch_dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
+    else:
+        raise ImportError("Please import intel-extension-for-transformers "
+                          "by `pip install intel-extension-for-transformers`")
+else:
+    torch_dtype = torch.float16
+
 
 class TimeMeasuringLogitsProcessor(LogitsProcessor):
     def __init__(self):
@@ -15,7 +29,8 @@ class TimeMeasuringLogitsProcessor(LogitsProcessor):
         """The logit processor is called after the model forward."""
 
         # cuda runs async operates, so we synchronize for accurate time measurement
-        torch.cuda.synchronize()
+        if DEVICE != "cpu":
+            torch.cuda.synchronize()
 
         # measure time
         start_time = time.time()
@@ -41,7 +56,8 @@ def generate_torch(model, input_ids, n_generate):
 
     with torch.inference_mode():
         for i in range(n_generate):
-            torch.cuda.synchronize()
+            if DEVICE != "cpu":
+                torch.cuda.synchronize()
             start = time.time()
 
             if i == 0:
@@ -53,7 +69,8 @@ def generate_torch(model, input_ids, n_generate):
             
             out = model(inputs, use_cache=True)
 
-            torch.cuda.synchronize()
+            if DEVICE != "cpu":
+                torch.cuda.synchronize()
             token = out[0][:, -1].max(1)[1].unsqueeze(1)
 
             if i == 0:
@@ -92,12 +109,12 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         model = AutoAWQForCausalLM.from_pretrained(
             model_path,
             safetensors=not no_safetensors,
-            device_map="cuda",
-            torch_dtype=torch.float16,
+            device_map=DEVICE,
+            torch_dtype=torch_dtype,
         )
     else:
         model = AutoAWQForCausalLM.from_quantized(
-            model_path, quant_file, fuse_layers=True,
+            model_path, quant_file, fuse_layers=False if DEVICE == "cpu" else True,
             max_seq_len=n_generate, batch_size=batch_size,
             safetensors=not no_safetensors
         )
@@ -111,7 +128,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         context_time, generate_time = generator(model, input_ids, n_generate)
         successful_generate = True
     except RuntimeError as ex:
-        if 'cuda out of memory' in str(ex).lower():
+        if 'out of memory' in str(ex).lower():
             successful_generate = False
         else:
             raise RuntimeError(ex)
@@ -127,17 +144,23 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         print(f" ** Speed (Prefill): {prefill_tokens_per_second:.2f} tokens/second")
         print(f" ** Speed (Decode): {decode_tokens_per_second:.2f} tokens/second")
 
-        for device in range(torch.cuda.device_count()):
-            memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
-            total_memory_used += memory_used
-            memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
-            print(f" ** Max Memory (device: {device}): {memory_used:.2f} GB ({memory_pct:.2f}%)")
+        if DEVICE == "cpu":
+            memory_info = psutil.virtual_memory()
+            memory_pct = memory_info.used / memory_info.total
+            total_memory_used = memory_info.used
+            print(f" ** Max Memory (device: {device}): {memory_info.used:.2f} GB ({memory_pct:.2f}%)")
+        else:
+            for device in range(torch.cuda.device_count()):
+                memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                total_memory_used += memory_used
+                memory_pct = memory_used / (torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)) * 100
+                print(f" ** Max Memory (device: {device}): {memory_used:.2f} GB ({memory_pct:.2f}%)")
     else:
         prefill_tokens_per_second = 'OOM'
         decode_tokens_per_second = 'OOM'
     
     if pretrained:
-        version = "FP16"
+        version = "FP16" if DEVICE != "cpu" else "BF16" if check_isa_supported("AMX") else "FP32"
     else:
         version = model.quant_config.version
 
@@ -173,7 +196,11 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
 
     for settings in rounds:
-        input_ids = torch.randint(0, tokenizer.vocab_size, (args.batch_size, settings["context"])).cuda()
+        input_ids = torch.randint(0, tokenizer.vocab_size, (args.batch_size, settings["context"]))
+        if DEVICE != "cpu":
+            input_ids = input_ids.cuda()
+        else:
+            input_ids = input_ids.to(torch_dtype)
 
         stats, model_version = run_round(
             generator,
@@ -192,7 +219,9 @@ def main(args):
             break
     
     df = pd.DataFrame(all_stats)
-    print('GPU:', torch.cuda.get_device_name())
+    print('Device:', DEVICE)
+    if DEVICE != "cpu":
+        print('GPU:', torch.cuda.get_device_name())
     print('Model:', args.model_path)
     print('Version:', model_version)
     print(df.to_markdown(index=False))

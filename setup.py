@@ -1,3 +1,4 @@
+import importlib
 import os
 import torch
 import platform
@@ -5,6 +6,10 @@ import requests
 from pathlib import Path
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import CUDAExtension
+from awq.utils.utils import get_best_device
+
+
+qbits_available = importlib.util.find_spec("intel_extension_for_transformers") is not None
 
 
 def get_latest_kernels_version(repo):
@@ -48,7 +53,10 @@ if ROCM_VERSION:
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
 
 if not PYPI_BUILD:
-    if CUDA_VERSION:
+    if get_best_device() == "cpu":
+        assert qbits_available, "Please install intel-extension-for-transformers!"
+        AUTOAWQ_VERSION += "+cpu"
+    elif CUDA_VERSION:
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     elif ROCM_VERSION:
         AUTOAWQ_VERSION += f"+rocm{ROCM_VERSION}"
@@ -130,6 +138,9 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Your system have a GPU with an unsupported CUDA or ROCm version. "
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
+elif not qbits_available:
+    requirements.append("intel-extension-for-transformers>=1.4")
+
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":
