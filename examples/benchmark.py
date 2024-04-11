@@ -147,8 +147,8 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         if DEVICE == "cpu":
             memory_info = psutil.virtual_memory()
             memory_pct = memory_info.used / memory_info.total
-            total_memory_used = memory_info.used
-            print(f" ** Max Memory (device: {device}): {memory_info.used:.2f} GB ({memory_pct:.2f}%)")
+            total_memory_used = float(memory_info.used) / (1024 ** 3)
+            print(f" ** Max Memory (device: {DEVICE}): {total_memory_used:.2f} GB ({memory_pct:.2f}%)")
         else:
             for device in range(torch.cuda.device_count()):
                 memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
@@ -199,8 +199,6 @@ def main(args):
         input_ids = torch.randint(0, tokenizer.vocab_size, (args.batch_size, settings["context"]))
         if DEVICE != "cpu":
             input_ids = input_ids.cuda()
-        else:
-            input_ids = input_ids.to(torch_dtype)
 
         stats, model_version = run_round(
             generator,

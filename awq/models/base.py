@@ -1,6 +1,7 @@
 import os
 import gc
 import json
+import logging
 import torch
 import transformers
 import torch.nn as nn
@@ -453,6 +454,8 @@ class BaseAWQForCausalLM(nn.Module):
                 raise ImportError("Please install intel-extension-for-transformers with "
                                   "`pip install intel-extension-for-transformers` for 'qbits' kernel!")
 
+            fuse_layers = False
+            logging.warn("Unsupport fuse_layers featrue for CPU device with QBits backend!")
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
             self,
