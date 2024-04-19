@@ -32,7 +32,7 @@ plugins:
   mkdocstrings:
     handlers:
       python:
-        paths: [awq]
+        paths: [.]
         options:
           extensions:
           - griffe_typingdoc
