@@ -393,6 +393,12 @@ class BaseAWQForCausalLM(nn.Module):
                 "A device map that will be passed onto the model loading method from transformers."
             ),
         ] = "balanced",
+        max_memory: Annotated[
+            Dict[Union[int, str], Union[int, str]], 
+            Doc(
+                'A dictionary device identifier to maximum memory which will be passed onto the model loading method from transformers. For example：{0: "4GB",1: "10GB"'
+            ),
+        ] = None,
         offload_folder: Annotated[
             str,
             Doc("The folder ot offload the model to."),
@@ -449,6 +455,7 @@ class BaseAWQForCausalLM(nn.Module):
             model,
             checkpoint=model_weights_path,
             device_map=device_map,
+            max_memory=max_memory,
             no_split_module_classes=[self.layer_type],
             offload_folder=offload_folder,
             dtype=torch_dtype,
