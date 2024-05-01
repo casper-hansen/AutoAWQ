@@ -99,9 +99,7 @@ class CohereFuser:
                 module.self_attn.k_proj,
                 module.self_attn.v_proj,
             )
-            norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight, module.input_layernorm.variance_epsilon
-            )
+            norm_1 = module.input_layernorm
             # norm_2 = FasterTransformerRMSNorm(
             #     module.post_attention_layernorm.weight,
             #     module.post_attention_layernorm.variance_epsilon,

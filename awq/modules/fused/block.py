@@ -193,7 +193,7 @@ class CohereBlock(nn.Module):
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
-        out = h + self.mlp.forward(h)
+        out = h + self.mlp.forward(norm_out)
 
         return out, None, past_key_value
 
