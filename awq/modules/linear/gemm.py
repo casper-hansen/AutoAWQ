@@ -63,7 +63,7 @@ class WQLinearMMFunction(Function):
     def backward(ctx, grad_output):
         input, qweight, qzeros, scales, bias = ctx.saved_tensors
 
-        if awq_ext is None:
+        if not AWQ_INSTALLED:
             raise ValueError(
                 "auto-awq kernels is needed to be installed to use `.backward()`. Make sure to install the auto-awq kernels"
                 " by following the installation guides in https://github.com/casper-hansen/AutoAWQ_kernels"
