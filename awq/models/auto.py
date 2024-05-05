@@ -4,6 +4,7 @@ from transformers import AutoConfig
 from awq.models import *
 from awq.models.base import BaseAWQForCausalLM
 
+
 AWQ_CAUSAL_LM_MODEL_MAP = {
     "mpt": MptAWQForCausalLM,
     "llama": LlamaAWQForCausalLM,
@@ -26,6 +27,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gemma": GemmaAWQForCausalLM,
     "stablelm": StableLmAWQForCausalLM,
     "starcoder2": Starcoder2AWQForCausalLM,
+    "llava_next": LlavaNextAWQForCausalLM,
 }
 
 

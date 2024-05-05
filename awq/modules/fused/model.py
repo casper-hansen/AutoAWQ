@@ -102,14 +102,26 @@ class LlamaLikeModel(nn.Module):
         *args,
         **kwargs,
     ):
-        input_ids, self.last_forward_num_tokens = fused_utils.prepare_input_ids(
-            input_ids, self.last_forward_num_tokens
-        )
-        _bsz, seqlen = input_ids.shape
-
+        """
+        if only inputs_embeds
+        see https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llava_next.py
+        """
+        if input_ids == None and kwargs['past_key_values']==None:
+            input_ids, self.last_forward_num_tokens = fused_utils.prepare_input_ids(
+                kwargs['position_ids'], self.last_forward_num_tokens
+            )
+            _bsz, seqlen = kwargs['position_ids'].shape
+            h = kwargs['inputs_embeds']
+            device = h.device
+        else:
+            input_ids, self.last_forward_num_tokens = fused_utils.prepare_input_ids(
+                input_ids, self.last_forward_num_tokens
+            )
+            _bsz, seqlen = input_ids.shape
+            device = input_ids.device
+            h = self.embedding(input_ids)
+            
         fused_utils.prepare_cache(self.blocks, seqlen)
-
-        h = self.embedding(input_ids)
 
         mask = fused_utils.prepare_attention_mask(
             seqlen=seqlen,
