@@ -30,7 +30,7 @@ url = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247a
 image = Image.open(requests.get(url, stream=True).raw)
 prompt = "<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|><|im_start|>assistant\n"
 
-model_path = "./llava-v1.6-34b-hf"
+model_path = "llava-hf/llava-v1.6-34b-hf"
 quant_path = "./llava-v1.6-34b-hf-awq"
 model = AutoAWQForCausalLM.from_quantized(quant_path,  safetensors=True, device_map="auto")
 processor = AutoProcessor.from_pretrained(quant_path)
