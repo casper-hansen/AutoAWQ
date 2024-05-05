@@ -104,7 +104,7 @@ class LlamaLikeModel(nn.Module):
     ):
         """
         if only inputs_embeds
-        see https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llava_next.py
+        see https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
         """
         if input_ids == None and kwargs['past_key_values']==None:
             input_ids, self.last_forward_num_tokens = fused_utils.prepare_input_ids(
