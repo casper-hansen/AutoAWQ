@@ -1,8 +1,8 @@
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 
-model_path = '/data/lujunli/hf_download/Phi-3-mini-128k-instruct'
-quant_path = 'phi-3-v0.2-awq'
+model_path = 'mistralai/Mistral-7B-Instruct-v0.2'
+quant_path = 'mistral-instruct-v0.2-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
