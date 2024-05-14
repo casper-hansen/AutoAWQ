@@ -39,8 +39,8 @@ class WQLinear_QBits(nn.Module):
 
         self.use_bf16 = qbits.check_isa_supported("AMX")
 
-        if w_bit not in [4, 8]:
-            raise NotImplementedError("Only 4-bits and 8-bits are supported for now.")
+        if w_bit not in [2, 3, 4, 8]:
+            raise NotImplementedError("Only 2, 3, 4, 8 bits are supported for now.")
 
         self.in_features = in_features
         self.out_features = out_features
@@ -85,21 +85,16 @@ class WQLinear_QBits(nn.Module):
     def post_init(self):
         assert self.qweight.device.type == "cpu"
 
-        # intweight = unpack(self.qweight, direction="column")
-        # # zeros = unpack(self.qzeros, direction="column")
         intweight, zeros = unpack_awq(self.qweight, self.qzeros, self.w_bit) # weight: k x n zeros: k / group_size x n
         intweight, zeros = reverse_awq_order(intweight, zeros, self.w_bit) # weight: k x n zeros: k / group_size x n
         if self.zero_point:
             intweight = torch.bitwise_and(intweight, (2**self.w_bit) - 1) - (2**(self.w_bit - 1))
             zeros = torch.bitwise_and(zeros, (2**self.w_bit) - 1) - (2**(self.w_bit - 1))
-            zeros = zeros * (2**(8 - self.w_bit))
         else:
             intweight = torch.bitwise_and(intweight, (2**self.w_bit) - 1)
-        intweight = torch.bitwise_left_shift(intweight, (8 - self.w_bit))
-        scales = self.scales / (2 ** (8 - self.w_bit))
         g_idx = torch.empty(0, dtype=torch.int32)
 
-        self.qweight = qbits.repack_quantized_weight(intweight, scales.float(), zeros, g_idx,
+        self.qweight = qbits.repack_quantized_weight(intweight, self.scales.float(), zeros, g_idx,
                                                      BITS_DTYPE_MAPPING[self.w_bit],
                                                      convert_dtype_torch2str(self.scale_dtype),
                                                      convert_dtype_torch2str(self.scales.dtype), self.zero_point,

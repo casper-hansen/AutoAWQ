@@ -49,9 +49,6 @@ with torch.no_grad():
     # overflow checks
     intweight = torch.bitwise_and(intweight, (2**w_bit) - 1) - (2**(w_bit - 1))
     zeros = torch.bitwise_and(zeros, (2**w_bit) - 1) - (2**(w_bit - 1))
-    intweight = torch.bitwise_left_shift(intweight, (8 - w_bit))
-    scales = scales / (2**(8 - w_bit))
-    zeros = zeros * (2**(8 - w_bit))
     g_idx = torch.empty(0, dtype=torch.int32)
     qbits_qweight = qbits.repack_quantized_weight(intweight, scales.float().contiguous(), zeros, g_idx,
                                                   BITS_DTYPE_MAPPING[w_bit],
