@@ -2,6 +2,7 @@ import time
 import torch
 import argparse
 import numpy as np
+import os
 import pandas as pd
 import psutil
 from awq import AutoAWQForCausalLM
@@ -66,7 +67,7 @@ def generate_torch(model, input_ids, n_generate):
             else:
                 # decode tokens
                 inputs = torch.as_tensor(token, device=next(model.parameters()).device)
-            
+
             out = model(inputs, use_cache=True)
 
             if DEVICE != "cpu":
@@ -77,7 +78,7 @@ def generate_torch(model, input_ids, n_generate):
                 context_time += time.time() - start
             else:
                 generate_time.append(time.time() - start)
-    
+
     return context_time, generate_time
 
 def generate_hf(model: BaseAWQForCausalLM, input_ids, n_generate):
@@ -123,7 +124,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
     warmup(model)
 
     print(f" -- Generating {n_generate} tokens, {input_ids.shape[1]} in context...")
-    
+
     try:
         context_time, generate_time = generator(model, input_ids, n_generate)
         successful_generate = True
@@ -145,9 +146,11 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         print(f" ** Speed (Decode): {decode_tokens_per_second:.2f} tokens/second")
 
         if DEVICE == "cpu":
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
             memory_info = psutil.virtual_memory()
-            memory_pct = memory_info.used / memory_info.total
-            total_memory_used = float(memory_info.used) / (1024 ** 3)
+            memory_pct = mem_info.rss / memory_info.total
+            total_memory_used = float(mem_info.rss) / (1024 ** 3)
             print(f" ** Max Memory (device: {DEVICE}): {total_memory_used:.2f} GB ({memory_pct:.2f}%)")
         else:
             for device in range(torch.cuda.device_count()):
@@ -158,7 +161,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
     else:
         prefill_tokens_per_second = 'OOM'
         decode_tokens_per_second = 'OOM'
-    
+
     if pretrained:
         version = "FP16" if DEVICE != "cpu" else "BF16" if check_isa_supported("AMX") else "FP32"
     else:
@@ -210,12 +213,12 @@ def main(args):
             args.no_safetensors,
             args.pretrained
         )
-        
+
         all_stats.append(stats)
 
         if stats["Prefill tokens/s"] == 'OOM':
             break
-    
+
     df = pd.DataFrame(all_stats)
     print('Device:', DEVICE)
     if DEVICE != "cpu":
