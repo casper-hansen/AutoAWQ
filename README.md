@@ -237,7 +237,8 @@ GPU: 2x NVIDIA GeForce RTX 4090
 - CPU: INTEL(R) XEON(R) PLATINUM 8592+ with 8-channel 4800MT/s memory.
 - Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
 
-|   Model | Size | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM) |
+|   Model | Size | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (RAM) |
+|--------:|------:|-----------:|-------------:|-----------------:|----------------:|---------------:|:------------------|
 | Mixtral |   7B | 1          | 64             | 64            | 389.24           | 16.01           | 5.59 GB (0.02%) |
 | Mixtral |   7B | 1          | 2048             | 2048            | 1412           | 17.76         | 6.29 GB (0.03%) |
 | Vicuna  |   7B | 1          | 64             | 64            | 346           | 18.13         | 8.18 GB (0.03%) |
