@@ -232,6 +232,28 @@ GPU: 2x NVIDIA GeForce RTX 4090
 | Mixtral | 46.7B | 🔵GEMM        |            1 |             2048 |            2048 |           2446.15  |           77.0516 | 27.98 GB (59.15%) |
 | Mixtral | 46.7B | 🔵GEMM        |            1 |             4096 |            4096 |           1985.78  |           77.5689 | 34.65 GB (73.26%) |
 
+### CPU
+
+- CPU: INTEL(R) XEON(R) PLATINUM 8592+ with 8-channel 4800MT/s memory.
+- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
+
+|   Model | Size | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (VRAM) |
+| Mixtral |   7B | 1          | 64             | 64            | 389.24           | 16.01           | 5.59 GB (0.02%) |
+| Mixtral |   7B | 1          | 2048             | 2048            | 1412           | 17.76         | 6.29 GB (0.03%) |
+| Vicuna  |   7B | 1          | 64             | 64            | 346           | 18.13         | 8.18 GB (0.03%) |
+| Vicuna  |   7B | 1          | 2048             | 2048            | 1023.4           | 18.18         | 8.80 GB (0.04%) |
+| LLaMA2  |   13B | 1          | 64             | 64            | 160.24           | 9.87         | 14.65 GB (0.06%) |
+| LLaMA2  |   13B | 1          | 2048             | 2048            | 592.35           | 9.93         | 16.87 GB (0.07%) |
+| Mosaicml  | 7B | 1          | 64             | 64            | 433.17           | 18.79         | 4.60 GB (0.02%) |
+| Mosaicml  | 7B | 1          | 2048             | 2048            | 404.25           | 19.91         | 4.75 GB (0.02%) |
+| Falcon  | 7B | 1          | 64             | 64            | 303.16           | 14.41         | 5.18 GB (0.02%) |
+| Falcon  | 7B | 1          | 2048             | 2048            | 634.57           | 15.55         | 5.80 GB (0.02%) |
+| CodeLlama  | 34B | 1          | 64             | 64            | 153.73           | 4.23         | 29.00 GB (0.12%) |
+| CodeLlama  | 34B | 1          | 2048             | 2048            | 274.25           | 4.38         | 35.21 GB (0.15%) |
+| Deepseek-coder  | 33B | 1          | 64             | 64            | 83.08           | 4.07         | 22.16 GB (0.09%) |
+| Deepseek-coder  | 33B | 1          | 2048             | 2048            | 296.04           | 4.33         | 37.05 GB |
+
+
 ## Reference
 
 If you find AWQ useful or relevant to your research, you can cite their [paper](https://arxiv.org/abs/2306.00978):
