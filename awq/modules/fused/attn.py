@@ -171,6 +171,9 @@ class QuantAttentionFused(nn.Module):
             self.rope = RoPE(self.rotary_dim, max_seq_len, dev, rope_theta)
             self.is_neox = True
 
+        if kwargs.get("is_neox") is not None:
+            self.is_neox = kwargs["is_neox"]
+
     def forward(
         self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
     ):

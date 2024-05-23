@@ -87,7 +87,6 @@ class CohereFuser:
         ]
 
     def fuse_transformer(self):
-        print("cohere block!")
         blocks = []
 
         module: OldCohereDecoderLayer
