@@ -139,7 +139,7 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 elif not qbits_available:
-    requirements.append("intel-extension-for-transformers>=1.4")
+    requirements.append("intel-extension-for-transformers>=1.4.2")
 
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
