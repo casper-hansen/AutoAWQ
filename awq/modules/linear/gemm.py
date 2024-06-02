@@ -3,13 +3,14 @@ import torch.nn as nn
 from torch.autograd import Function
 from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
+import warnings
 
 try:
-    import awq_ext  # with CUDA kernels (AutoAWQ_kernels)
-
+    import awq_ext  # with CUDA kernels
     AWQ_INSTALLED = True
-except:
+except Exception as e:
     AWQ_INSTALLED = False
+    warnings.warn(f"AWQ extension could not be imported. Error: {e}")
 
 
 # Adapted from https://github.com/compressa-ai/AutoAWQ/tree/dev

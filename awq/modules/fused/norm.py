@@ -1,13 +1,13 @@
 import torch
 from torch import nn
+import warnings
 
 try:
     import awq_ext  # with CUDA kernels
-
     AWQ_INSTALLED = True
-except:
+except Exception as e:
     AWQ_INSTALLED = False
-
+    warnings.warn(f"AWQ extension could not be imported. Error: {e}")
 
 class FasterTransformerRMSNorm(nn.Module):
     def __init__(self, weight, eps=1e-6):
