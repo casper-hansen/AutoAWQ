@@ -129,6 +129,8 @@ class BaseAWQForCausalLM(nn.Module):
         ] = "pileval",
         split: Annotated[str, Doc("The split of calib_data.")] = "train",
         text_column: Annotated[str, Doc("The text column of calib_data.")] = "text",
+        n_samples: Annotated[int, Doc("The number of samples to use for calibration.")] = 128,
+        block_size: Annotated[int, Doc("The block size to pack the calibration data.")] = 512,
         duo_scaling: Annotated[
             bool, Doc("Whether to scale using both w/x or just x.")
         ] = True,
@@ -178,6 +180,8 @@ class BaseAWQForCausalLM(nn.Module):
             calib_data,
             split,
             text_column,
+            n_samples,
+            block_size,
             duo_scaling,
             modules_to_not_convert=self.quant_config.modules_to_not_convert,
             export_compatible=export_compatible,

@@ -37,6 +37,8 @@ class AwqQuantizer:
         calib_data,
         split,
         text_column,
+        n_samples,
+        block_size,
         duo_scaling,
         modules_to_not_convert=None,
         export_compatible=False,
@@ -58,7 +60,7 @@ class AwqQuantizer:
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
-        self.modules, self.module_kwargs, self.inps = self.init_quant()
+        self.modules, self.module_kwargs, self.inps = self.init_quant(n_samples=n_samples, block_size=block_size)
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
@@ -435,13 +437,13 @@ class AwqQuantizer:
 
         return best_max_val.squeeze(1)
 
-    def init_quant(self, n_samples=128, seqlen=512):
+    def init_quant(self, n_samples=128, block_size=512):
         modules = self.awq_model.get_model_layers(self.model)
         samples = get_calib_dataset(
             data=self.calib_data,
             tokenizer=self.tokenizer,
             n_samples=n_samples,
-            block_size=seqlen,
+            block_size=block_size,
             split=self.split,
             text_column=self.text_column,
         )

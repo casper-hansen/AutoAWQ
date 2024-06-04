@@ -47,7 +47,7 @@ def get_calib_dataset(
             line = data[text_column]
             line = line.strip()
             line_encoded = tokenizer.encode(line)
-        if len(line_encoded) > 512:
+        if len(line_encoded) > block_size:
             continue
         sample = torch.tensor([line_encoded])
         if sample.numel() == 0:
