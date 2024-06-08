@@ -591,7 +591,7 @@ class BaseAWQForCausalLM(nn.Module):
             # Get every linear layer in a block
             named_linears = get_named_linears(layer)
 
-            # Filter out the linear layers we don't want to exclude
+            # Filter out the linear layers we don't want to include
             named_linears = exclude_layers_to_not_quantize(
                 named_linears, quant_config.modules_to_not_convert
             )
