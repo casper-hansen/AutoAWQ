@@ -71,6 +71,8 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "stablelm": "AutoModelForCausalLM",
     "starcoder2": "AutoModelForCausalLM",
     "llava_next": "AutoModelForVision2Seq",
+    "phi3": "AutoModelForCausalLM",
+    "cohere": "AutoModelForCausalLM",
 }
 
 
