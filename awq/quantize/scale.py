@@ -7,9 +7,10 @@ from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
+from transformers.models.cohere.modeling_cohere import CohereLayerNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
 
-allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm]
+allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, CohereLayerNorm]
 allowed_act_fns = [
     nn.GELU,
     BloomGelu,

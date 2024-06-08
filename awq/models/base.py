@@ -70,6 +70,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "gemma": "AutoModelForCausalLM",
     "stablelm": "AutoModelForCausalLM",
     "starcoder2": "AutoModelForCausalLM",
+    "cohere": "AutoModelForCausalLM",
 }
 
 
