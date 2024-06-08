@@ -1,6 +1,7 @@
 import os
 import gc
 import json
+import logging
 import torch
 import transformers
 import torch.nn as nn
@@ -15,6 +16,7 @@ from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import (
     WQLinear_GEMM,
     WQLinear_GEMV,
+    WQLinear_QBits,
     WQLinear_Marlin,
     WQLinear_Exllama,
     WQLinear_ExllamaV2,
@@ -22,12 +24,14 @@ from awq.modules.linear import (
     marlin_post_init,
     exllama_post_init,
     exllamav2_post_init,
+    qbits_post_init,
 )
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
 )
+from awq.utils.utils import get_best_device, qbits_available
 from transformers import (
     AutoConfig,
     PreTrainedModel,
@@ -45,6 +49,10 @@ from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
+
+if qbits_available:
+    from intel_extension_for_transformers.qbits import check_isa_supported
+
 
 # Since we support different `AutoModelForxxx` from transformers
 # we need to define a custom mapping dict as below:
@@ -389,6 +397,9 @@ class BaseAWQForCausalLM(nn.Module):
         use_exllama_v2: Annotated[
             bool, Doc("Whether to map the weights to ExLlamaV2 kernels.")
         ] = False,
+        use_qbits: Annotated[
+            bool, Doc("Whether to map the weights to qbits kernels for CPU device.")
+        ] = False,
         device_map: Annotated[
             Union[str, Dict],
             Doc(
@@ -439,6 +450,14 @@ class BaseAWQForCausalLM(nn.Module):
                 trust_remote_code=trust_remote_code,
             )
 
+        use_cpu_qbits = use_qbits or get_best_device() == "cpu"
+        if use_cpu_qbits:
+            if not qbits_available:
+                raise ImportError("Please install intel-extension-for-transformers with "
+                                  "`pip install intel-extension-for-transformers` for 'qbits' kernel!")
+
+            fuse_layers = False
+            logging.warn("Unsupport fuse_layers featrue for CPU device with QBits backend!")
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
             self,
@@ -447,6 +466,7 @@ class BaseAWQForCausalLM(nn.Module):
             quant_config.version,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
+            use_qbits=use_cpu_qbits,
         )
 
         model.tie_weights()
@@ -467,9 +487,13 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        if quant_config.version == "marlin":
+        if use_cpu_qbits:
+            dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
+            model.to(dtype=dtype, device="cpu")
+            # repack qweight to match the QBits kernel.
+            model = qbits_post_init(model)
+        elif quant_config.version == "marlin":
             model = marlin_post_init(model)
-
         elif use_exllama:
             # creates q4 handle
             model = exllama_post_init(model)
@@ -507,10 +531,10 @@ class BaseAWQForCausalLM(nn.Module):
                 ignore_patterns.extend(["*.pt*", "*.bin*", "consolidated*"])
             else:
                 ignore_patterns.append("*.safetensors*")
-            
+
             if download_kwargs is None:
                 download_kwargs = {}
-            
+
             if "ignore_patterns" in download_kwargs:
                 download_kwargs_ignore_patterns = download_kwargs.pop("ignore_patterns")
 
@@ -551,11 +575,11 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(
-        self, model, quant_config, version, use_exllama, use_exllama_v2
+        self, model, quant_config, version, use_exllama, use_exllama_v2, use_qbits=False
     ):
         # Real quantization of weights
         assert not (
-            version == "gemv" and (use_exllama or use_exllama_v2)
+            version == "gemv" and (use_exllama or use_exllama_v2 or use_qbits)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -577,7 +601,9 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if version == "marlin":
+                if use_qbits:
+                    q_linear_module = WQLinear_QBits
+                elif version == "marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
                     q_linear_module = WQLinear_Exllama
@@ -590,13 +616,19 @@ class BaseAWQForCausalLM(nn.Module):
                 elif version == "gemv_fast":
                     q_linear_module = WQLinear_GEMVFast
 
-                q_linear = q_linear_module.from_linear(
-                    module, quant_config.w_bit, quant_config.q_group_size, True
-                )
+                if use_qbits:
+                    q_linear = q_linear_module.from_linear(module,
+                                                           quant_config.w_bit,
+                                                           quant_config.q_group_size,
+                                                           True,
+                                                           has_zero_points=quant_config.zero_point)
+                else:
+                    q_linear = q_linear_module.from_linear(module, quant_config.w_bit, quant_config.q_group_size, True)
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
 
-            torch.cuda.empty_cache()
+            if not use_qbits:
+                torch.cuda.empty_cache()
             gc.collect()
 
     @staticmethod
