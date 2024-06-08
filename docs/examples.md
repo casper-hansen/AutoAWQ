@@ -144,6 +144,7 @@ subprocess.run([
 
 ## Basic Inference
 
+### Inference With GPU
 To run inference, you often want to run with `fuse_layers=True` to get the claimed speedup in AutoAWQ.
 Additionally, consider setting `max_seq_len` (default: 2048) as this will be the maximum context that the model can hold.
 
@@ -180,6 +181,17 @@ generation_output = model.generate(
     streamer=streamer,
     max_new_tokens=512
 )
+```
+
+### Inference With CPU
+To run inference with CPU , you should specify `use_qbits=True`. QBits is the backend for CPU including kernel for operators. QBits is a module of the intel-extension-for-transformers package. Up to now, the feature of fusing layers hasn't been ready, you should run model with `fuse_layers=False`.
+
+```python
+from awq import AutoAWQForCausalLM
+
+quant_path = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+# Load model
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False, use_qbits=True)
 ```
 
 ### Transformers
