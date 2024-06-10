@@ -2,9 +2,9 @@
 
 <p align="center">
 | <a href="https://github.com/casper-hansen/AutoAWQ/issues/32"><b>Roadmap</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/tree/main/examples"><b>Examples</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22"><b>Issues: Help Wanted</b></a> |
-
 </p>
-<p align="center">
+
+<p align="center" style="margin-bottom: 0px;">
     <a href="https://huggingface.co/models?search=awq">
         <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
     </a>
@@ -16,9 +16,21 @@
     </a>
 </p>
 
+<p align="center" style="margin-bottom: 0px; margin-top: 0px;">
+    <a href="https://www.runpod.io/">
+        <img alt="Sponsored by RunPod" src="https://img.shields.io/badge/Sponsored%20by%20RunPod-673AB6">
+    </a>
+</p>
+
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2024/06] CPU inference support (x86) - thanks Intel. Cohere and Phi3 support.
+- [2024/04] StableLM and StarCoder2 support.
+- [2024/03] Gemma support.
+- [2024/02] PEFT-compatible training in FP16.
+- [2024/02] AMD ROCm support through ExLlamaV2 kernels.
+- [2024/01] Export to GGUF, ExLlamaV2 kernels, 60% faster context processing.
 - [2023/12] Mixtral, LLaVa, QWen, Baichuan model support.
 - [2023/11] AutoAWQ inference has been integrated into 🤗 transformers. Now includes CUDA 12.1 wheels.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
