@@ -16,11 +16,11 @@
     </a>
 </p>
 
-<p align="center" style="margin-bottom: 0px; margin-top: 0px;">
-    <a href="https://www.runpod.io/">
-        <img alt="Sponsored by RunPod" src="https://img.shields.io/badge/Sponsored%20by%20RunPod-673AB6">
-    </a>
-</p>
+<div align="center" style="color: white;">
+    <p>Supported by</p>
+    <a href="https://runpod.io/?utm_source=autoAWQ">
+    <img src="https://i.ibb.co/tZPMrq4/Small-Logo.png" alt="RunPod Logo" width="100" border="0">  </a>
+</div>
 
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
