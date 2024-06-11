@@ -50,4 +50,3 @@ The detailed support list:
 | LLaVa    | 7B/13B                      |
 | Mixtral  | 8x7B                        |
 | Baichuan | 7B/13B                      |
-| QWen     | 1.8B/7B/14/72B              |
