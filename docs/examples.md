@@ -198,7 +198,7 @@ model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False, use_qbi
 
 You can also load an AWQ model by using AutoModelForCausalLM, just make sure you have AutoAWQ installed.
 Note that not all models will have fused modules when loading from transformers.
-See more [documentation here](https://huggingface.co/docs/transformers/main/en/quantization#awq).
+See more [documentation here](https://huggingface.co/docs/transformers/main/en/quantization/awq).
 
 ```python
 import torch
