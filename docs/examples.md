@@ -302,29 +302,31 @@ AutoAWQ also supports the LLaVa model. You simply need to load an
 AutoProcessor to process the prompt and image to generate inputs for the AWQ model.
 
 ```python
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer, AutoProcessor, TextStreamer
+from PIL import Image
 import requests
 import torch
-from PIL import Image
 
-from awq import AutoAWQForCausalLM
-from transformers import AutoProcessor
-
-quant_path = "ybelkada/llava-1.5-7b-hf-awq"
+quant_path = "mesolitica/llava-v1.6-34b-hf-awq"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, safetensors=True, device_map={"": 0})
+model = AutoAWQForCausalLM.from_quantized(quant_path, safetensors=True, device_map="auto")
 processor = AutoProcessor.from_pretrained(quant_path)
 
-prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
-image_file = "http://images.cocodataset.org/val2017/000000039769.jpg"
+prompt = """<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\n
+What is shown in this image?<|im_end|><|im_start|>assistant\n"""
 
-raw_image = Image.open(requests.get(image_file, stream=True).raw)
-inputs = processor(prompt, raw_image, return_tensors='pt').to(0, torch.float16)
+url = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
+raw_image = Image.open(requests.get(url, stream=True).raw)
+
+inputs = processor(prompt, image, return_tensors='pt').to(0, torch.float16)
+streamer = TextStreamer(processor)
+
 # Generate output
 generation_output = model.generate(
-    **inputs, 
-    max_new_tokens=512
-)
+    **inputs,
+    max_new_tokens=1024,
+    streamer = streamer)
 
-print(processor.decode(generation_output[0], skip_special_tokens=True))
 ```
