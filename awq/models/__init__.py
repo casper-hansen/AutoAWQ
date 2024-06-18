@@ -19,3 +19,4 @@ from .stablelm import StableLmAWQForCausalLM
 from .starcoder2 import Starcoder2AWQForCausalLM
 from .phi3 import Phi3AWQForCausalLM
 from .cohere import CohereAWQForCausalLM
+from .deepseek_v2 import DeepseekV2AWQForCausalLM
