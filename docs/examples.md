@@ -78,6 +78,53 @@ tokenizer.save_pretrained(quant_path)
 print(f'Model is quantized and saved at "{quant_path}"')
 ```
 
+#### Long-context and thousands of calibration samples
+
+For this example, we will use HuggingFaceTB/cosmopedia-100k as it's a high-quality dataset and
+we can filter directly on the number of tokens. We will use Qwen2 7B, one of the newer supported
+models in AutoAWQ which is high-performing.
+
+NOTE: Please make sure to properly adjust `n_parallel_calib_samples` to avoid OOM. If your sequence
+length is long and you have many samples, it's very important to tune this parameter to avoid OOM.
+
+```python
+from datasets import load_dataset
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'Qwen/Qwen2-7B-Instruct'
+quant_path = 'qwen2-7b-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+def load_cosmopedia():
+    data = load_dataset('HuggingFaceTB/cosmopedia-100k', split="train")
+    data = data.filter(lambda x: x["text_token_length"] >= 2048)
+
+    return [text for text in data["text"]]
+
+# Quantize
+model.quantize(
+    tokenizer,
+    quant_config=quant_config,
+    calib_data=load_cosmopedia(),
+    n_parallel_calib_samples=32,
+    max_calib_samples=1000,
+    max_calib_seq_len=4096
+)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
 ### GGUF Export
 
 This computes AWQ scales and appliesthem to the model without running real quantization.
