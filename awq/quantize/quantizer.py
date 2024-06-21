@@ -324,7 +324,7 @@ class AwqQuantizer:
         x_mean,
         module2inspect,
         linears2scale: List[nn.Linear],
-        fp16_output,
+        fp16_output: torch.Tensor,
         kwargs={},
     ):
         """
@@ -375,9 +375,7 @@ class AwqQuantizer:
             int_w_output = self._module_forward(x, module2inspect, kwargs)
 
             # compute mean squared error (L2 norm)
-            loss = (
-                (fp16_output - int_w_output).float().pow(2).mean().item()
-            )  # NOTE: float prevents overflow
+            loss = self._compute_loss(fp16_output, int_w_output)
 
             history.append(loss)
             if loss < best_error:
@@ -393,6 +391,39 @@ class AwqQuantizer:
         assert torch.isnan(best_scales).sum() == 0, best_scales
 
         return best_scales.detach().cpu()
+
+    @torch.no_grad()
+    def _compute_loss(
+        self,
+        fp16_output: torch.Tensor,
+        int_w_output: torch.Tensor,
+        max_chunk_memory=1024 * 1024 * 1024 // 10, # 100 MB
+    ):
+        loss = 0.0
+        fp16_output_flat = fp16_output.view(-1)
+        int_w_output_flat = int_w_output.view(-1)
+        num_elements = fp16_output_flat.size(0)
+        element_size_bytes = fp16_output.element_size()
+
+        # Calculate chunk size dynamically based on max_chunk_memory
+        # Divide the max_chunk_memory by twice the element size
+        chunk_size = max_chunk_memory // (element_size_bytes * 2)
+        chunk_size = min(chunk_size, num_elements)
+
+        # Chunk the computation
+        for i in range(0, num_elements, chunk_size):
+            fp16_chunk = fp16_output_flat[i:i+chunk_size]
+            int_w_chunk = int_w_output_flat[i:i+chunk_size]
+            
+            # Compute the loss for the chunk
+            chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
+            loss += chunk_loss
+
+        # Normalize the loss by the total number of elements
+        loss /= num_elements
+
+        return loss
+
 
     @torch.no_grad()
     def _search_best_clip(self, layer, named_linears, input_feat):
@@ -570,7 +601,7 @@ class AwqQuantizer:
         # Useful for trust_remote_code models.
         module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
 
-        self.inps = layer(self.inps, **module_kwargs)[0]
+        self.inps = self._module_forward(self.inps, layer, module_kwargs)
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
