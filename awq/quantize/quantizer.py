@@ -245,12 +245,13 @@ class AwqQuantizer:
             module_output = []
             for i in range(0, x.shape[0], self.n_calib_samples):
                 x_partial = x[i : i + self.n_calib_samples]
-                fp16_partial_output = module(x_partial, **module_kwargs)
-                module_output.append(
-                    fp16_partial_output[0]
-                    if isinstance(module_output, tuple)
-                    else fp16_partial_output
-                )
+                partial_output = module(x_partial, **module_kwargs)
+
+                if isinstance(partial_output, tuple):
+                    partial_output = partial_output[0]
+
+                module_output.append(partial_output)
+
             module_output = torch.cat(module_output, dim=0)
 
         return module_output
