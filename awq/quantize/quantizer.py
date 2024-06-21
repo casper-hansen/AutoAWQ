@@ -360,6 +360,10 @@ class AwqQuantizer:
             scales = scales / (scales.max() * scales.min()).sqrt()
             scales_view = scales.view(1, -1).to(device)
 
+            # avoid scaling values that overflow
+            scales[torch.isinf(scales)] = 1
+            scales[torch.isnan(scales)] = 1
+
             # Q(W * s)
             for fc in linears2scale:
                 fc.weight.mul_(scales_view)
