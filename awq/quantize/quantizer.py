@@ -41,7 +41,7 @@ class AwqQuantizer:
         modules_to_not_convert=None,
         export_compatible=False,
         apply_clip=True,
-        n_calib_samples=None,
+        n_parallel_calib_samples=None,
         max_calib_samples=128,
         max_calib_seq_len=512,
     ) -> None:
@@ -58,7 +58,7 @@ class AwqQuantizer:
         self.duo_scaling = duo_scaling
         self.export_compatible = export_compatible
         self.apply_clip = apply_clip
-        self.n_calib_samples = n_calib_samples
+        self.n_parallel_calib_samples = n_parallel_calib_samples
         self.max_calib_samples = max_calib_samples
         self.max_calib_seq_len = max_calib_seq_len
         self.modules_to_not_convert = (
@@ -241,17 +241,17 @@ class AwqQuantizer:
     def _module_forward(
         self, x: torch.Tensor, module: torch.nn.Module, module_kwargs: Dict
     ) -> torch.Tensor:
-        if self.n_calib_samples is None:
+        if self.n_parallel_calib_samples is None:
             # runs through all samples at once
             module_output = module(x, **module_kwargs)
             if isinstance(module_output, tuple):
                 module_output = module_output[0]
         else:
             # memory efficiently runs through all calibration samples
-            # but only n_calib_samples at a time
+            # but only n_parallel_calib_samples at a time
             module_output = []
-            for i in range(0, x.shape[0], self.n_calib_samples):
-                x_partial = x[i : i + self.n_calib_samples]
+            for i in range(0, x.shape[0], self.n_parallel_calib_samples):
+                x_partial = x[i : i + self.n_parallel_calib_samples]
                 partial_output = module(x_partial, **module_kwargs)
 
                 if isinstance(partial_output, tuple):
