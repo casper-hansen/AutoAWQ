@@ -61,6 +61,7 @@ class AwqQuantizer:
         self.n_parallel_calib_samples = n_parallel_calib_samples
         self.max_calib_samples = max_calib_samples
         self.max_calib_seq_len = max_calib_seq_len
+        self.max_chunk_memory = 1024 * 1024 * 1024 // 10
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
@@ -298,8 +299,22 @@ class AwqQuantizer:
         w_mean = w_scale.mean(0)
         clear_memory(weight)
 
-        # [STEP 2]: Compute per-channel mean of the input activation
-        x_mean = inp.abs().view(-1, inp.shape[-1]).mean(0)
+        # [STEP 2]: Compute per-channel mean of the input activation with chunking
+        inp_flat = inp.abs().view(-1, inp.shape[-1])
+        num_elements = inp_flat.size(0)
+        num_channels = inp_flat.size(1)
+        element_size_bytes = inp_flat.element_size()
+        
+        # Calculate chunk size dynamically based on max_chunk_memory
+        chunk_size = self.max_chunk_memory // (element_size_bytes * num_channels)
+        chunk_size = min(chunk_size, num_elements)
+
+        x_mean = torch.zeros(num_channels, dtype=inp.dtype, device=inp.device)
+        for i in range(0, num_elements, chunk_size):
+            end = min(i + chunk_size, num_elements)
+            x_mean += inp_flat[i:end].sum(dim=0)
+
+        x_mean /= num_elements
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
@@ -397,7 +412,6 @@ class AwqQuantizer:
         self,
         fp16_output: torch.Tensor,
         int_w_output: torch.Tensor,
-        max_chunk_memory=1024 * 1024 * 1024 // 10, # 100 MB
     ):
         loss = 0.0
         fp16_output_flat = fp16_output.view(-1)
@@ -407,7 +421,7 @@ class AwqQuantizer:
 
         # Calculate chunk size dynamically based on max_chunk_memory
         # Divide the max_chunk_memory by twice the element size
-        chunk_size = max_chunk_memory // (element_size_bytes * 2)
+        chunk_size = self.max_chunk_memory // (element_size_bytes * 2)
         chunk_size = min(chunk_size, num_elements)
 
         # Chunk the computation
