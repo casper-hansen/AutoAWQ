@@ -80,6 +80,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "starcoder2": "AutoModelForCausalLM",
     "phi3": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
+    "minicpm":"AutoModelForCausalLM"
 }
 
 
