@@ -162,6 +162,18 @@ class BaseAWQForCausalLM(nn.Module):
                 "You can set this to a low number for more memory efficient quantization."
             ),
         ] = None,
+        max_calib_samples: Annotated[
+            int,
+            Doc(
+                "The maximum number of samples to run through the model."
+            )
+        ] = 128,
+        max_calib_seq_len: Annotated[
+            int,
+            Doc(
+                "The maximum sequence length of the calibration dataset. Discard samples greater than max_calib_seq_len."
+            )
+        ] = 512
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -201,6 +213,8 @@ class BaseAWQForCausalLM(nn.Module):
             export_compatible=export_compatible,
             apply_clip=apply_clip,
             n_calib_samples=n_calib_samples,
+            max_calib_samples=max_calib_samples,
+            max_calib_seq_len=max_calib_seq_len,
         )
         self.quantizer.quantize()
 
