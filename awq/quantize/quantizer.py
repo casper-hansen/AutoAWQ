@@ -41,6 +41,8 @@ class AwqQuantizer:
         modules_to_not_convert=None,
         export_compatible=False,
         apply_clip=True,
+        n_samples=128,
+        seqlen=512,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -58,7 +60,10 @@ class AwqQuantizer:
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
-        self.modules, self.module_kwargs, self.inps = self.init_quant()
+        self.modules, self.module_kwargs, self.inps = self.init_quant(
+            n_samples=n_samples,
+            seqlen=seqlen,
+        )
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
