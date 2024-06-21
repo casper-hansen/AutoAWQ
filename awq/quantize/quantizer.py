@@ -458,13 +458,13 @@ class AwqQuantizer:
 
         return best_max_val.squeeze(1)
 
-    def init_quant(self, n_samples=128, seqlen=512):
+    def init_quant(self, n_samples=128, max_seq_len=512):
         modules = self.awq_model.get_model_layers(self.model)
         samples = get_calib_dataset(
             data=self.calib_data,
             tokenizer=self.tokenizer,
             n_samples=n_samples,
-            block_size=seqlen,
+            max_seq_len=max_seq_len,
             split=self.split,
             text_column=self.text_column,
         )
