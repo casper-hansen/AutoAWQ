@@ -232,7 +232,7 @@ class AwqQuantizer:
 
     @torch.no_grad()
     def _module_forward(
-        self, x: torch.Tensor, module: torch.Module, module_kwargs: Dict
+        self, x: torch.Tensor, module: torch.nn.Module, module_kwargs: Dict
     ) -> torch.Tensor:
         if self.n_calib_samples is None:
             # runs through all samples at once
