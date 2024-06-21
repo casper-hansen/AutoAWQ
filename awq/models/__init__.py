@@ -17,3 +17,6 @@ from .qwen2 import Qwen2AWQForCausalLM
 from .gemma import GemmaAWQForCausalLM
 from .stablelm import StableLmAWQForCausalLM
 from .starcoder2 import Starcoder2AWQForCausalLM
+from .phi3 import Phi3AWQForCausalLM
+from .cohere import CohereAWQForCausalLM
+from .minicpm import MiniCPMAWQForCausalLM

@@ -171,6 +171,9 @@ class QuantAttentionFused(nn.Module):
             self.rope = RoPE(self.rotary_dim, max_seq_len, dev, rope_theta)
             self.is_neox = True
 
+        if kwargs.get("is_neox") is not None:
+            self.is_neox = kwargs["is_neox"]
+
     def forward(
         self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
     ):
@@ -189,16 +192,19 @@ class QuantAttentionFused(nn.Module):
             self.start_pos = 0
 
         hf_is_generating = False
+        hf_is_first_forward = "past_key_value" in kwargs and kwargs["past_key_value"] is None
+        hf_is_new_cache_first_forward = "past_key_value" in kwargs and isinstance(kwargs["past_key_value"], DynamicCache) and kwargs["past_key_value"].get_seq_length() == 0
 
         if self.is_hf_transformers and "use_cache" in kwargs:
             hf_is_generating = kwargs["use_cache"]
 
+        # print(kwargs["past_key_value"].get_seq_length())
 
         # In case we re-generate, we need to refresh the starting position
         # to 0. We detect it by checking if `past_key_values` is set to None,
         # which indicates that we are on the first step of `generate()`.
         # This is only applicable for `transformers` integration
-        if (self.is_hf_transformers and "past_key_value" in kwargs and kwargs["past_key_value"] is None) or (self.is_hf_transformers and not hf_is_generating):
+        if (self.is_hf_transformers and (hf_is_first_forward or hf_is_new_cache_first_forward)) or (self.is_hf_transformers and not hf_is_generating):
             self.start_pos = 0
     
 

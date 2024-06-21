@@ -26,6 +26,9 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gemma": GemmaAWQForCausalLM,
     "stablelm": StableLmAWQForCausalLM,
     "starcoder2": Starcoder2AWQForCausalLM,
+    "phi3": Phi3AWQForCausalLM,
+    "cohere": CohereAWQForCausalLM,
+    "minicpm": MiniCPMAWQForCausalLM,
 }
 
 
@@ -80,9 +83,11 @@ class AutoAWQForCausalLM:
         fuse_layers=True,
         use_exllama=False,
         use_exllama_v2=False,
+        use_qbits=False,
         batch_size=1,
         safetensors=True,
         device_map="balanced",
+        max_memory=None,
         offload_folder=None,
         download_kwargs=None,
         **config_kwargs,
@@ -106,8 +111,10 @@ class AutoAWQForCausalLM:
             fuse_layers=fuse_layers,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
+            use_qbits=use_qbits,
             safetensors=safetensors,
             device_map=device_map,
+            max_memory=max_memory,
             offload_folder=offload_folder,
             download_kwargs=download_kwargs,
             **config_kwargs,

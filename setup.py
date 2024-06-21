@@ -31,8 +31,9 @@ def get_kernels_whl_url(
     return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
 
 
-AUTOAWQ_VERSION = "0.2.4"
+AUTOAWQ_VERSION = "0.2.5"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
+IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 if CUDA_VERSION:
@@ -48,7 +49,9 @@ if ROCM_VERSION:
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
 
 if not PYPI_BUILD:
-    if CUDA_VERSION:
+    if IS_CPU_ONLY:
+        AUTOAWQ_VERSION += "+cpu"
+    elif CUDA_VERSION:
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     elif ROCM_VERSION:
         AUTOAWQ_VERSION += f"+rocm{ROCM_VERSION}"
@@ -130,6 +133,8 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Your system have a GPU with an unsupported CUDA or ROCm version. "
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
+elif IS_CPU_ONLY:
+    requirements.append("intel-extension-for-transformers>=1.4.2")
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":

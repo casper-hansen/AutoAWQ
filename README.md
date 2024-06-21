@@ -2,9 +2,9 @@
 
 <p align="center">
 | <a href="https://github.com/casper-hansen/AutoAWQ/issues/32"><b>Roadmap</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/tree/main/examples"><b>Examples</b></a> | <a href="https://github.com/casper-hansen/AutoAWQ/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22"><b>Issues: Help Wanted</b></a> |
-
 </p>
-<p align="center">
+
+<p align="center" style="margin-bottom: 0px;">
     <a href="https://huggingface.co/models?search=awq">
         <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
     </a>
@@ -16,9 +16,21 @@
     </a>
 </p>
 
+<div align="center" style="color: white;">
+    <p>Supported by</p>
+    <a href="https://runpod.io/?utm_source=referral&utm_medium=autoAWQ">
+    <img src="https://github.com/aadil-runpod/rp-logo/assets/164108768/a8fc546d-cbab-44c4-9a5a-dfb6c400ad24" alt="RunPod Logo" width="100" border="0">  </a>
+</div>
+
 AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16. AutoAWQ implements the Activation-aware Weight Quantization (AWQ) algorithm for quantizing LLMs.  AutoAWQ was created and improved upon from the [original work](https://github.com/mit-han-lab/llm-awq) from MIT.
 
 *Latest News* 🔥
+- [2024/06] CPU inference support (x86) - thanks Intel. Cohere and Phi3 support.
+- [2024/04] StableLM and StarCoder2 support.
+- [2024/03] Gemma support.
+- [2024/02] PEFT-compatible training in FP16.
+- [2024/02] AMD ROCm support through ExLlamaV2 kernels.
+- [2024/01] Export to GGUF, ExLlamaV2 kernels, 60% faster context processing.
 - [2023/12] Mixtral, LLaVa, QWen, Baichuan model support.
 - [2023/11] AutoAWQ inference has been integrated into 🤗 transformers. Now includes CUDA 12.1 wheels.
 - [2023/10] Mistral (Fused Modules), Bigcode, Turing support, Memory Bug Fix (Saves 2GB VRAM)
@@ -231,6 +243,29 @@ GPU: 2x NVIDIA GeForce RTX 4090
 | Mixtral | 46.7B | 🔵GEMM        |            1 |             1024 |            1024 |           2598.95  |           84.6753 | 25.75 GB (54.44%) |
 | Mixtral | 46.7B | 🔵GEMM        |            1 |             2048 |            2048 |           2446.15  |           77.0516 | 27.98 GB (59.15%) |
 | Mixtral | 46.7B | 🔵GEMM        |            1 |             4096 |            4096 |           1985.78  |           77.5689 | 34.65 GB (73.26%) |
+
+### CPU
+
+- CPU: INTEL(R) XEON(R) PLATINUM 8592+ with 8-channel 4800MT/s memory.
+- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
+
+|   Model | Size | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory (RAM) |
+|--------:|------:|-----------:|-------------:|-----------------:|----------------:|---------------:|:------------------|
+| Mixtral |   7B | 1          | 64             | 64            | 389.24           | 16.01           | 5.59 GB (0.02%) |
+| Mixtral |   7B | 1          | 2048             | 2048            | 1412           | 17.76         | 6.29 GB (0.03%) |
+| Vicuna  |   7B | 1          | 64             | 64            | 346           | 18.13         | 8.18 GB (0.03%) |
+| Vicuna  |   7B | 1          | 2048             | 2048            | 1023.4           | 18.18         | 8.80 GB (0.04%) |
+| LLaMA2  |   13B | 1          | 64             | 64            | 160.24           | 9.87         | 14.65 GB (0.06%) |
+| LLaMA2  |   13B | 1          | 2048             | 2048            | 592.35           | 9.93         | 16.87 GB (0.07%) |
+| Mosaicml  | 7B | 1          | 64             | 64            | 433.17           | 18.79         | 4.60 GB (0.02%) |
+| Mosaicml  | 7B | 1          | 2048             | 2048            | 404.25           | 19.91         | 4.75 GB (0.02%) |
+| Falcon  | 7B | 1          | 64             | 64            | 303.16           | 14.41         | 5.18 GB (0.02%) |
+| Falcon  | 7B | 1          | 2048             | 2048            | 634.57           | 15.55         | 5.80 GB (0.02%) |
+| CodeLlama  | 34B | 1          | 64             | 64            | 153.73           | 4.23         | 29.00 GB (0.12%) |
+| CodeLlama  | 34B | 1          | 2048             | 2048            | 274.25           | 4.38         | 35.21 GB (0.15%) |
+| Deepseek-coder  | 33B | 1          | 64             | 64            | 83.08           | 4.07         | 22.16 GB (0.09%) |
+| Deepseek-coder  | 33B | 1          | 2048             | 2048            | 296.04           | 4.33         | 37.05 GB |
+
 
 ## Reference
 
