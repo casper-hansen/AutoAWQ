@@ -506,6 +506,8 @@ class BaseAWQForCausalLM(nn.Module):
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
 
+        model.eval()
+
         return self(
             model,
             model_type,
