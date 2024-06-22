@@ -54,8 +54,4 @@ def exclude_layers_to_not_quantize(linear_layers, modules_to_not_convert):
     for name, linear_layer in linear_layers.items():
         if not any(key in name for key in modules_to_not_convert):
             filtered_layers[name] = linear_layer
-        # For Deepseek-V2
-        # Do not filter mlp.gate_proj when filtering mlp.gate
-        if "mlp.gate" in modules_to_not_convert and "mlp.gate_proj" in name:
-            filtered_layers[name] = linear_layer
     return filtered_layers

@@ -6,7 +6,6 @@ from .base import BaseAWQForCausalLM
 class DeepseekV2AWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "DeepseekV2DecoderLayer"
     max_seq_len_key = "max_position_embeddings"
-    modules_to_not_convert = ["mlp.gate"]
 
     @staticmethod
     def get_model_layers(model):
