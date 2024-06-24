@@ -256,7 +256,7 @@ class AwqQuantizer:
         weight = weight.view(-1, self.group_size)
         # Calculates the relative magnitude of the weights within each of the quantization groups, 
         # and rescales each group individually so that each group has weights on a 0-1 scale.
-        w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+        w_scale = weight.abs() / (weight.abs().amax(dim=1, keepdim=True) + 1e-6)
         # Resizes the rescaled weight matrix back up to its original dimensions
         w_scale = w_scale.view(org_shape)
         # Gets the average rescaled magnitude for each output channel
