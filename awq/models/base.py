@@ -80,7 +80,8 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "starcoder2": "AutoModelForCausalLM",
     "phi3": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
-    "minicpm":"AutoModelForCausalLM"
+    "deepseek_v2": "AutoModelForCausalLM",
+    "minicpm":"AutoModelForCausalLM",
 }
 
 
@@ -505,6 +506,8 @@ class BaseAWQForCausalLM(nn.Module):
                 max_input_len=max_seq_len or 2048,
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
+
+        model.eval()
 
         return self(
             model,
