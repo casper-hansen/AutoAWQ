@@ -29,6 +29,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "phi3": Phi3AWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
+    "minicpm": MiniCPMAWQForCausalLM,
 }
 
 
