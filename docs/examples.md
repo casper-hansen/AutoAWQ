@@ -133,6 +133,53 @@ tokenizer.save_pretrained(quant_path)
 print(f'Model is quantized and saved at "{quant_path}"')
 ```
 
+#### Coding models
+
+For this example, we will use deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct as it's an excellent coding model.
+
+```python
+from tqdm import tqdm
+from datasets import load_dataset
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct'
+quant_path = 'deepseek-coder-v2-lite-instruct-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+def load_openhermes_coding():
+    data = load_dataset("alvarobartt/openhermes-preferences-coding", split="train")
+
+    samples = []
+    for sample in data:
+        responses = [f'{response["role"]}: {response["content"]}' for response in sample["chosen"]]
+        samples.append("\n".join(responses))
+
+    return samples
+
+# Quantize
+model.quantize(
+    tokenizer,
+    quant_config=quant_config,
+    calib_data=load_openhermes_coding(),
+    n_parallel_calib_samples=32,
+    max_calib_samples=128,
+    max_calib_seq_len=4096
+)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
 ### GGUF Export
 
 This computes AWQ scales and appliesthem to the model without running real quantization.
