@@ -322,7 +322,7 @@ class AwqQuantizer:
 
             # NOTE: s^-1 * x is fused here, according to paper
             if self.duo_scaling:
-                scales = (x_mean.pow(ratio) / w_mean.pow(1 - ratio)).clamp(min=1e-4)
+                scales = (x_mean.pow(ratio) / (w_mean.pow(1 - ratio) + 1e-4)).clamp(min=1e-4)
             else:
                 scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
             scales = scales / (scales.max() * scales.min()).sqrt()
