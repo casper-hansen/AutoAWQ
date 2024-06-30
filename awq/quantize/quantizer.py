@@ -305,18 +305,20 @@ class AwqQuantizer:
         inp_flat = inp.abs().view(-1, inp.shape[-1])
         num_elements = inp_flat.size(0)
         num_channels = inp_flat.size(1)
-        element_size_bytes = inp_flat.element_size()
+        element_size_bytes = inp_flat.element_size() * 2 # multiplied by 2 for FP32
 
         # Calculate chunk size dynamically based on max_chunk_memory
-        chunk_size = self.max_chunk_memory // (element_size_bytes * num_channels)
+        chunk_size = int(self.max_chunk_memory // (element_size_bytes * num_channels))
         chunk_size = min(chunk_size, num_elements)
 
-        x_mean = torch.zeros(num_channels, dtype=inp.dtype, device=inp.device)
+        # Use float32 for sum calculation
+        x_sum = torch.zeros(num_channels, dtype=torch.float32, device=inp.device)
+        
         for i in range(0, num_elements, chunk_size):
             end = min(i + chunk_size, num_elements)
-            x_mean += inp_flat[i:end].sum(dim=0)
+            x_sum += inp_flat[i:end].to(torch.float32).sum(dim=0)
 
-        x_mean /= num_elements
+        x_mean = (x_sum / num_elements).to(inp.dtype)
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
@@ -365,41 +367,43 @@ class AwqQuantizer:
         x_mean = x_mean.view(-1).to(device)
         w_mean = w_mean.view(-1).to(device)
 
-        for ratio in tqdm(range(n_grid), desc="Grid Search", leave=False):
-            # create new scales
-            ratio = ratio / n_grid
+        with tqdm(range(n_grid), desc="Grid Search", leave=False) as pbar:
+            for ratio in pbar:
+                # create new scales
+                ratio = ratio / n_grid
 
-            # NOTE: s^-1 * x is fused here, according to paper
-            if self.duo_scaling:
-                scales = (x_mean.pow(ratio) / w_mean.pow(1 - ratio)).clamp(min=1e-4)
-            else:
-                scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
-            scales = scales / (scales.max() * scales.min()).sqrt()
-            scales_view = scales.view(1, -1).to(device)
+                # NOTE: s^-1 * x is fused here, according to paper
+                if self.duo_scaling:
+                    scales = (x_mean.pow(ratio) / w_mean.pow(1 - ratio)).clamp(min=1e-4)
+                else:
+                    scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
+                scales = scales / (scales.max() * scales.min()).sqrt()
+                scales_view = scales.view(1, -1).to(device)
 
-            # avoid scaling values that overflow
-            scales[torch.isinf(scales)] = 1
-            scales[torch.isnan(scales)] = 1
+                # avoid scaling values that overflow
+                scales[torch.isinf(scales)] = 1
+                scales[torch.isnan(scales)] = 1
 
-            # Q(W * s)
-            for fc in linears2scale:
-                fc.weight.mul_(scales_view)
-                fc.weight.data = (
-                    self.pseudo_quantize_tensor(fc.weight.data)[0] / scales_view
-                )
+                # Q(W * s)
+                for fc in linears2scale:
+                    fc.weight.mul_(scales_view)
+                    fc.weight.data = (
+                        self.pseudo_quantize_tensor(fc.weight.data)[0] / scales_view
+                    )
 
-            # W * X
-            int_w_output = self._module_forward(x, module2inspect, kwargs)
+                # W * X
+                int_w_output = self._module_forward(x, module2inspect, kwargs)
 
-            # compute mean squared error (L2 norm)
-            loss = self._compute_loss(fp16_output, int_w_output)
+                # compute mean squared error (L2 norm)
+                loss = self._compute_loss(fp16_output, int_w_output)
 
-            history.append(loss)
-            if loss < best_error:
-                best_error = loss
-                best_ratio = ratio
-                best_scales = scales.clone()
-            module2inspect.load_state_dict(org_sd)
+                history.append(loss)
+                if loss < best_error:
+                    best_error = loss
+                    best_ratio = ratio
+                    best_scales = scales.clone()
+                module2inspect.load_state_dict(org_sd)
+                pbar.set_description(f"Grid Search (Best: {best_ratio})")
 
         if best_ratio == -1:
             logging.debug(history)
@@ -431,14 +435,16 @@ class AwqQuantizer:
         int_w_chunks = torch.split(int_w_output_flat, chunk_size)
 
         # Compute the loss for each chunk
-        for fp16_chunk, int_w_chunk in tqdm(
+        with tqdm(
             zip(fp16_chunks, int_w_chunks),
             total=len(fp16_chunks),
             desc="Computing Loss",
             leave=False,
-        ):
-            chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
-            loss += chunk_loss
+        ) as pbar:
+            for fp16_chunk, int_w_chunk in pbar:
+                chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
+                loss += chunk_loss
+                pbar.set_description(f"Computing Loss (loss: {loss:.2f})")
 
         # Normalize the loss by the total number of elements
         loss /= num_elements
