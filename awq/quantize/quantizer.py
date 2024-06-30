@@ -44,6 +44,7 @@ class AwqQuantizer:
         n_parallel_calib_samples=None,
         max_calib_samples=128,
         max_calib_seq_len=512,
+        max_chunk_memory=1024 * 1024 * 1024,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -61,7 +62,7 @@ class AwqQuantizer:
         self.n_parallel_calib_samples = n_parallel_calib_samples
         self.max_calib_samples = max_calib_samples
         self.max_calib_seq_len = max_calib_seq_len
-        self.max_chunk_memory = 1024 * 1024 * 1024
+        self.max_chunk_memory = max_chunk_memory
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
@@ -429,7 +430,7 @@ class AwqQuantizer:
         int_w_chunks = torch.split(int_w_output_flat, chunk_size)
 
         # Compute the loss for each chunk
-        for fp16_chunk, int_w_chunk in zip(fp16_chunks, int_w_chunks):
+        for fp16_chunk, int_w_chunk in tqdm(zip(fp16_chunks, int_w_chunks), total=len(fp16_chunks), desc="Computing Loss", leave=False):
             chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
             loss += chunk_loss
 

@@ -176,7 +176,15 @@ class BaseAWQForCausalLM(nn.Module):
             Doc(
                 "The maximum sequence length of the calibration dataset. Discard samples greater than max_calib_seq_len."
             )
-        ] = 512
+        ] = 512,
+        max_chunk_memory: Annotated[
+            int,
+            Doc(
+                "The loss computation and per-channel mean is optimized into chunked computations."
+                " Adjust this parameter to increase or decrease memory usage for these computations."
+                " Default is 1GB (1024 * 1024 * 1024)."
+            )
+        ] = 1024 * 1024 * 1024
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -218,6 +226,7 @@ class BaseAWQForCausalLM(nn.Module):
             n_parallel_calib_samples=n_parallel_calib_samples,
             max_calib_samples=max_calib_samples,
             max_calib_seq_len=max_calib_seq_len,
+            max_chunk_memory=max_chunk_memory,
         )
         self.quantizer.quantize()
 
