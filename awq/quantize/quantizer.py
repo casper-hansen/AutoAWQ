@@ -61,7 +61,7 @@ class AwqQuantizer:
         self.n_parallel_calib_samples = n_parallel_calib_samples
         self.max_calib_samples = max_calib_samples
         self.max_calib_seq_len = max_calib_seq_len
-        self.max_chunk_memory = 1024 * 1024 * 1024 // 10
+        self.max_chunk_memory = 1024 * 1024 * 1024
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
@@ -165,7 +165,7 @@ class AwqQuantizer:
             )
             scales_list = [
                 self._search_best_scale(self.modules[i], **layer)
-                for layer in module_config
+                for layer in tqdm(module_config, desc="Best Scales", leave=False)
             ]
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
             scales_list = append_str_prefix(
@@ -251,14 +251,14 @@ class AwqQuantizer:
             # memory efficiently runs through all calibration samples
             # but only n_parallel_calib_samples at a time
             module_output = []
-            for i in range(0, x.shape[0], self.n_parallel_calib_samples):
-                x_partial = x[i : i + self.n_parallel_calib_samples]
+            partitioned_inputs = torch.split(x, self.n_parallel_calib_samples)
+            for x_partial in tqdm(partitioned_inputs, desc="Module forward", leave=False):
                 partial_output = module(x_partial, **module_kwargs)
 
                 if isinstance(partial_output, tuple):
                     partial_output = partial_output[0]
 
-                module_output.append(partial_output)
+                module_output.append(partial_output.cpu())
 
             module_output = torch.cat(module_output, dim=0)
 
@@ -363,7 +363,7 @@ class AwqQuantizer:
         x_mean = x_mean.view(-1).to(device)
         w_mean = w_mean.view(-1).to(device)
 
-        for ratio in range(n_grid):
+        for ratio in tqdm(range(n_grid), desc="Grid Search", leave=False):
             # create new scales
             ratio = ratio / n_grid
 
@@ -424,12 +424,12 @@ class AwqQuantizer:
         chunk_size = self.max_chunk_memory // (element_size_bytes * 2)
         chunk_size = min(chunk_size, num_elements)
 
-        # Chunk the computation
-        for i in range(0, num_elements, chunk_size):
-            fp16_chunk = fp16_output_flat[i:i+chunk_size]
-            int_w_chunk = int_w_output_flat[i:i+chunk_size]
-            
-            # Compute the loss for the chunk
+        # Split the computation into chunks
+        fp16_chunks = torch.split(fp16_output_flat, chunk_size)
+        int_w_chunks = torch.split(int_w_output_flat, chunk_size)
+
+        # Compute the loss for each chunk
+        for fp16_chunk, int_w_chunk in zip(fp16_chunks, int_w_chunks):
             chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
             loss += chunk_loss
 
@@ -444,7 +444,7 @@ class AwqQuantizer:
         clip_list = []
         avoid_clipping = ["q_", "k_", "query", "key", "Wqkv"]
 
-        for name in named_linears:
+        for name in tqdm(named_linears, desc="Computing Best Clip", leave=False):
             # due to qk bmm, it is hard to clip precisely
             if any([_ in name for _ in avoid_clipping]):
                 continue
