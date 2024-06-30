@@ -48,7 +48,7 @@ class DeepseekV2AWQForCausalLM(BaseAWQForCausalLM):
                         module.self_attn.q_a_proj,
                         module.self_attn.kv_a_proj_with_mqa,
                     ],
-                    inp=input_feat["self_attn.q_proj"],
+                    inp=input_feat["self_attn.q_a_proj"],
                     module2inspect=module.self_attn,
                     kwargs=module_kwargs,
                 )
