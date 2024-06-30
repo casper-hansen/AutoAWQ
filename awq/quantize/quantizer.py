@@ -302,7 +302,8 @@ class AwqQuantizer:
         clear_memory(weight)
 
         # [STEP 2]: Compute per-channel mean of the input activation with chunking
-        inp_flat = inp.abs().view(-1, inp.shape[-1])
+        # move inp to cpu to avoid memory leak
+        inp_flat = inp.cpu().abs().view(-1, inp.shape[-1])
         num_elements = inp_flat.size(0)
         num_channels = inp_flat.size(1)
         element_size_bytes = inp_flat.element_size() * 2 # multiplied by 2 for FP32
@@ -316,9 +317,11 @@ class AwqQuantizer:
         
         for i in range(0, num_elements, chunk_size):
             end = min(i + chunk_size, num_elements)
-            x_sum += inp_flat[i:end].to(torch.float32).sum(dim=0)
+            chunk_sum = inp_flat[i:end].to(torch.float32).sum(dim=0)
+            x_sum += chunk_sum.to(inp.device)
 
         x_mean = (x_sum / num_elements).to(inp.dtype)
+        clear_memory(x_sum)
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
@@ -338,13 +341,13 @@ class AwqQuantizer:
 
     def _compute_best_scale(
         self,
-        x,
-        w_mean,
-        x_mean,
-        module2inspect,
+        x: torch.Tensor,
+        w_mean: torch.Tensor,
+        x_mean: torch.Tensor,
+        module2inspect: torch.nn.Module,
         linears2scale: List[nn.Linear],
         fp16_output: torch.Tensor,
-        kwargs={},
+        kwargs: Dict={},
     ):
         """
         Compute loss and select best scales
@@ -395,7 +398,7 @@ class AwqQuantizer:
                 int_w_output = self._module_forward(x, module2inspect, kwargs)
 
                 # compute mean squared error (L2 norm)
-                loss = self._compute_loss(fp16_output, int_w_output)
+                loss = self._compute_loss(fp16_output, int_w_output, device)
 
                 history.append(loss)
                 if loss < best_error:
@@ -418,6 +421,7 @@ class AwqQuantizer:
         self,
         fp16_output: torch.Tensor,
         int_w_output: torch.Tensor,
+        device: torch.device,
     ):
         loss = 0.0
         fp16_output_flat = fp16_output.view(-1)
@@ -442,7 +446,7 @@ class AwqQuantizer:
             leave=False,
         ) as pbar:
             for fp16_chunk, int_w_chunk in pbar:
-                chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
+                chunk_loss = (fp16_chunk.to(device) - int_w_chunk.to(device)).float().pow(2).sum().item()
                 loss += chunk_loss
                 pbar.set_description(f"Computing Loss (loss: {loss:.2f})")
 
