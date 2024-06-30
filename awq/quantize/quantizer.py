@@ -67,8 +67,7 @@ class AwqQuantizer:
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
         self.modules, self.module_kwargs, self.inps = self.init_quant(
-            n_samples=self.max_calib_samples,
-            max_seq_len=self.max_calib_seq_len
+            n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
         )
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
@@ -253,7 +252,9 @@ class AwqQuantizer:
             # but only n_parallel_calib_samples at a time
             module_output = []
             partitioned_inputs = torch.split(x, self.n_parallel_calib_samples)
-            for x_partial in tqdm(partitioned_inputs, desc="Module forward", leave=False):
+            for x_partial in tqdm(
+                partitioned_inputs, desc="Module forward", leave=False
+            ):
                 partial_output = module(x_partial, **module_kwargs)
 
                 if isinstance(partial_output, tuple):
@@ -305,7 +306,7 @@ class AwqQuantizer:
         num_elements = inp_flat.size(0)
         num_channels = inp_flat.size(1)
         element_size_bytes = inp_flat.element_size()
-        
+
         # Calculate chunk size dynamically based on max_chunk_memory
         chunk_size = self.max_chunk_memory // (element_size_bytes * num_channels)
         chunk_size = min(chunk_size, num_elements)
@@ -430,7 +431,12 @@ class AwqQuantizer:
         int_w_chunks = torch.split(int_w_output_flat, chunk_size)
 
         # Compute the loss for each chunk
-        for fp16_chunk, int_w_chunk in tqdm(zip(fp16_chunks, int_w_chunks), total=len(fp16_chunks), desc="Computing Loss", leave=False):
+        for fp16_chunk, int_w_chunk in tqdm(
+            zip(fp16_chunks, int_w_chunks),
+            total=len(fp16_chunks),
+            desc="Computing Loss",
+            leave=False,
+        ):
             chunk_loss = (fp16_chunk - int_w_chunk).float().pow(2).sum().item()
             loss += chunk_loss
 
@@ -438,7 +444,6 @@ class AwqQuantizer:
         loss /= num_elements
 
         return loss
-
 
     @torch.no_grad()
     def _search_best_clip(self, layer, named_linears, input_feat):

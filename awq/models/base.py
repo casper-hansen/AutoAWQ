@@ -81,7 +81,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "phi3": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
     "deepseek_v2": "AutoModelForCausalLM",
-    "minicpm":"AutoModelForCausalLM",
+    "minicpm": "AutoModelForCausalLM",
 }
 
 
@@ -166,16 +166,13 @@ class BaseAWQForCausalLM(nn.Module):
             ),
         ] = None,
         max_calib_samples: Annotated[
-            int,
-            Doc(
-                "The maximum number of samples to run through the model."
-            )
+            int, Doc("The maximum number of samples to run through the model.")
         ] = 128,
         max_calib_seq_len: Annotated[
             int,
             Doc(
                 "The maximum sequence length of the calibration dataset. Discard samples greater than max_calib_seq_len."
-            )
+            ),
         ] = 512,
         max_chunk_memory: Annotated[
             int,
@@ -183,8 +180,10 @@ class BaseAWQForCausalLM(nn.Module):
                 "The loss computation and per-channel mean is optimized into chunked computations."
                 " Adjust this parameter to increase or decrease memory usage for these computations."
                 " Default is 1GB (1024 * 1024 * 1024)."
-            )
-        ] = 1024 * 1024 * 1024
+            ),
+        ] = 1024
+        * 1024
+        * 1024,
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -345,7 +344,8 @@ class BaseAWQForCausalLM(nn.Module):
             ),
         ] = None,
         download_kwargs: Annotated[
-            Dict, Doc("Used for configure download model"),
+            Dict,
+            Doc("Used for configure download model"),
         ] = None,
         **model_init_kwargs: Annotated[
             Dict,
@@ -357,9 +357,12 @@ class BaseAWQForCausalLM(nn.Module):
         """A method for initialization of pretrained models, usually in FP16."""
         # Get weights path and quant config
         model_weights_path, config, quant_config = self._load_config(
-            self, model_path, "", safetensors,
+            self,
+            model_path,
+            "",
+            safetensors,
             trust_remote_code=trust_remote_code,
-            download_kwargs=download_kwargs
+            download_kwargs=download_kwargs,
         )
 
         target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
@@ -442,7 +445,7 @@ class BaseAWQForCausalLM(nn.Module):
             ),
         ] = "balanced",
         max_memory: Annotated[
-            Dict[Union[int, str], Union[int, str]], 
+            Dict[Union[int, str], Union[int, str]],
             Doc(
                 'A dictionary device identifier to maximum memory which will be passed onto the model loading method from transformers. For example：{0: "4GB",1: "10GB"'
             ),
@@ -452,7 +455,8 @@ class BaseAWQForCausalLM(nn.Module):
             Doc("The folder ot offload the model to."),
         ] = None,
         download_kwargs: Annotated[
-            Dict, Doc("Used for configure download model"),
+            Dict,
+            Doc("Used for configure download model"),
         ] = None,
         **config_kwargs: Annotated[
             Dict,
@@ -488,11 +492,15 @@ class BaseAWQForCausalLM(nn.Module):
         use_cpu_qbits = use_qbits or get_best_device() == "cpu"
         if use_cpu_qbits:
             if not qbits_available:
-                raise ImportError("Please install intel-extension-for-transformers with "
-                                  "`pip install intel-extension-for-transformers` for 'qbits' kernel!")
+                raise ImportError(
+                    "Please install intel-extension-for-transformers with "
+                    "`pip install intel-extension-for-transformers` for 'qbits' kernel!"
+                )
 
             fuse_layers = False
-            logging.warn("Unsupport fuse_layers featrue for CPU device with QBits backend!")
+            logging.warn(
+                "Unsupport fuse_layers featrue for CPU device with QBits backend!"
+            )
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
             self,
@@ -580,7 +588,9 @@ class BaseAWQForCausalLM(nn.Module):
                 elif isinstance(download_kwargs_ignore_patterns, list):
                     ignore_patterns.extend(download_kwargs_ignore_patterns)
 
-            model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns, **download_kwargs)
+            model_path = snapshot_download(
+                model_path, ignore_patterns=ignore_patterns, **download_kwargs
+            )
 
         if model_filename != "":
             model_weights_path = model_path + f"/{model_filename}"
@@ -654,13 +664,17 @@ class BaseAWQForCausalLM(nn.Module):
                     q_linear_module = WQLinear_GEMVFast
 
                 if use_qbits:
-                    q_linear = q_linear_module.from_linear(module,
-                                                           quant_config.w_bit,
-                                                           quant_config.q_group_size,
-                                                           True,
-                                                           has_zero_points=quant_config.zero_point)
+                    q_linear = q_linear_module.from_linear(
+                        module,
+                        quant_config.w_bit,
+                        quant_config.q_group_size,
+                        True,
+                        has_zero_points=quant_config.zero_point,
+                    )
                 else:
-                    q_linear = q_linear_module.from_linear(module, quant_config.w_bit, quant_config.q_group_size, True)
+                    q_linear = q_linear_module.from_linear(
+                        module, quant_config.w_bit, quant_config.q_group_size, True
+                    )
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
 
