@@ -1,13 +1,14 @@
 import torch
+import warnings
 import torch.nn as nn
 
 try:
     import awq_ext  # with CUDA kernels
 
     AWQ_INSTALLED = True
-except:
+except Exception as ex:
     AWQ_INSTALLED = False
-
+    warnings.warn(f"AutoAWQ could not load GEMV kernels extension. Details: {ex}")
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
