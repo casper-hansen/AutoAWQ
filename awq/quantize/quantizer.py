@@ -391,10 +391,11 @@ class AwqQuantizer:
                 # avoid scaling values that overflow
                 scales[torch.isinf(scales)] = 1
                 scales[torch.isnan(scales)] = 1
+                for fc in linears2scale:
+                    scales_view[torch.isinf(fc.weight.mul(scales_view)).sum(dim=0).unsqueeze(0) > 0] = 1
 
                 # Q(W * s)
                 for fc in linears2scale:
-                    scales_view[torch.isinf(fc.weight.mul(scales_view)).sum(dim=0).unsqueeze(0) > 0] = 1
                     fc.weight.mul_(scales_view)
                     fc.weight.data = (
                         self.pseudo_quantize_tensor(fc.weight.data)[0] / scales_view
