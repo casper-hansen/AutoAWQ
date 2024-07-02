@@ -443,3 +443,71 @@ class Phi3Block(nn.Module):
         out = h + self.mlp.forward(self.norm_2(h))
 
         return out, None, past_key_value
+    
+class PhiBlock(nn.Module):
+    def __init__(
+        self,
+        hidden_size,
+        n_heads,
+        n_kv_heads,
+        qkv_layer,
+        dense,
+        mlp,
+        norm_1,
+        dev,
+        max_seq_len,
+        rope_theta=10000,
+        rope_scaling=None,
+        partial_rotary_factor=1.0
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = hidden_size // n_heads
+
+        self.hidden_size = hidden_size
+        self.norm_1 = norm_1.to(dev)
+        self.attn = QuantAttentionFused(
+            self.hidden_size,
+            self.n_heads,
+            self.n_kv_heads,
+            qkv_layer,
+            dense,
+            dev=dev,
+            max_seq_len=max_seq_len,
+            use_alibi=False,
+            rope_theta=rope_theta,
+            rope_scaling=rope_scaling,
+            partial_rotary_factor=partial_rotary_factor,
+            head_dim=self.head_dim,
+        ).to(dev)
+
+        self.mlp = mlp.to(dev)
+        self.device = dev
+    
+    def forward(
+        self,
+        hidden_states,
+        past_key_value,
+        attn_bias=None,
+        attention_mask=None,
+        is_causal=None,
+    ):
+        # Implemented as per PhiDecoderLayer's `forward`
+
+        if hidden_states.device.type != self.device.type:
+            print(f"Warning! hidden states device {hidden_states.device.type} not the same as PhiBlock device {self.device.type}.")
+        hidden_states = hidden_states.to(self.device)
+
+        norm_out = self.norm_1(hidden_states)
+
+        attn_out, _, past_key_value = self.attn(
+            hidden_states=norm_out,
+            past_key_value=past_key_value,
+            attention_mask=attention_mask
+        )
+
+        ff_hidden = self.mlp(norm_out)
+
+        out = attn_out + ff_hidden + hidden_states
+        return out, None, past_key_value

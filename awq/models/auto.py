@@ -26,6 +26,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "gemma": GemmaAWQForCausalLM,
     "stablelm": StableLmAWQForCausalLM,
     "starcoder2": Starcoder2AWQForCausalLM,
+    "phi": PhiAWQForCausalLM,
     "phi3": Phi3AWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
