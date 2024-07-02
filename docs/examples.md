@@ -145,7 +145,7 @@ from transformers import AutoTokenizer
 
 model_path = 'deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct'
 quant_path = 'deepseek-coder-v2-lite-instruct-awq'
-quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": "GEMM" }
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
@@ -168,9 +168,10 @@ model.quantize(
     tokenizer,
     quant_config=quant_config,
     calib_data=load_openhermes_coding(),
-    n_parallel_calib_samples=32,
-    max_calib_samples=128,
-    max_calib_seq_len=4096
+    # MODIFY these parameters if need be:
+    # n_parallel_calib_samples=32,
+    # max_calib_samples=128,
+    # max_calib_seq_len=4096
 )
 
 # Save quantized model
