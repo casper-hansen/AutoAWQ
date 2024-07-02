@@ -7,23 +7,21 @@ from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
 )
-from transformers.models.llava.modeling_llava import (
-    LlavaForConditionalGeneration as OldLlavaForConditionalGeneration,
-)
+from transformers.models.llava_next.modeling_llava_next import LlavaNextForConditionalGeneration
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
-class LlavaAWQForCausalLM(BaseAWQForCausalLM):
+class LlavaNextAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_seq_len_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldLlavaForConditionalGeneration):
-        fuser = LlavaFuser(model)
+    def fuse_layers(model: LlavaNextForConditionalGeneration):
+        fuser = LlavaNextFuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldLlavaForConditionalGeneration):
+    def get_model_layers(model: LlavaNextForConditionalGeneration):
         return model.language_model.model.layers
 
     @staticmethod
@@ -31,7 +29,7 @@ class LlavaAWQForCausalLM(BaseAWQForCausalLM):
         return dict(is_scalable=False)
 
     @staticmethod
-    def move_embed(model: OldLlavaForConditionalGeneration, device: str):
+    def move_embed(model: LlavaNextForConditionalGeneration, device: str):
         model.language_model.model.embed_tokens = model.get_input_embeddings().to(
             device
         )
@@ -88,8 +86,8 @@ class LlavaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class LlavaFuser:
-    def __init__(self, model: OldLlavaForConditionalGeneration):
+class LlavaNextFuser:
+    def __init__(self, model: LlavaNextForConditionalGeneration):
         self.model = model.language_model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
@@ -143,3 +141,6 @@ class LlavaFuser:
             self.model.model.norm,
         )
         setattr(self.model.model, "blocks", self.model.model.blocks)
+
+
+
