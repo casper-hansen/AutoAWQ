@@ -78,6 +78,109 @@ tokenizer.save_pretrained(quant_path)
 print(f'Model is quantized and saved at "{quant_path}"')
 ```
 
+#### Long-context: Optimizing quantization
+
+For this example, we will use HuggingFaceTB/cosmopedia-100k as it's a high-quality dataset and
+we can filter directly on the number of tokens. We will use Qwen2 7B, one of the newer supported
+models in AutoAWQ which is high-performing. The following example ran smoothly on a machine with
+an RTX 4090 24 GB VRAM with 107 GB system RAM.
+
+NOTE: Adjusting `n_parallel_calib_samples`, `max_calib_samples`, and `max_calib_seq_len` will help
+avoid OOM when customizing your dataset.
+
+- The AWQ algorithm is incredibly sample efficient, so `max_calib_samples` of 128-256 should be
+sufficient to quantize a model. A higher number of samples may not be possible without significant
+memory available or without further optimizing AWQ with a PR for disk offload.
+- When `n_parallel_calib_samples` is set to an integer, we offload to system RAM to save GPU VRAM.
+This may cause OOM on your system if you have little memory available; we are looking to optimize
+this further in future versions.
+
+```python
+from datasets import load_dataset
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'Qwen/Qwen2-7B-Instruct'
+quant_path = 'qwen2-7b-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+def load_cosmopedia():
+    data = load_dataset('HuggingFaceTB/cosmopedia-100k', split="train")
+    data = data.filter(lambda x: x["text_token_length"] >= 2048)
+
+    return [text for text in data["text"]]
+
+# Quantize
+model.quantize(
+    tokenizer,
+    quant_config=quant_config,
+    calib_data=load_cosmopedia(),
+    n_parallel_calib_samples=32,
+    max_calib_samples=128,
+    max_calib_seq_len=4096
+)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
+#### Coding models
+
+For this example, we will use deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct as it's an excellent coding model.
+
+```python
+from tqdm import tqdm
+from datasets import load_dataset
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct'
+quant_path = 'deepseek-coder-v2-lite-instruct-awq'
+quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+def load_openhermes_coding():
+    data = load_dataset("alvarobartt/openhermes-preferences-coding", split="train")
+
+    samples = []
+    for sample in data:
+        responses = [f'{response["role"]}: {response["content"]}' for response in sample["chosen"]]
+        samples.append("\n".join(responses))
+
+    return samples
+
+# Quantize
+model.quantize(
+    tokenizer,
+    quant_config=quant_config,
+    calib_data=load_openhermes_coding(),
+    # MODIFY these parameters if need be:
+    # n_parallel_calib_samples=32,
+    # max_calib_samples=128,
+    # max_calib_seq_len=4096
+)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
 ### GGUF Export
 
 This computes AWQ scales and appliesthem to the model without running real quantization.
