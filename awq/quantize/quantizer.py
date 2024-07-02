@@ -71,6 +71,8 @@ class AwqQuantizer:
         )
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
+        org_w_dtype = w.dtype
+        w = w.float()
         org_w_shape = w.shape
         if self.group_size > 0:
             assert org_w_shape[-1] % self.group_size == 0
@@ -105,6 +107,9 @@ class AwqQuantizer:
         scales = scales.view(org_w_shape[0], -1)
         w = w.reshape(org_w_shape)
 
+        w, scales, zeros = w.to(org_w_dtype), scales.to(org_w_dtype), (
+            zeros.to(org_w_dtype) if zeros is not None else None
+        )
         return w, scales, zeros
 
     def pseudo_dequantize_tensor(
@@ -386,6 +391,8 @@ class AwqQuantizer:
                 # avoid scaling values that overflow
                 scales[torch.isinf(scales)] = 1
                 scales[torch.isnan(scales)] = 1
+                for fc in linears2scale:
+                    scales_view[torch.isinf(fc.weight.mul(scales_view)).sum(dim=0).unsqueeze(0) > 0] = 1
 
                 # Q(W * s)
                 for fc in linears2scale:
