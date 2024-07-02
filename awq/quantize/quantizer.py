@@ -490,7 +490,11 @@ class AwqQuantizer:
         group_size = self.group_size if self.group_size > 0 else org_w_shape[1]
         input_feat = input_feat.view(-1, input_feat.shape[-1])
         input_feat = input_feat.reshape(1, input_feat.shape[0], -1, group_size)
-        input_feat = input_feat[:, 0 :: input_feat.shape[1] // n_sample_token]
+
+        # Compute input feature step size (minimum 1)
+        step_size = max(1, input_feat.shape[1] // n_sample_token)
+        input_feat = input_feat[:, ::step_size]
+        
         w = w.reshape(org_w_shape[0], 1, -1, group_size)
 
         oc_batch_size = 256 if org_w_shape[0] % 256 == 0 else 64  # prevent OOM
