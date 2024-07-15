@@ -22,6 +22,15 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
         )
 
     @staticmethod
+    def fake_input_feat():
+        return {
+            "self_attn.q_proj": None,
+            "self_attn.out_proj": None,
+            "fc1": None,
+            "fc2": None,
+        }
+        
+    @staticmethod
     def get_layers_for_scaling(module: OPTDecoderLayer, input_feat, module_kwargs):
         layers = []
 
@@ -37,6 +46,8 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
                 inp=input_feat["self_attn.q_proj"],
                 module2inspect=module.self_attn,
                 kwargs=module_kwargs,
+                layer_names=["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
+                prev_op_name="self_attn_layer_norm",
             )
         )
 
@@ -46,6 +57,8 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=module.self_attn.v_proj,
                 layers=[module.self_attn.out_proj],
                 inp=input_feat["self_attn.out_proj"],
+                layer_names=["self_attn.out_proj"],
+                prev_op_name="self_attn.v_proj",
             )
         )
 
@@ -55,6 +68,8 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=module.final_layer_norm,
                 layers=[module.fc1],
                 inp=input_feat["fc1"],
+                layer_names=["fc1"],
+                prev_op_name="final_layer_norm",
             )
         )
 
@@ -64,6 +79,8 @@ class OptAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=module.fc1,
                 layers=[module.fc2],
                 inp=input_feat["fc2"],
+                layer_names=["fc2"],
+                prev_op_name="fc1",
             )
         )
 

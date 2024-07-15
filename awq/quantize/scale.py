@@ -9,6 +9,13 @@ from transformers.models.llama.modeling_llama import LlamaRMSNorm
 from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
 from transformers.models.cohere.modeling_cohere import CohereLayerNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
+import logging
+
+logger = logging.getLogger("autoround")
+fh = logging.StreamHandler()
+fh_formatter = logging.Formatter("%(asctime)s %(levelname)s %(filename)s L%(lineno)d: %(message)s", "%Y-%m-%d %H:%M:%S")
+fh.setFormatter(fh_formatter)
+logger.addHandler(fh)
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, CohereLayerNorm]
 allowed_act_fns = [
@@ -33,8 +40,19 @@ def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
         layer.cpu()
 
 
+def _preprocess_scale(scales: torch.Tensor):
+    print(f"there are {torch.isnan(scales).sum()} nan in scales")
+    # replace all zero and nan to 1
+    scales[scales == 0] = 1.0
+    scales[scales.isnan()] = 1.0
+    assert torch.isnan(scales).sum() == 0, f"nan found in scales: {scales}"
+    return scales
+
 def apply_scale(module, scales_list, input_feat_dict=None):
     for prev_op_name, layer_names, scales in scales_list:
+        # breakpoint()
+        scales = _preprocess_scale(scales)
+        logger.info(f"Scaling {prev_op_name} -> {layer_names}, scale range: {scales.min()} - {scales.max()}")
         prev_op = get_op_by_name(module, prev_op_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
 
@@ -77,10 +95,10 @@ def apply_scale(module, scales_list, input_feat_dict=None):
                     inp = input_feat_dict[layer_name]
                     inp.div_(scales.view(1, -1).to(inp.device))
 
-        prev_op.cpu()
-        for layer in layers:
-            layer.cpu()
-        scales.cpu()
+        # prev_op.cpu()
+        # for layer in layers:
+        #     layer.cpu()
+        # scales.cpu()
 
 
 @torch.no_grad()
@@ -114,16 +132,34 @@ def scale_ln_fcs(ln: nn.Linear, fcs: List[nn.Linear], scales: torch.Tensor):
 
 @torch.no_grad()
 def scale_fc_fc(fc1: nn.Linear, fc2: nn.Linear, scales: torch.Tensor):
+    """Apply the weight scales to a pair of linears, like fc1 - fc2.
+    
+    y1 = fc1(x) = x@W1^T
+    y2 = fc2(y1) = y1@W2^T
+    
+    y2 = (x@W1^T)@W2^T = x@(W2@W1)^T =  x@((W2 *scale) @ (1/scale * W1))^T
+                [out_features  , in_features   ]
+    fc1 weight: [hidden_dim * 4, hidden_dim    ]
+    fc2 weight: [hidden_dim    , hidden_dim * 4]
+    scales    : [hidden_dim * 4]
+    
+    For examples:
+        (fc1): Linear(in_features=768, out_features=3072, bias=True)
+        (fc2): Linear(in_features=3072, out_features=768, bias=True)
+
+        scales: [3072]
+        
+    """
     assert isinstance(fc1, nn.Linear)
     assert isinstance(fc2, nn.Linear)
 
     scales = scales.to(fc1.weight.device)
 
-    fc1.weight[-scales.size(0) :].div_(scales.view(-1, 1))
+    fc1.weight[-scales.size(0) :] = fc1.weight[-scales.size(0) :].div(scales.view(-1, 1))
     if fc1.bias is not None:
-        fc1.bias.div_(scales.view(-1))
-
-    fc2.weight.mul_(scales.view(1, -1))
+        fc1.bias = fc1.bias.div(scales.view(-1))
+    # [1, fc2.in_features]
+    fc2.weight = fc2.weight.mul(scales.view(1, -1))
 
     for p in fc1.parameters():
         assert torch.isnan(p).sum() == 0

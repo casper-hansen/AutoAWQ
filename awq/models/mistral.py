@@ -33,6 +33,15 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
 
     @staticmethod
+    def fake_input_feat():
+        return {
+            "self_attn.q_proj": None,
+            "self_attn.o_proj": None,
+            "mlp.gate_proj": None,
+            "mlp.down_proj": None,
+        }
+    
+    @staticmethod
     def get_layers_for_scaling(
         module: OldMistralDecoderLayer, input_feat, module_kwargs
     ):
@@ -50,6 +59,8 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
                 inp=input_feat["self_attn.q_proj"],
                 module2inspect=module.self_attn,
                 kwargs=module_kwargs,
+                layer_names=['self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj'],
+                prev_op_name='input_layernorm',
             )
         )
 
@@ -61,6 +72,8 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
                     prev_op=module.self_attn.v_proj,
                     layers=[module.self_attn.o_proj],
                     inp=input_feat["self_attn.o_proj"],
+                    layer_names=['self_attn.o_proj'],
+                    prev_op_name='self_attn.v_proj',
                 )
             )
 
@@ -71,6 +84,8 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
                 layers=[module.mlp.gate_proj, module.mlp.up_proj],
                 inp=input_feat["mlp.gate_proj"],
                 module2inspect=module.mlp,
+                layer_names=['mlp.gate_proj', 'mlp.up_proj'],
+                prev_op_name='post_attention_layernorm',
             )
         )
 
@@ -80,6 +95,8 @@ class MistralAWQForCausalLM(BaseAWQForCausalLM):
                 prev_op=module.mlp.up_proj,
                 layers=[module.mlp.down_proj],
                 inp=input_feat["mlp.down_proj"],
+                layer_names=['mlp.down_proj'],
+                prev_op_name='mlp.up_proj',
             )
         )
 

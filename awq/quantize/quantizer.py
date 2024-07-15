@@ -24,6 +24,17 @@ from awq.utils.module import (
 )
 
 
+from typing import Dict,Any,Tuple
+
+import dataclasses
+import torch
+@dataclasses.dataclass
+class ScaleInfo:
+    pre_op_name: str
+    layer_names: Tuple[str]
+    best_scales: torch.Tensor
+    
+    
 class AwqQuantizer:
     def __init__(
         self,
@@ -157,7 +168,32 @@ class AwqQuantizer:
                 self._search_best_scale(self.modules[i], **layer)
                 for layer in module_config
             ]
+            # self.modules[i] is a transformer block, like `OPTDecoderLayer`
+            # OPTDecoderLayer(
+            # (self_attn): OPTAttention(
+            #     (k_proj): Linear(in_features=768, out_features=768, bias=True)
+            #     (v_proj): Linear(in_features=768, out_features=768, bias=True)
+            #     (q_proj): Linear(in_features=768, out_features=768, bias=True)
+            #     (out_proj): Linear(in_features=768, out_features=768, bias=True)
+            # )
+            # (activation_fn): ReLU()
+            # (self_attn_layer_norm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+            # (fc1): Linear(in_features=768, out_features=3072, bias=True)
+            # (fc2): Linear(in_features=3072, out_features=768, bias=True)
+            # (final_layer_norm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+            # )
+            # (Pdb) scales_list[0][:2]
+            # ('self_attn_layer_norm', ('self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj'))
+            # (Pdb) scales_list[1][:2]
+            # ('self_attn.v_proj', ('self_attn.out_proj',))
+            # (Pdb) scales_list[2][:2]
+            # ('final_layer_norm', ('fc1',))
+            # (Pdb) scales_list[3][:2]
+            # ('fc1', ('fc2',))
+            # (Pdb) scales_list[4][:2]
+            breakpoint()
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
+            # breakpoint()
             scales_list = append_str_prefix(
                 scales_list, get_op_name(self.model, self.modules[i]) + "."
             )
@@ -173,8 +209,8 @@ class AwqQuantizer:
                 )
 
             # [STEP 4]: Quantize weights
-            if not self.export_compatible:
-                self._apply_quant(self.modules[i], named_linears)
+            # if not self.export_compatible:
+            #     self._apply_quant(self.modules[i], named_linears)
 
             clear_memory()
 
@@ -252,6 +288,8 @@ class AwqQuantizer:
         # All layer weights are concatted together
         weight = torch.cat([_m.weight for _m in layers], dim=0)
         org_shape = weight.shape
+        print(f"start to handle module: {module}\n prev_op: {prev_op} \n catted weight shape:{org_shape}")
+        
         # The weights are reshaped to be organised by quantization group
         weight = weight.view(-1, self.group_size)
         # Calculates the relative magnitude of the weights within each of the quantization groups, 
@@ -278,7 +316,10 @@ class AwqQuantizer:
         best_scales = self._compute_best_scale(
             inp, w_mean, x_mean, module2inspect, layers, fp16_output, module_kwargs
         )
-
+        # Return format 
+        # (prev_op_name: str, layer_names_lst: List[str], best_scales: torch.Tensor)
+        print(f"got best scales with shape: {best_scales.shape}")
+        # breakpoint()
         return (
             get_op_name(module, prev_op),
             tuple([get_op_name(module, m) for m in layers]),
