@@ -4,7 +4,6 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
-import torch.multiprocessing as mp
 from collections import defaultdict
 from typing import Dict, List, Optional
 from torch.nn.parallel import DataParallel
@@ -165,11 +164,10 @@ class AwqQuantizer:
             module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
                 self.modules[i], input_feat, self.module_kwargs
             )
-            scales_list = self._parallel_search_best_scale(self.modules[i], module_config)
-            # scales_list = [
-            #     self._search_best_scale(self.modules[i], **layer)
-            #     for layer in tqdm(module_config, desc="Best Scales", leave=False)
-            # ]
+            scales_list = [
+                self._search_best_scale(self.modules[i], **layer)
+                for layer in tqdm(module_config, desc="Best Scales", leave=False)
+            ]
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
             scales_list = append_str_prefix(
                 scales_list, get_op_name(self.model, self.modules[i]) + "."
@@ -269,43 +267,6 @@ class AwqQuantizer:
 
         return module_output
 
-    def _parallel_search_best_scale(self, module, module_config):
-        devices = [i for i in range(torch.cuda.device_count())]
-        num_devices = len(devices)
-        chunks = [module_config[i::num_devices] for i in range(num_devices)]
-
-        results = []
-        for device, chunk in zip(devices, chunks):
-            process = mp.Process(
-                target=self._search_best_scale_worker,
-                args=(module, chunk, device, results),
-                daemon=True,
-            )
-
-        for process in mp.active_children():
-            process.join()
-
-        # Flatten and sort results
-        scales_list = [item for sublist in results for item in sublist]
-        scales_list.sort(key=lambda x: module_config.index(x[1]))
-        
-        return scales_list
-
-    def _search_best_scale_worker(self, module, config_chunk, device, results):
-        torch.cuda.set_device(device)
-        module = module.to(device)
-        
-        chunk_results = []
-        for layer in tqdm(config_chunk, desc=f"Best Scales ({device})", leave=False):
-            result = self._search_best_scale(module, **layer)
-            chunk_results.append(result)
-        
-        results.append(chunk_results)
-        
-        # Move module back to CPU to free GPU memory
-        module.cpu()
-        torch.cuda.empty_cache()
-
     @torch.no_grad()
     def _search_best_scale(
         self,
@@ -389,15 +350,6 @@ class AwqQuantizer:
         fp16_output: torch.Tensor,
         kwargs: Dict={},
     ):
-        """
-        Compute loss and select best scales
-
-        L(s) = || Q(W * s) (s^-1 * X) - W * X ||
-        Q: weight quantization function | pseudo_quantize_tensor(W * s)
-        X: inputs from calib dataset    | X
-        W: original weights in FP16     | layer
-        s: per channel scaling factor   | s^-1 * X
-        """
         n_grid = 20
         history = []
         best_ratio = -1
@@ -410,43 +362,100 @@ class AwqQuantizer:
         x_mean = x_mean.view(-1).to(device)
         w_mean = w_mean.view(-1).to(device)
 
-        with tqdm(range(n_grid), desc="Grid Search", leave=False) as pbar:
-            for ratio in pbar:
-                # create new scales
+        # Define a function to process a single ratio
+        def process_ratio(ratios: torch.Tensor):
+            loss_list = []
+            ratio_list = []
+            scales_list = []
+            
+            # Ensure all inputs are on the same device
+            target_device = ratios.device
+            x_local = x.to(target_device)
+            kwargs_local = {k: v.to(target_device) if isinstance(v, (torch.Tensor, nn.Module)) else v for k, v in kwargs.items()}
+            module2inspect_local = module2inspect.to(target_device)
+            x_mean_local = x_mean.to(target_device)
+            w_mean_local = w_mean.to(target_device)
+            fp16_output_local = fp16_output.to(target_device)
+
+            for ratio in ratios:
                 ratio = ratio / n_grid
 
                 # NOTE: s^-1 * x is fused here, according to paper
                 if self.duo_scaling:
-                    scales = (x_mean.pow(ratio) / (w_mean.pow(1 - ratio) + 1e-4)).clamp(min=1e-4)
+                    scales = (x_mean_local.pow(ratio) / (w_mean_local.pow(1 - ratio) + 1e-4)).clamp(min=1e-4)
                 else:
-                    scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
+                    scales = x_mean_local.pow(ratio).clamp(min=1e-4).view(-1)
                 scales = scales / (scales.max() * scales.min()).sqrt()
-                scales_view = scales.view(1, -1).to(device)
+                scales_view = scales.view(1, -1)
 
                 # avoid scaling values that overflow
                 scales[torch.isinf(scales)] = 1
                 scales[torch.isnan(scales)] = 1
 
+                # Create a local copy of the module state
+                local_state_dict = {k: v.to(target_device) for k, v in org_sd.items()}
+                module2inspect_local.load_state_dict(local_state_dict)
+                module2inspect_local = module2inspect_local.to(target_device)
+
                 # Q(W * s)
                 for fc in linears2scale:
-                    fc.weight.mul_(scales_view)
-                    fc.weight.data = (
-                        self.pseudo_quantize_tensor(fc.weight.data)[0] / scales_view
+                    fc_local = fc.to(target_device)
+                    fc_local.weight.mul_(scales_view)
+                    fc_local.weight.data = (
+                        self.pseudo_quantize_tensor(fc_local.weight.data)[0].to(target_device) / scales_view
                     )
 
                 # W * X
-                int_w_output = self._module_forward(x, module2inspect, kwargs)
+                try:
+                    module2inspect_local = module2inspect_local.to(target_device)
+                    int_w_output = self._module_forward(x_local, module2inspect_local, kwargs_local)
+                except Exception as e:
+                    print(f"Error in _module_forward: {e}")
+                    kwargs_devices = [v.device.index for k, v in kwargs_local.items() if isinstance(v, torch.Tensor)]
+                    for idx, m in module2inspect_local.named_modules():
+                        if isinstance(m, nn.Linear):
+                            print(f"{idx}: ratio={ratio.item()}, weight_device={m.weight.device}, target_device={target_device}, x_device={x_local.device}, kwargs_devices={kwargs_devices}")
+                    raise
+
+                print("success", [idx for idx, m in module2inspect_local.named_modules() if isinstance(m, nn.Linear)])
 
                 # compute mean squared error (L2 norm)
-                loss = self._compute_loss(fp16_output, int_w_output, device)
+                loss = self._compute_loss(fp16_output_local, int_w_output, target_device)
 
-                history.append(loss)
-                if loss < best_error:
-                    best_error = loss
-                    best_ratio = ratio
-                    best_scales = scales.clone()
-                module2inspect.load_state_dict(org_sd)
-                pbar.set_description(f"Grid Search (Best: {best_ratio})")
+                loss_list.append(loss)
+                ratio_list.append(ratio)
+                scales_list.append(scales)
+
+                # Reset the module to its original state
+                module2inspect_local.load_state_dict(org_sd)
+
+            return loss_list, ratio_list, scales_list
+
+        class RatioProcessor(nn.Module):
+            def __init__(self, process_ratio_func):
+                super().__init__()
+                self.process_ratio_func = process_ratio_func
+
+            def forward(self, ratio):
+                return self.process_ratio_func(ratio)
+
+        # Wrap the process_ratio function with DataParallel
+        ratio_processor = RatioProcessor(process_ratio)
+
+        # Wrap the RatioProcessor with DataParallel
+        parallel_processor = DataParallel(ratio_processor)
+
+        # Process all ratios in parallel
+        ratios = torch.arange(n_grid, dtype=torch.float32).cuda()
+        results = parallel_processor(ratios)
+
+        for loss, ratio, scales in results:
+            history.append(loss)
+            if loss < best_error:
+                best_error = loss
+                best_ratio = ratio
+                best_scales = scales.clone()
+            module2inspect.load_state_dict(org_sd)
 
         if best_ratio == -1:
             logging.debug(history)
