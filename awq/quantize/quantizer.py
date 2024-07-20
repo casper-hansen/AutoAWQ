@@ -276,11 +276,10 @@ class AwqQuantizer:
 
         results = []
         for device, chunk in zip(devices, chunks):
-            process = mp.spawn(
+            process = mp.Process(
                 target=self._search_best_scale_worker,
                 args=(module, chunk, device, results),
                 daemon=True,
-                join=True,
             )
 
         for process in mp.active_children():
