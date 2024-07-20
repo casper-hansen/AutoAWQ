@@ -4,8 +4,10 @@ import logging
 import functools
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Dict, List, Optional
+import torch.multiprocessing as mp
 from collections import defaultdict
+from typing import Dict, List, Optional
+from torch.nn.parallel import DataParallel
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.utils.utils import clear_memory, get_best_device
@@ -163,10 +165,11 @@ class AwqQuantizer:
             module_config: List[Dict] = self.awq_model.get_layers_for_scaling(
                 self.modules[i], input_feat, self.module_kwargs
             )
-            scales_list = [
-                self._search_best_scale(self.modules[i], **layer)
-                for layer in tqdm(module_config, desc="Best Scales", leave=False)
-            ]
+            scales_list = self._parallel_search_best_scale(self.modules[i], module_config)
+            # scales_list = [
+            #     self._search_best_scale(self.modules[i], **layer)
+            #     for layer in tqdm(module_config, desc="Best Scales", leave=False)
+            # ]
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
             scales_list = append_str_prefix(
                 scales_list, get_op_name(self.model, self.modules[i]) + "."
@@ -265,6 +268,44 @@ class AwqQuantizer:
             module_output = torch.cat(module_output, dim=0)
 
         return module_output
+
+    def _parallel_search_best_scale(self, module, module_config):
+        devices = [i for i in range(torch.cuda.device_count())]
+        num_devices = len(devices)
+        chunks = [module_config[i::num_devices] for i in range(num_devices)]
+
+        results = []
+        for device, chunk in zip(devices, chunks):
+            process = mp.spawn(
+                target=self._search_best_scale_worker,
+                args=(module, chunk, device, results),
+                daemon=True,
+                join=True,
+            )
+
+        for process in mp.active_children():
+            process.join()
+
+        # Flatten and sort results
+        scales_list = [item for sublist in results for item in sublist]
+        scales_list.sort(key=lambda x: module_config.index(x[1]))
+        
+        return scales_list
+
+    def _search_best_scale_worker(self, module, config_chunk, device, results):
+        torch.cuda.set_device(device)
+        module = module.to(device)
+        
+        chunk_results = []
+        for layer in tqdm(config_chunk, desc=f"Best Scales ({device})", leave=False):
+            result = self._search_best_scale(module, **layer)
+            chunk_results.append(result)
+        
+        results.append(chunk_results)
+        
+        # Move module back to CPU to free GPU memory
+        module.cpu()
+        torch.cuda.empty_cache()
 
     @torch.no_grad()
     def _search_best_scale(
