@@ -59,8 +59,6 @@ docker_command = (
     "'"
 )
 
-print(docker_command); exit(0)
-
 template = runpod.create_template(
     name=template_name,
     image_name=docker_image,
