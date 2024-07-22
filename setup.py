@@ -31,7 +31,7 @@ def get_kernels_whl_url(
     return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
 
 
-AUTOAWQ_VERSION = "0.2.5"
+AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 
