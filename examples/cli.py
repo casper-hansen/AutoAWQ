@@ -1,4 +1,3 @@
-import re
 import argparse
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
