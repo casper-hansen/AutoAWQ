@@ -91,7 +91,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.2.0" } else {$pytorchVersion = "torch==2.0.1"}
+          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.3.1" } else {$pytorchVersion = "torch==2.3.1"}
           python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install build setuptools wheel ninja requests
 
@@ -210,9 +210,9 @@ jobs:
           python -m pip install --upgrade build setuptools wheel requests
 
           if [[ "${{ matrix.rocm }}" == "5.7.1" ]]; then
-            python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/rocm5.7
+            python -m pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/rocm5.7
           elif [[ "${{ matrix.rocm }}" == "5.6.1" ]]; then
-            python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/rocm5.6
+            python -m pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/rocm5.6
           else
             echo Unknown rocm version for python install
             exit 1
