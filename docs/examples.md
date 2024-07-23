@@ -181,6 +181,34 @@ tokenizer.save_pretrained(quant_path)
 print(f'Model is quantized and saved at "{quant_path}"')
 ```
 
+### Vision-Language Models
+
+AutoAWQ supports a few vision-language models. So far, we support LLaVa 1.5 and LLaVa 1.6 (next).
+
+```python
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'llava-hf/llama3-llava-next-8b-hf'
+quant_path = 'llama3-llava-next-8b-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, device_map="cuda", **{"low_cpu_mem_usage": True}
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+# Quantize
+model.quantize(tokenizer, quant_config=quant_config)
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
 ### GGUF Export
 
 This computes AWQ scales and appliesthem to the model without running real quantization.
@@ -405,31 +433,35 @@ AutoAWQ also supports the LLaVa model. You simply need to load an
 AutoProcessor to process the prompt and image to generate inputs for the AWQ model.
 
 ```python
-from awq import AutoAWQForCausalLM
-from transformers import AutoTokenizer, AutoProcessor, TextStreamer
-from PIL import Image
-import requests
 import torch
-
-quant_path = "mesolitica/llava-v1.6-34b-hf-awq"
+import requests
+from PIL import Image
+from awq import AutoAWQForCausalLM
+from transformers import AutoProcessor, TextStreamer
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, safetensors=True, device_map="auto")
+quant_path = "casperhansen/llama3-llava-next-8b-awq"
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False)
 processor = AutoProcessor.from_pretrained(quant_path)
+streamer = TextStreamer(processor, skip_prompt=True)
 
-prompt = """<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\n
-What is shown in this image?<|im_end|><|im_start|>assistant\n"""
+# Define prompt
+prompt = """\
+<|im_start|>system\nAnswer the questions.<|im_end|>
+<|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|>
+<|im_start|>assistant
+"""
 
+# Define image
 url = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
-raw_image = Image.open(requests.get(url, stream=True).raw)
+image = Image.open(requests.get(url, stream=True).raw)
 
+# Load inputs
 inputs = processor(prompt, image, return_tensors='pt').to(0, torch.float16)
-streamer = TextStreamer(processor)
 
-# Generate output
 generation_output = model.generate(
     **inputs,
-    max_new_tokens=1024,
-    streamer = streamer)
-
+    max_new_tokens=512,
+    streamer=streamer
+)
 ```
