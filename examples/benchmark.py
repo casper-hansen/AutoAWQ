@@ -7,12 +7,16 @@ import pandas as pd
 import psutil
 from awq import AutoAWQForCausalLM
 from awq.models.base import BaseAWQForCausalLM
-from awq.utils.utils import get_best_device
+from awq.utils.utils import get_best_device, ipex_available
 from transformers import AutoTokenizer, GenerationConfig, LogitsProcessor, LogitsProcessorList
 
 DEVICE = get_best_device()
 if DEVICE == "cpu":
-    torch_dtype = torch.bfloat16
+    if ipex_available:
+        torch_dtype = torch.bfloat16
+    else:
+        raise ImportError("Please import intel_extension_for_pytorch "
+                          "by `pip install intel_extension_for_pytorch`")
 else:
     torch_dtype = torch.float16
 
