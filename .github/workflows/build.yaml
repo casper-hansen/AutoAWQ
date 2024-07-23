@@ -130,7 +130,7 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         python: ["3.8", "3.9", "3.10", "3.11"]
-        rocm: ["5.6.1", "5.7.1"]
+        rocm: ["5.7.1"]
     defaults:
       run:
         shell: bash
