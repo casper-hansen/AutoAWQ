@@ -20,8 +20,9 @@ def main():
     parser.add_argument("--no-low_cpu_mem_usage", action="store_false", dest="low_cpu_mem_usage", help="Don't use low CPU memory")
     parser.add_argument("--use_cache", action="store_true", help="Use cache")
     parser.add_argument("--no-use_cache", action="store_false", dest="use_cache", help="Don't use cache")
+    parser.add_argument("--device_map", type=str, default=None, help="Device map for loading the pretrained model")
 
-    parser.set_defaults(zero_point=True, low_cpu_mem_usage=True, use_cache=False)
+    parser.set_defaults(zero_point=True, low_cpu_mem_usage=True, use_cache=None)
 
     args = parser.parse_args()
 
@@ -34,11 +35,17 @@ def main():
 
     model_config = {
         "low_cpu_mem_usage": args.low_cpu_mem_usage,
-        "use_cache": args.use_cache
     }
 
+    if args.use_cache is not None:
+        model_config["use_cache"] = args.use_cache
+
     print(f"Loading model from: {args.hf_model_path}")
-    model = AutoAWQForCausalLM.from_pretrained(args.hf_model_path, **model_config)
+    model = AutoAWQForCausalLM.from_pretrained(
+        args.hf_model_path,
+        device_map=args.device_map,
+        **model_config
+    )
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model_path, trust_remote_code=True)
 
     print(f"Quantizing model with config: {quant_config}")
