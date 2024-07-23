@@ -7,7 +7,7 @@ quant_path = "casperhansen/llama-3-8b-instruct-awq"
 
 # Load model
 if get_best_device() == "cpu":
-    model = AutoAWQForCausalLM.from_quantized(quant_path, use_qbits=True, fuse_layers=False)
+    model = AutoAWQForCausalLM.from_quantized(quant_path, use_ipex=True, fuse_layers=False)
 else:
     model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)

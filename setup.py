@@ -134,7 +134,7 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 elif IS_CPU_ONLY:
-    requirements.append("intel-extension-for-transformers>=1.4.2")
+    requirements.append("intel_extension_for_pytorch>=2.4.0")
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":

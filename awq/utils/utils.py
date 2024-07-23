@@ -4,7 +4,7 @@ import torch
 import accelerate
 
 
-qbits_available = importlib.util.find_spec("intel_extension_for_transformers") is not None
+ipex_available = importlib.util.find_spec("intel_extension_for_pytorch") is not None
 
 
 def get_module_by_name_suffix(model, module_name: str):
