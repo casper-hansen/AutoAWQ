@@ -7,17 +7,12 @@ import pandas as pd
 import psutil
 from awq import AutoAWQForCausalLM
 from awq.models.base import BaseAWQForCausalLM
-from awq.utils.utils import get_best_device, qbits_available
+from awq.utils.utils import get_best_device
 from transformers import AutoTokenizer, GenerationConfig, LogitsProcessor, LogitsProcessorList
 
 DEVICE = get_best_device()
 if DEVICE == "cpu":
-    if qbits_available:
-        from intel_extension_for_transformers.qbits import check_isa_supported
-        torch_dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
-    else:
-        raise ImportError("Please import intel-extension-for-transformers "
-                          "by `pip install intel-extension-for-transformers`")
+    torch_dtype = torch.bfloat16
 else:
     torch_dtype = torch.float16
 
@@ -163,7 +158,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         decode_tokens_per_second = 'OOM'
 
     if pretrained:
-        version = "FP16" if DEVICE != "cpu" else "BF16" if check_isa_supported("AMX") else "FP32"
+        version = "FP16" if DEVICE != "cpu" else "BF16"
     else:
         version = model.quant_config.version
 

@@ -53,7 +53,7 @@ with torch.no_grad():
     input = torch.rand(1, in_features, dtype=torch_dtype)
     torch_out = torch.matmul(input, fp_weight)
 
-    qbits_dst = ipex_linear(input)
-    results = torch.amax(qbits_dst - torch_out)
+    ipex_dst = ipex_linear(input)
+    results = torch.amax(ipex_dst - torch_out)
 
-    assert(torch.allclose(qbits_dst, torch_out, rtol=0.06))
+    assert(torch.allclose(ipex_dst, torch_out, rtol=0.06))

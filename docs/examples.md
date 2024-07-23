@@ -287,14 +287,14 @@ generation_output = model.generate(
 ```
 
 ### Inference With CPU
-To run inference with CPU , you should specify `use_qbits=True`. QBits is the backend for CPU including kernel for operators. QBits is a module of the intel-extension-for-transformers package. Up to now, the feature of fusing layers hasn't been ready, you should run model with `fuse_layers=False`.
+To run inference with CPU , you should specify `use_ipex=True`. ipex is the backend for CPU including kernel for operators. ipex is intel_extension_for_pytorch package. Up to now, the feature of fusing layers hasn't been ready, you should run model with `fuse_layers=False`.
 
 ```python
 from awq import AutoAWQForCausalLM
 
 quant_path = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False, use_qbits=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False, use_ipex=True)
 ```
 
 ### Transformers

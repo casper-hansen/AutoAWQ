@@ -31,7 +31,7 @@ from awq.utils.module import (
     set_op_by_name,
     exclude_layers_to_not_quantize,
 )
-from awq.utils.utils import get_best_device, qbits_available
+from awq.utils.utils import get_best_device, ipex_available
 from transformers import (
     AutoConfig,
     PreTrainedModel,
@@ -49,9 +49,6 @@ from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
-
-if qbits_available:
-    from intel_extension_for_transformers.qbits import check_isa_supported
 
 
 # Since we support different `AutoModelForxxx` from transformers
@@ -435,8 +432,8 @@ class BaseAWQForCausalLM(nn.Module):
         use_exllama_v2: Annotated[
             bool, Doc("Whether to map the weights to ExLlamaV2 kernels.")
         ] = False,
-        use_qbits: Annotated[
-            bool, Doc("Whether to map the weights to qbits kernels for CPU device.")
+        use_ipex: Annotated[
+            bool, Doc("Whether to map the weights to ipex kernels for CPU device.")
         ] = False,
         device_map: Annotated[
             Union[str, Dict],
@@ -489,17 +486,17 @@ class BaseAWQForCausalLM(nn.Module):
                 trust_remote_code=trust_remote_code,
             )
 
-        use_cpu_qbits = use_qbits or get_best_device() == "cpu"
-        if use_cpu_qbits:
-            if not qbits_available:
+        use_cpu_ipex = use_ipex or get_best_device() == "cpu"
+        if use_cpu_ipex:
+            if not ipex_available:
                 raise ImportError(
-                    "Please install intel-extension-for-transformers with "
-                    "`pip install intel-extension-for-transformers` for 'qbits' kernel!"
+                    "Please install intel_extension_for_pytorch with "
+                    "`pip install intel_extension_for_pytorch` for 'ipex' kernel!"
                 )
 
             fuse_layers = False
             logging.warn(
-                "Unsupport fuse_layers featrue for CPU device with QBits backend!"
+                "Unsupport fuse_layers featrue for CPU device with ipex backend!"
             )
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
@@ -509,7 +506,7 @@ class BaseAWQForCausalLM(nn.Module):
             quant_config.version,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
-            use_qbits=use_cpu_qbits,
+            use_ipex=use_cpu_ipex,
         )
 
         model.tie_weights()
@@ -530,10 +527,10 @@ class BaseAWQForCausalLM(nn.Module):
         if fuse_layers:
             self.fuse_layers(model)
 
-        if use_cpu_qbits:
-            dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
+        if use_cpu_ipex:
+            dtype = torch.bfloat16
             model.to(dtype=dtype, device="cpu")
-            # repack qweight to match the QBits kernel.
+            # repack qweight to match the ipex kernel.
             model = ipex_post_init(model)
         elif quant_config.version == "marlin":
             model = marlin_post_init(model)
@@ -622,11 +619,11 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(
-        self, model, quant_config, version, use_exllama, use_exllama_v2, use_qbits=False
+        self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
     ):
         # Real quantization of weights
         assert not (
-            version == "gemv" and (use_exllama or use_exllama_v2 or use_qbits)
+            version == "gemv" and (use_exllama or use_exllama_v2 or use_ipex)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -648,7 +645,7 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if use_qbits:
+                if use_ipex:
                     q_linear_module = WQLinear_IPEX
                 elif version == "marlin":
                     q_linear_module = WQLinear_Marlin
@@ -663,7 +660,7 @@ class BaseAWQForCausalLM(nn.Module):
                 elif version == "gemv_fast":
                     q_linear_module = WQLinear_GEMVFast
 
-                if use_qbits:
+                if use_ipex:
                     q_linear = q_linear_module.from_linear(
                         module,
                         quant_config.w_bit,
@@ -678,7 +675,7 @@ class BaseAWQForCausalLM(nn.Module):
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
 
-            if not use_qbits:
+            if not use_ipex:
                 torch.cuda.empty_cache()
             gc.collect()
 
