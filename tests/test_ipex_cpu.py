@@ -1,6 +1,6 @@
 import torch
 from awq.utils.packing_utils import unpack_awq, reverse_awq_order
-from awq.modules.linear.gemm_qbits import BITS_DTYPE_MAPPING, convert_dtype_torch2str
+from awq.modules.linear.gemm_ipex import BITS_DTYPE_MAPPING, convert_dtype_torch2str
 from awq.utils.packing_utils import dequantize_gemm
 from intel_extension_for_transformers import qbits
 torch.manual_seed(0)

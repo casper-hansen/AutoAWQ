@@ -16,7 +16,7 @@ from transformers.modeling_utils import shard_checkpoint
 from awq.modules.linear import (
     WQLinear_GEMM,
     WQLinear_GEMV,
-    WQLinear_QBits,
+    WQLinear_IPEX,
     WQLinear_Marlin,
     WQLinear_Exllama,
     WQLinear_ExllamaV2,
@@ -24,7 +24,7 @@ from awq.modules.linear import (
     marlin_post_init,
     exllama_post_init,
     exllamav2_post_init,
-    qbits_post_init,
+    ipex_post_init,
 )
 from awq.utils.module import (
     get_named_linears,
@@ -534,7 +534,7 @@ class BaseAWQForCausalLM(nn.Module):
             dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
             model.to(dtype=dtype, device="cpu")
             # repack qweight to match the QBits kernel.
-            model = qbits_post_init(model)
+            model = ipex_post_init(model)
         elif quant_config.version == "marlin":
             model = marlin_post_init(model)
         elif use_exllama:
@@ -649,7 +649,7 @@ class BaseAWQForCausalLM(nn.Module):
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
                 if use_qbits:
-                    q_linear_module = WQLinear_QBits
+                    q_linear_module = WQLinear_IPEX
                 elif version == "marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
