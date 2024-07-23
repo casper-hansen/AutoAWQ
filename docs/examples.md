@@ -441,7 +441,7 @@ from transformers import AutoProcessor, TextStreamer
 
 # Load model
 quant_path = "casperhansen/llama3-llava-next-8b-awq"
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False)
+model = AutoAWQForCausalLM.from_quantized(quant_path)
 processor = AutoProcessor.from_pretrained(quant_path)
 streamer = TextStreamer(processor, skip_prompt=True)
 

@@ -17,8 +17,7 @@ class LlavaNextAWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def fuse_layers(model: LlavaNextForConditionalGeneration):
-        fuser = LlavaNextFuser(model)
-        fuser.fuse_transformer()
+        pass
 
     @staticmethod
     def get_model_layers(model: LlavaNextForConditionalGeneration):
