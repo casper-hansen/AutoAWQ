@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, windows-latest]
-        pyver: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        pyver: ["3.8", "3.9", "3.10", "3.11"]
         cuda: ["11.8.0", "12.1.1"]
     defaults:
       run:
@@ -130,7 +130,7 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         python: ["3.8", "3.9", "3.10", "3.11"]
-        rocm: ["5.6.1", "5.7.1"]
+        rocm: ["5.7.1"]
     defaults:
       run:
         shell: bash
