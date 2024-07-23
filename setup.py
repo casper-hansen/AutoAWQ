@@ -41,9 +41,7 @@ if CUDA_VERSION:
 
 ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
 if ROCM_VERSION:
-    if ROCM_VERSION.startswith("5.6"):
-        ROCM_VERSION = "5.6.1"
-    elif ROCM_VERSION.startswith("5.7"):
+    if ROCM_VERSION.startswith("5.7"):
         ROCM_VERSION = "5.7.1"
 
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
@@ -112,7 +110,7 @@ except ImportError:
 if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
     if CUDA_VERSION and CUDA_VERSION.startswith("12"):
         requirements.append("autoawq-kernels")
-    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["561", "571"]:
+    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["571"]:
         gpu_system_version = (
             f"cu{CUDA_VERSION}" if CUDA_VERSION else f"rocm{ROCM_VERSION}"
         )

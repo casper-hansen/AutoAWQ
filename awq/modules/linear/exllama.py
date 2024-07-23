@@ -1,4 +1,5 @@
 import torch
+import warnings
 import torch.nn as nn
 from awq.utils.packing_utils import unpack_reorder_pack
 
@@ -6,8 +7,9 @@ try:
     import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
 
     EXL_INSTALLED = True
-except:
+except Exception as ex:
     EXL_INSTALLED = False
+    warnings.warn(f"AutoAWQ could not load ExLlama kernels extension. Details: {ex}")
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")
