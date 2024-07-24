@@ -9,7 +9,7 @@ runpod.api_key = os.environ.get('RUNPOD_API_KEY')
 # RunPod Parameters
 # get more by running print(runpod.get_gpus())
 template_name = f"AutoAWQ Pod {int(time.time())}"
-docker_image = "runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04"
+docker_image = "madiator2011/better-pytorch:cuda12.1"
 gpu_ids = {
     "MI300X": "AMD Instinct MI300X OAM", # 192 GB, $3.99/h
     "H100": "NVIDIA H100 80GB HBM3", # 80 GB, $3.99/h
@@ -20,15 +20,15 @@ gpu_ids = {
 env_variables = {
     "HF_TOKEN": HF_TOKEN,
 }
-gpu_id = gpu_ids["4090"]
-num_gpus = 1
-system_memory_gb = 100
-system_storage_gb = 150 # fp16 model is downloaded here
-volume_storage_gb = 50 # quantized model is saved here
+gpu_id = gpu_ids["A100"]
+num_gpus = 2
+system_memory_gb = 300
+system_storage_gb = 500 # fp16 model is downloaded here
+volume_storage_gb = 300 # quantized model is saved here
 
 # Quantization Parameters
-hf_model_path = "Qwen/Qwen2-0.5B-Instruct"
-quant_name = "qwen2-0.5b-instruct-awq"
+hf_model_path = "mistralai/Mistral-Large-Instruct-2407"
+quant_name = "Mistral-Large-Instruct-2407-awq".lower()
 local_save_path = f"/workspace/{quant_name}"
 hf_upload_path = f"casperhansen/{quant_name}"
 INSTALL_TRANSFORMERS_MAIN = False
@@ -52,6 +52,7 @@ cli_args = " ".join([f"--{k}" if isinstance(v, bool) else f"--{k} {v}" for k,v i
 
 commands = [
     "cd /workspace",
+    "pip install requests",
     "git clone https://github.com/casper-hansen/AutoAWQ.git",
     "cd AutoAWQ",
     "pip install -e .",
