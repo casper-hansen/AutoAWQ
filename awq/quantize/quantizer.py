@@ -425,7 +425,12 @@ class AwqQuantizer:
                 self.process_ratio_func = process_ratio_func
 
             def forward(self, ratio):
-                return self.process_ratio_func(ratio)
+                losses, ratios, scales = self.process_ratio_func(ratio)
+                return (
+                    torch.tensor(losses, device=ratio.device),
+                    torch.tensor(ratios, device=ratio.device),
+                    torch.stack(scales)  # assuming scales are already tensors
+                )
 
         # Wrap the process_ratio function with DataParallel
         ratio_processor = RatioProcessor(process_ratio)
@@ -435,14 +440,14 @@ class AwqQuantizer:
 
         # Process all ratios in parallel
         ratios = torch.arange(n_grid, dtype=torch.float32).cuda()
-        results = parallel_processor(ratios)
+        losses, ratios, scales = parallel_processor(ratios)
 
-        for loss, ratio, scales in results:
+        for loss, ratio, scale in zip(losses.cpu(), ratios.cpu(), scales.cpu()):
             history.append(loss)
             if loss < best_error:
                 best_error = loss
                 best_ratio = ratio
-                best_scales = scales.clone()
+                best_scales = scale.clone()
             module2inspect.load_state_dict(org_sd)
 
         if best_ratio == -1:
