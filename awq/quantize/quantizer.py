@@ -392,8 +392,9 @@ class AwqQuantizer:
 
                 # Create a local copy of the module state
                 local_state_dict = {k: v.to(target_device) for k, v in org_sd.items()}
+                module2inspect_local = type(module2inspect)(module2inspect.config)
                 module2inspect_local.load_state_dict(local_state_dict)
-                module2inspect_local = module2inspect_local.to(target_device)
+                module2inspect_local = module2inspect_local.to(target_device, torch.half)
 
                 # Q(W * s)
                 for fc in linears2scale:
@@ -404,25 +405,7 @@ class AwqQuantizer:
                     )
 
                 # W * X
-                try:
-                    # Ensure all inputs are on the same device
-                    target_device = x_local.device
-                    module2inspect_local = module2inspect_local.to(target_device)
-                    kwargs_local = {k: v.to(target_device) if isinstance(v, torch.Tensor) else v for k, v in kwargs_local.items()}
-                    
-                    # Recursively move all submodules to the target device
-                    module2inspect_local.apply(lambda m: m.to(target_device) if isinstance(m, nn.Module) else None)
-                    
-                    int_w_output = self._module_forward(x_local, module2inspect_local, kwargs_local)
-                except Exception as e:
-                    print(f"Error in _module_forward: {e}")
-                    kwargs_devices = [v.device.index if isinstance(v, torch.Tensor) else 'N/A' for k, v in kwargs_local.items()]
-                    for idx, m in module2inspect_local.named_modules():
-                        if isinstance(m, nn.Linear):
-                            print(f"{idx}: ratio={ratio.item()}, weight_device={m.weight.device}, target_device={target_device}, x_device={x_local.device}, kwargs_devices={kwargs_devices}")
-                    raise
-
-                # Remove debug print
+                int_w_output = self._module_forward(x_local, module2inspect_local, kwargs_local)
 
                 # compute mean squared error (L2 norm)
                 loss = self._compute_loss(fp16_output_local, int_w_output, target_device)
