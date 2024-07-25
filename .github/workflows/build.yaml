@@ -41,12 +41,12 @@ jobs:
       matrix:
         os: [ubuntu-20.04, windows-latest]
         pyver: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["11.8.0", "12.1.1"]
+        cuda: ["12.1.1"]
     defaults:
       run:
         shell: pwsh
     env:
-      PYPI_CUDA_VERSION: "12.1.1"  
+      PYPI_CUDA_VERSION: "12.1.1"
       CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
@@ -91,7 +91,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.2.0" } else {$pytorchVersion = "torch==2.0.1"}
+          $pytorchVersion = "torch==2.3.1"
           python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install build setuptools wheel ninja requests
 
@@ -114,117 +114,6 @@ jobs:
           $env:PYPI_FORCE_TAGS = 1
 
           python setup.py sdist bdist_wheel
-
-      - name: Upload Assets
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./dist/*.whl
-
-  build_rocm_wheels:
-    name: Build AWQ with ROCm
-    runs-on: ${{ matrix.os }}
-    needs: release
-
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-        python: ["3.8", "3.9", "3.10", "3.11"]
-        rocm: ["5.6.1", "5.7.1"]
-    defaults:
-      run:
-        shell: bash
-    env:
-      ROCM_VERSION: ${{ matrix.rocm }}
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Free Disk Space
-        run: |
-          df -h
-          echo "Removing large packages"
-          sudo apt-get remove -y '^dotnet-.*'
-          sudo apt-get remove -y 'php.*'
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel
-          df -h
-          sudo apt-get autoremove -y >/dev/null 2>&1
-          sudo apt-get clean
-          sudo apt-get autoremove -y >/dev/null 2>&1
-          sudo apt-get autoclean -y >/dev/null 2>&1
-          df -h
-          echo "https://github.com/actions/virtual-environments/issues/709"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          df -h
-          echo "remove big /usr/local"
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf /usr/local/lib/android >/dev/null 2>&1
-          df -h
-          sudo rm -rf /usr/share/dotnet/sdk > /dev/null 2>&1
-          sudo rm -rf /usr/share/dotnet/shared > /dev/null 2>&1
-          sudo rm -rf /usr/share/swift > /dev/null 2>&1
-          df -h
-
-      - uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.python }}
-
-      - name: Setup Mamba
-        uses: conda-incubator/setup-miniconda@v2.2.0
-        with:
-          activate-environment: "build"
-          python-version: ${{ matrix.python }}
-          mamba-version: "*"
-          use-mamba: false
-          channels: conda-forge,defaults
-          channel-priority: true
-          add-pip-as-python-dependency: true
-          auto-activate-base: false
-
-      - name: Set up ROCm
-        run: |
-          echo "Using python:"
-          python --version
-          which python
-
-          if [[ "${{ matrix.rocm }}" == "5.4.2" ]]; then
-            export ROCM_DL_FILE=amdgpu-install_5.4.50402-1_all.deb
-          elif [[ "${{ matrix.rocm }}" == "5.6.1" ]]; then
-            export ROCM_DL_FILE=amdgpu-install_5.6.50601-1_all.deb
-          elif [[ "${{ matrix.rocm }}" == "5.7.1" ]]; then
-            export ROCM_DL_FILE=amdgpu-install_5.7.50701-1_all.deb
-          else
-            echo Unknown rocm version
-            exit 1
-          fi
-
-          curl -O https://repo.radeon.com/amdgpu-install/${{ matrix.rocm }}/ubuntu/focal/$ROCM_DL_FILE
-          sudo dpkg -i $ROCM_DL_FILE
-          sudo DEBIAN_FRONTEND=noninteractive amdgpu-install --usecase=rocm --no-dkms --no-32 -y
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rocsparse-dev rocthrust-dev rocblas-dev hipblas-dev hipsparse-dev
-
-          python -m pip install --upgrade build setuptools wheel requests
-
-          if [[ "${{ matrix.rocm }}" == "5.7.1" ]]; then
-            python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/rocm5.7
-          elif [[ "${{ matrix.rocm }}" == "5.6.1" ]]; then
-            python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/rocm5.6
-          else
-            echo Unknown rocm version for python install
-            exit 1
-          fi
-
-      - name: Build Wheel
-        run: |
-          echo "Using python for build:"
-          python --version
-          which python
-
-          ROCM_VERSION=${{ matrix.rocm }} PYPI_FORCE_TAGS=1 python setup.py sdist bdist_wheel
 
       - name: Upload Assets
         uses: shogo82148/actions-upload-release-asset@v1

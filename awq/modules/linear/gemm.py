@@ -1,4 +1,5 @@
 import torch
+import warnings
 import torch.nn as nn
 from torch.autograd import Function
 from awq.utils.utils import get_best_device
@@ -8,9 +9,9 @@ try:
     import awq_ext  # with CUDA kernels (AutoAWQ_kernels)
 
     AWQ_INSTALLED = True
-except:
+except Exception as ex:
     AWQ_INSTALLED = False
-
+    warnings.warn(f"AutoAWQ could not load GEMM kernels extension. Details: {ex}")
 
 # Adapted from https://github.com/compressa-ai/AutoAWQ/tree/dev
 class WQLinearMMFunction(Function):

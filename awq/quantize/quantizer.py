@@ -166,7 +166,7 @@ class AwqQuantizer:
             )
             scales_list = [
                 self._search_best_scale(self.modules[i], **layer)
-                for layer in tqdm(module_config, desc="Best Scales", leave=False)
+                for layer in module_config
             ]
             apply_scale(self.modules[i], scales_list, input_feat_dict=input_feat)
             scales_list = append_str_prefix(
@@ -253,9 +253,7 @@ class AwqQuantizer:
             # but only n_parallel_calib_samples at a time
             module_output = []
             partitioned_inputs = torch.split(x, self.n_parallel_calib_samples)
-            for x_partial in tqdm(
-                partitioned_inputs, desc="Module forward", leave=False
-            ):
+            for x_partial in partitioned_inputs:
                 partial_output = module(x_partial, **module_kwargs)
 
                 if isinstance(partial_output, tuple):
@@ -488,16 +486,9 @@ class AwqQuantizer:
         int_w_chunks = torch.split(int_w_output_flat, chunk_size)
 
         # Compute the loss for each chunk
-        with tqdm(
-            zip(fp16_chunks, int_w_chunks),
-            total=len(fp16_chunks),
-            desc="Computing Loss",
-            leave=False,
-        ) as pbar:
-            for fp16_chunk, int_w_chunk in pbar:
-                chunk_loss = (fp16_chunk.to(device) - int_w_chunk.to(device)).float().pow(2).sum().item()
-                loss += chunk_loss
-                pbar.set_description(f"Computing Loss (loss: {loss:.2f})")
+        for fp16_chunk, int_w_chunk in zip(fp16_chunks, int_w_chunks):
+            chunk_loss = (fp16_chunk.to(device) - int_w_chunk.to(device)).float().pow(2).sum().item()
+            loss += chunk_loss
 
         # Normalize the loss by the total number of elements
         loss /= num_elements
@@ -509,7 +500,7 @@ class AwqQuantizer:
         clip_list = []
         avoid_clipping = ["q_", "k_", "query", "key", "Wqkv"]
 
-        for name in tqdm(named_linears, desc="Computing Best Clip", leave=False):
+        for name in named_linears:
             # due to qk bmm, it is hard to clip precisely
             if any([_ in name for _ in avoid_clipping]):
                 continue
