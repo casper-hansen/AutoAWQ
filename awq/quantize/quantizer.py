@@ -1,3 +1,4 @@
+import copy
 import torch
 import inspect
 import logging
@@ -5,7 +6,7 @@ import functools
 import torch.nn as nn
 from tqdm import tqdm
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from torch.nn.parallel import DataParallel
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
@@ -22,6 +23,7 @@ from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
+    recreate_module,
 )
 
 
@@ -392,7 +394,7 @@ class AwqQuantizer:
 
                 # Create a local copy of the module state
                 local_state_dict = {k: v.to(target_device) for k, v in org_sd.items()}
-                module2inspect_local = type(module2inspect)(module2inspect.config)
+                module2inspect_local = recreate_module(module2inspect)
                 module2inspect_local.load_state_dict(local_state_dict)
                 module2inspect_local = module2inspect_local.to(target_device, torch.half)
 
