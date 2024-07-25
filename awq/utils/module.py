@@ -1,6 +1,4 @@
-import inspect
 import torch.nn as nn
-from typing import Dict, Any
 
 
 def get_named_linears(module):
@@ -57,42 +55,3 @@ def exclude_layers_to_not_quantize(linear_layers, modules_to_not_convert):
         if not any(key in name for key in modules_to_not_convert):
             filtered_layers[name] = linear_layer
     return filtered_layers
-
-
-def recreate_module(original_module: nn.Module) -> nn.Module:
-    """
-    Recreate a PyTorch module with the same structure and parameters as the original.
-    
-    Args:
-        original_module (nn.Module): The original module to recreate.
-    
-    Returns:
-        nn.Module: A new instance of the same type as the original module.
-    """
-    # Get the class of the original module
-    module_class = type(original_module)
-
-    # Get the __init__ parameters of the class
-    init_signature = inspect.signature(module_class.__init__)
-    init_params = init_signature.parameters
-
-    # Prepare arguments for the new instance
-    init_args: Dict[str, Any] = {}
-
-    for name, param in init_params.items():
-        if name == 'self':
-            continue
-        if hasattr(original_module, name):
-            init_args[name] = getattr(original_module, name)
-        elif param.default != inspect.Parameter.empty:
-            init_args[name] = param.default
-        else:
-            raise ValueError(f"Cannot determine value for parameter '{name}' in {module_class.__name__}")
-
-    # Create a new instance
-    new_module = module_class(**init_args)
-
-    # Copy the state dict to ensure all parameters and buffers are the same
-    new_module.load_state_dict(original_module.state_dict())
-
-    return new_module

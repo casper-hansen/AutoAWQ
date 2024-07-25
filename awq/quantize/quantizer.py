@@ -5,8 +5,7 @@ import functools
 import torch.nn as nn
 from tqdm import tqdm
 from collections import defaultdict
-from typing import Dict, List, Optional, Any
-from torch.nn.parallel import DataParallel
+from typing import Dict, List, Optional
 from awq.utils.calib_data import get_calib_dataset
 from awq.quantize.scale import apply_scale, apply_clip
 from awq.utils.utils import clear_memory, get_best_device
@@ -22,7 +21,6 @@ from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
-    recreate_module,
 )
 
 
@@ -306,7 +304,7 @@ class AwqQuantizer:
         inp_flat = inp.cpu().abs().view(-1, inp.shape[-1])
         num_elements = inp_flat.size(0)
         num_channels = inp_flat.size(1)
-        element_size_bytes = inp_flat.element_size() * 2 # multiplied by 2 for FP32
+        element_size_bytes = inp_flat.element_size() * 2  # multiplied by 2 for FP32
 
         # Calculate chunk size dynamically based on max_chunk_memory
         chunk_size = int(self.max_chunk_memory // (element_size_bytes * num_channels))
@@ -314,7 +312,7 @@ class AwqQuantizer:
 
         # Use float32 for sum calculation
         x_sum = torch.zeros(num_channels, dtype=torch.float32, device=inp.device)
-        
+
         for i in range(0, num_elements, chunk_size):
             end = min(i + chunk_size, num_elements)
             chunk_sum = inp_flat[i:end].to(torch.float32).sum(dim=0)
@@ -345,113 +343,71 @@ class AwqQuantizer:
         w_mean: torch.Tensor,
         x_mean: torch.Tensor,
         module2inspect: torch.nn.Module,
-        linears2scale: List[nn.Linear],
+        linears2scale: List[torch.nn.Linear],
         fp16_output: torch.Tensor,
-        kwargs: Dict={},
+        kwargs: Dict = {},
     ):
+        """
+        Compute loss and select best scales
+
+        L(s) = || Q(W * s) (s^-1 * X) - W * X ||
+        Q: weight quantization function | pseudo_quantize_tensor(W * s)
+        X: inputs from calib dataset    | X
+        W: original weights in FP16     | layer
+        s: per channel scaling factor   | s^-1 * X
+        """
         n_grid = 20
         history = []
-        best_ratio = -1
+        best_ratio_idx = None
         best_scales = None
         best_error = float("inf")
 
         org_sd = {k: v.cpu() for k, v in module2inspect.state_dict().items()}
 
         device = x.device
-        x_mean = x_mean.view(-1).to(device)
-        w_mean = w_mean.view(-1).to(device)
+        x_mean = x_mean.view(-1).to(device, dtype=x.dtype)
+        w_mean = w_mean.view(-1).to(device, dtype=x.dtype)
 
-        # Define a function to process a single ratio
-        def process_ratio(ratios: torch.Tensor):
-            loss_list = []
-            ratio_list = []
-            scales_list = []
-            
-            # Ensure all inputs are on the same device
-            target_device = ratios.device
-            x_local = x.to(target_device)
-            kwargs_local = {k: v.to(target_device) if isinstance(v, (torch.Tensor, nn.Module)) else v for k, v in kwargs.items()}
-            module2inspect_local = module2inspect.to(target_device)
-            x_mean_local = x_mean.to(target_device)
-            w_mean_local = w_mean.to(target_device)
-            fp16_output_local = fp16_output.to(target_device)
+        ratios = torch.linspace(0, 1, steps=n_grid, device=device, dtype=x.dtype)
 
-            for ratio in ratios:
-                ratio = ratio / n_grid
+        if self.duo_scaling:
+            scales_matrix = (
+                x_mean.unsqueeze(1).pow(ratios)
+                / (w_mean.unsqueeze(1).pow(1 - ratios) + 1e-4)
+            ).clamp(min=1e-4)
+        else:
+            scales_matrix = x_mean.unsqueeze(1).pow(ratios).clamp(min=1e-4)
 
-                # NOTE: s^-1 * x is fused here, according to paper
-                if self.duo_scaling:
-                    scales = (x_mean_local.pow(ratio) / (w_mean_local.pow(1 - ratio) + 1e-4)).clamp(min=1e-4)
-                else:
-                    scales = x_mean_local.pow(ratio).clamp(min=1e-4).view(-1)
-                scales = scales / (scales.max() * scales.min()).sqrt()
-                scales_view = scales.view(1, -1)
+        scales_matrix = (
+            scales_matrix
+            / (
+                scales_matrix.max(dim=0, keepdim=True)[0]
+                * scales_matrix.min(dim=0, keepdim=True)[0]
+            ).sqrt()
+        )
+        scales_matrix[torch.isinf(scales_matrix) | torch.isnan(scales_matrix)] = 1
 
-                # avoid scaling values that overflow
-                scales[torch.isinf(scales)] = 1
-                scales[torch.isnan(scales)] = 1
+        for i in range(n_grid):
+            scales = scales_matrix[:, i]
+            scales_view = scales.view(1, -1).to(device)
 
-                # Create a local copy of the module state
-                local_state_dict = {k: v.to(target_device) for k, v in org_sd.items()}
-                module2inspect_local = recreate_module(module2inspect)
-                module2inspect_local.load_state_dict(local_state_dict)
-                module2inspect_local = module2inspect_local.to(target_device, torch.half)
-
-                # Q(W * s)
-                for fc in linears2scale:
-                    fc_local = fc.to(target_device)
-                    fc_local.weight.mul_(scales_view)
-                    fc_local.weight.data = (
-                        self.pseudo_quantize_tensor(fc_local.weight.data)[0].to(target_device) / scales_view
-                    )
-
-                # W * X
-                int_w_output = self._module_forward(x_local, module2inspect_local, kwargs_local)
-
-                # compute mean squared error (L2 norm)
-                loss = self._compute_loss(fp16_output_local, int_w_output, target_device)
-
-                loss_list.append(loss)
-                ratio_list.append(ratio)
-                scales_list.append(scales)
-
-                # Reset the module to its original state
-                module2inspect_local.load_state_dict(org_sd)
-
-            return loss_list, ratio_list, scales_list
-
-        class RatioProcessor(nn.Module):
-            def __init__(self, process_ratio_func):
-                super().__init__()
-                self.process_ratio_func = process_ratio_func
-
-            def forward(self, ratio):
-                losses, ratios, scales = self.process_ratio_func(ratio)
-                return (
-                    torch.tensor(losses, device=ratio.device),
-                    torch.tensor(ratios, device=ratio.device),
-                    torch.stack(scales)  # assuming scales are already tensors
+            for fc in linears2scale:
+                fc.weight.mul_(scales_view)
+                fc.weight.data = (
+                    self.pseudo_quantize_tensor(fc.weight.data)[0] / scales_view
                 )
 
-        # Wrap the process_ratio function with DataParallel
-        ratio_processor = RatioProcessor(process_ratio)
+            int_w_output = self._module_forward(x, module2inspect, kwargs)
+            loss = self._compute_loss(fp16_output, int_w_output, device)
 
-        # Wrap the RatioProcessor with DataParallel
-        parallel_processor = DataParallel(ratio_processor)
-
-        # Process all ratios in parallel
-        ratios = torch.arange(n_grid, dtype=torch.float32).cuda()
-        losses, ratios, scales = parallel_processor(ratios)
-
-        for loss, ratio, scale in zip(losses.cpu(), ratios.cpu(), scales.cpu()):
             history.append(loss)
             if loss < best_error:
                 best_error = loss
-                best_ratio = ratio
-                best_scales = scale.clone()
+                best_ratio_idx = i
+                best_scales = scales.clone()
             module2inspect.load_state_dict(org_sd)
 
-        if best_ratio == -1:
+        if best_ratio_idx is None:
             logging.debug(history)
             raise Exception
 
@@ -483,7 +439,13 @@ class AwqQuantizer:
 
         # Compute the loss for each chunk
         for fp16_chunk, int_w_chunk in zip(fp16_chunks, int_w_chunks):
-            chunk_loss = (fp16_chunk.to(device) - int_w_chunk.to(device)).float().pow(2).sum().item()
+            chunk_loss = (
+                (fp16_chunk.to(device) - int_w_chunk.to(device))
+                .float()
+                .pow(2)
+                .sum()
+                .item()
+            )
             loss += chunk_loss
 
         # Normalize the loss by the total number of elements
@@ -530,7 +492,7 @@ class AwqQuantizer:
         # Compute input feature step size (minimum 1)
         step_size = max(1, input_feat.shape[1] // n_sample_token)
         input_feat = input_feat[:, ::step_size]
-        
+
         w = w.reshape(org_w_shape[0], 1, -1, group_size)
 
         oc_batch_size = 256 if org_w_shape[0] % 256 == 0 else 64  # prevent OOM
