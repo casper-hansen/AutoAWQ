@@ -30,6 +30,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "llava_next": LlavaNextAWQForCausalLM,
     "phi3": Phi3AWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
+    "deepseek": DeepseekAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
     "minicpm": MiniCPMAWQForCausalLM,
 }

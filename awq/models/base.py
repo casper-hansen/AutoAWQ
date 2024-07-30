@@ -81,6 +81,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "llava_next": "AutoModelForVision2Seq",
     "phi3": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
+    "deepseek": "AutoModelForCausalLM",
     "deepseek_v2": "AutoModelForCausalLM",
     "minicpm": "AutoModelForCausalLM",
 }
