@@ -487,16 +487,10 @@ class BaseAWQForCausalLM(nn.Module):
             )
 
         use_cpu_ipex = use_ipex or get_best_device() == "cpu"
-        if use_cpu_ipex:
-            if not ipex_available:
-                raise ImportError(
-                    "Please install intel_extension_for_pytorch with "
-                    "`pip install intel_extension_for_pytorch` for 'ipex' kernel!"
-                )
-
-            fuse_layers = False
-            logging.warn(
-                "Unsupport fuse_layers featrue for CPU device with ipex backend!"
+        if use_cpu_ipex and not ipex_available:
+            raise ImportError(
+                "Please install intel_extension_for_pytorch with "
+                "`pip install intel_extension_for_pytorch` for 'ipex' kernel!"
             )
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
