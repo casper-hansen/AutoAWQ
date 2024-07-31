@@ -15,6 +15,7 @@ from .llava import LlavaAWQForCausalLM
 from .mixtral import MixtralAWQForCausalLM
 from .qwen2 import Qwen2AWQForCausalLM
 from .gemma import GemmaAWQForCausalLM
+from .gemma2 import Gemma2AWQForCausalLM
 from .stablelm import StableLmAWQForCausalLM
 from .starcoder2 import Starcoder2AWQForCausalLM
 from .llava_next import LlavaNextAWQForCausalLM
