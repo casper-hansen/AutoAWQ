@@ -79,7 +79,7 @@ class WQLinear_IPEX(nn.Module):
         if init_only:  # just prepare for loading sd
             return awq_linear
 
-        raise NotImplementedError("Only inference is supported for Exllama kernels")
+        raise NotImplementedError("Only inference is supported for IPEX kernels")
 
     @torch.no_grad()
     def forward(self, x):
