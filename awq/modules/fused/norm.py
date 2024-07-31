@@ -9,7 +9,7 @@ except:
     AWQ_INSTALLED = False
 
 try:
-    import intel_extension_for_pytorch  # with IPEX kernels
+    import intel_extension_for_pytorch as ipex  # with IPEX kernels
 
     IPEX_INSTALLED = True
 except:
@@ -23,8 +23,8 @@ class FasterTransformerRMSNorm(nn.Module):
         self.variance_epsilon = eps
 
     def forward(self, x):
-        if x.device.type == "cpu" and IPEX_INSTALLED:
-            output = torch.ops.torch_ipex.rmsnorm(x, self.weight, self.variance_epsilon)
+        if IPEX_INSTALLED:
+            output = ipex.llm.functional.rms_norm(x, self.weight, self.variance_epsilon)
         else:
             assert AWQ_INSTALLED, (
                 "AWQ kernels could not be loaded. "
