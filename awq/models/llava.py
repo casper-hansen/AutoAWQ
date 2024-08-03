@@ -133,6 +133,7 @@ class LlavaFuser:
                     norm_2=norm_2,
                     dev=device,
                     max_seq_len=max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
                 )
             )
 
