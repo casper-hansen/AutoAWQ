@@ -118,6 +118,7 @@ class QuantAttentionFused(nn.Module):
         rope_theta=10000,
         partial_rotary_factor=1.0,
         head_dim=None,
+        attn_logit_softcapping=None,
         **kwargs
     ):
         super().__init__()
@@ -173,6 +174,8 @@ class QuantAttentionFused(nn.Module):
 
         if kwargs.get("is_neox") is not None:
             self.is_neox = kwargs["is_neox"]
+        
+        self.attn_logit_softcapping = attn_logit_softcapping
 
     def forward(
         self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
@@ -264,6 +267,12 @@ class QuantAttentionFused(nn.Module):
             keys = keys.transpose(1, 2)
             values = values.transpose(1, 2)
             scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+            # Used in Gemma2
+            if self.attn_logit_softcapping is not None:
+                scores = scores / self.attn_logit_softcapping
+                scores = torch.tanh(scores)
+                scores = scores * self.attn_logit_softcapping
 
             if self.use_alibi:
                 scores = self.alibi.forward(scores, seqlen)
