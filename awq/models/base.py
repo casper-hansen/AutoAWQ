@@ -573,7 +573,7 @@ class BaseAWQForCausalLM(nn.Module):
     ):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
-            ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt"]
+            ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt", "*.onnx*"]
             if safetensors:
                 ignore_patterns.extend(["*.pt*", "*.bin*", "consolidated*"])
             else:
