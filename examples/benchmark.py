@@ -114,9 +114,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         )
     else:
         model = AutoAWQForCausalLM.from_quantized(
-            model_path, quant_file, fuse_layers=False if DEVICE == "cpu" else True,
-            max_seq_len=n_generate, batch_size=batch_size,
-            safetensors=not no_safetensors
+            model_path, quant_file, max_seq_len=n_generate, batch_size=batch_size, safetensors=not no_safetensors
         )
 
     print(f" -- Warming up...")
