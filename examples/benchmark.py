@@ -85,8 +85,8 @@ def generate_hf(model: BaseAWQForCausalLM, input_ids, n_generate):
         min_new_tokens=n_generate,
         max_new_tokens=n_generate,
         use_cache=True,
-        forced_eos_token_id=-100,
-        eos_token_id=-100,
+        forced_eos_token_id=1,
+        eos_token_id=1,
     )
 
     time_processor = TimeMeasuringLogitsProcessor()
