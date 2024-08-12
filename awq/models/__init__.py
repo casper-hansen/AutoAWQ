@@ -23,3 +23,4 @@ from .phi3 import Phi3AWQForCausalLM
 from .cohere import CohereAWQForCausalLM
 from .deepseek_v2 import DeepseekV2AWQForCausalLM
 from .minicpm import MiniCPMAWQForCausalLM
+from .minicpmv import MiniCPMVAWQForCausalLM
