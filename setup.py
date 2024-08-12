@@ -93,9 +93,6 @@ requirements = [
     "accelerate",
     "datasets",
     "zstandard",
-    "einops",
-    "protobuf",
-    "sentencepiece",
 ]
 
 try:
