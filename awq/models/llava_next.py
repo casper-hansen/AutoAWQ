@@ -4,36 +4,37 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.qwen2.modeling_qwen2 import (
-    Qwen2DecoderLayer as OldQwen2DecoderLayer,
-    Qwen2ForCausalLM as OldQwen2ForCausalLM,
+from transformers.models.llama.modeling_llama import (
+    LlamaDecoderLayer as OldLlamaDecoderLayer,
 )
+from transformers.models.llava_next.modeling_llava_next import LlavaNextForConditionalGeneration
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
-class Qwen2AWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "Qwen2DecoderLayer"
+class LlavaNextAWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "LlamaDecoderLayer"
     max_seq_len_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldQwen2ForCausalLM):
-        fuser = Qwen2Fuser(model)
-        fuser.fuse_transformer()
+    def fuse_layers(model: LlavaNextForConditionalGeneration):
+        pass
 
     @staticmethod
-    def get_model_layers(model: OldQwen2ForCausalLM):
-        return model.model.layers
+    def get_model_layers(model: LlavaNextForConditionalGeneration):
+        return model.language_model.model.layers
 
     @staticmethod
-    def get_act_for_scaling(module: OldQwen2DecoderLayer):
+    def get_act_for_scaling(module: OldLlamaDecoderLayer):
         return dict(is_scalable=False)
 
     @staticmethod
-    def move_embed(model: OldQwen2ForCausalLM, device: str):
-        model.model.embed_tokens = model.model.embed_tokens.to(device)
+    def move_embed(model: LlavaNextForConditionalGeneration, device: str):
+        model.language_model.model.embed_tokens = model.get_input_embeddings().to(
+            device
+        )
 
     @staticmethod
-    def get_layers_for_scaling(module: OldQwen2DecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -84,20 +85,20 @@ class Qwen2AWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class Qwen2Fuser:
-    def __init__(self, model: OldQwen2ForCausalLM):
-        self.model = model
+class LlavaNextFuser:
+    def __init__(self, model: LlavaNextForConditionalGeneration):
+        self.model = model.language_model
 
-        self.qwen2_blocks: List[Tuple[str, OldQwen2DecoderLayer]] = [
+        self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module)
             for name, module in self.model.named_modules()
-            if "Qwen2DecoderLayer".lower() in module.__class__.__name__.lower()
+            if "LlamaDecoderLayer".lower() in module.__class__.__name__.lower()
         ]
 
     def fuse_transformer(self):
         blocks = []
 
-        module: OldQwen2DecoderLayer
+        module: OldLlamaDecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
             qkv = fuse_qkv(
@@ -113,6 +114,10 @@ class Qwen2Fuser:
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.variance_epsilon,
             )
+            if hasattr(self.model.config, "max_seq_len"):
+                max_seq_len = self.model.config.max_seq_len
+            else:
+                max_seq_len = self.model.config.max_position_embeddings
             blocks.append(
                 LlamaLikeBlock(
                     hidden_size=self.model.config.hidden_size,
@@ -124,7 +129,7 @@ class Qwen2Fuser:
                     norm_1=norm_1,
                     norm_2=norm_2,
                     dev=device,
-                    max_seq_len=self.model.config.max_seq_len,
+                    max_seq_len=max_seq_len,
                     rope_theta=self.model.config.rope_theta,
                 )
             )
@@ -136,3 +141,6 @@ class Qwen2Fuser:
             self.model.model.norm,
         )
         setattr(self.model.model, "blocks", self.model.model.blocks)
+
+
+

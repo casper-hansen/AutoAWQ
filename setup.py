@@ -31,7 +31,7 @@ def get_kernels_whl_url(
     return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
 
 
-AUTOAWQ_VERSION = "0.2.5"
+AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 
@@ -41,9 +41,7 @@ if CUDA_VERSION:
 
 ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
 if ROCM_VERSION:
-    if ROCM_VERSION.startswith("5.6"):
-        ROCM_VERSION = "5.6.1"
-    elif ROCM_VERSION.startswith("5.7"):
+    if ROCM_VERSION.startswith("5.7"):
         ROCM_VERSION = "5.7.1"
 
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
@@ -88,7 +86,7 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "torch>=2.0.1",
+    "torch==2.3.1",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
@@ -112,7 +110,7 @@ except ImportError:
 if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
     if CUDA_VERSION and CUDA_VERSION.startswith("12"):
         requirements.append("autoawq-kernels")
-    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["561", "571"]:
+    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["571"]:
         gpu_system_version = (
             f"cu{CUDA_VERSION}" if CUDA_VERSION else f"rocm{ROCM_VERSION}"
         )
@@ -134,7 +132,7 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 elif IS_CPU_ONLY:
-    requirements.append("intel_extension_for_pytorch>=2.4.0")
+    requirements.append("intel-extension-for-pytorch>=2.4")
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":
