@@ -12,6 +12,7 @@ from awq.modules.fused.norm import FasterTransformerRMSNorm
 class Phi3VAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "Phi3DecoderLayer"
     max_seq_len_key = "max_position_embeddings"
+    modules_to_not_convert = ["vision_embed_tokens"]
 
     @staticmethod
     def fuse_layers(model):
