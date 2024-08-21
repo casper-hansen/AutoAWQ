@@ -91,7 +91,7 @@ requirements = [
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
     "accelerate",
-    "datasets",
+    "datasets>=2.20",
     "zstandard",
 ]
 
