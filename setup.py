@@ -33,6 +33,7 @@ def get_kernels_whl_url(
 
 AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
+NO_KERNELS = int(os.getenv("NO_KERNELS", "0"))
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
@@ -91,7 +92,7 @@ requirements = [
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
     "accelerate",
-    "datasets",
+    "datasets>=2.20",
     "zstandard",
 ]
 
@@ -107,7 +108,7 @@ except ImportError:
 
 # kernels can be downloaded from pypi for cuda+121 only
 # for everything else, we need to download the wheels from github
-if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
+if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION) and not NO_KERNELS:
     if CUDA_VERSION and CUDA_VERSION.startswith("12"):
         requirements.append("autoawq-kernels")
     elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["571"]:
@@ -132,7 +133,7 @@ if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION):
             "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
         )
 elif IS_CPU_ONLY:
-    requirements.append("intel-extension-for-pytorch>=2.4")
+    requirements.append("intel-extension-for-pytorch>=2.4.0")
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":
