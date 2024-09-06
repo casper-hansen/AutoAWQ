@@ -345,7 +345,7 @@ class BaseAWQForCausalLM(nn.Module):
             Doc(
                 "A device map that will be passed onto the model loading method from transformers."
             ),
-        ] = None,
+        ] = "auto",
         download_kwargs: Annotated[
             Dict,
             Doc("Used for configure download model"),
