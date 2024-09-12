@@ -80,7 +80,7 @@ if not KERNELS_INSTALLED and CUDA_VERSION and INSTALL_KERNELS and CUDA_VERSION.s
     requirements.append("autoawq-kernels")
 
 elif IS_CPU_ONLY:
-    requirements.append("intel-extension-for-transformers>=1.4.2")
+    requirements.append("intel-extension-for-pytorch>=2.4.0")
 
 force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
 if force_extension == "1":
