@@ -88,7 +88,6 @@ class WQLinear_IPEX(nn.Module):
             "Please install with `pip install intel_extension_for_pytorch` and "
             "refer to the detial https://github.com/intel/intel-extension-for-pytorch/tree/main")
 
-        x = x.view(-1, x.shape[-1])  # convert xd to 2d
         outputs = self.ipex_linear(x)
 
         return outputs
