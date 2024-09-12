@@ -55,11 +55,10 @@ There are a few ways to install AutoAWQ:
 1. Default:
     - `pip install autoawq`
     - NOTE: The default installation includes no external kernels and relies on Triton for inference.
-2. With kernels:
-    - `INSTALL_KERNELS=1 pip install autoawq`
+    
+2. From main branch with kernels:
+    - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
-3. From main branch:
-    - `pip install git+https://github.com/casper-hansen/AutoAWQ.git`
 
 ## Usage
 
