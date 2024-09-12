@@ -8,6 +8,7 @@ AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
+TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 if CUDA_VERSION:
@@ -58,7 +59,7 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "torch>=2.3.1",
+    f"torch>={TORCH_VERSION}",
     "triton",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
