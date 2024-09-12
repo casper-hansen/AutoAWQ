@@ -32,6 +32,6 @@ outputs = model.generate(
     **inputs,
     do_sample=True,
     max_new_tokens=256,
-    steamer=streamer,
+    streamer=streamer,
     eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
 )
