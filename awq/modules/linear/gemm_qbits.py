@@ -1,13 +1,11 @@
 import torch
 import torch.nn as nn
+from awq.utils.module import try_import
 from ...utils.packing_utils import reverse_awq_order, unpack_awq
 
-try:
-    from intel_extension_for_transformers import qbits  # with QBits kernels ()
-
-    QBITS_INSTALLED = True
-except:
-    QBITS_INSTALLED = False
+intel_extension_for_transformers, msg = try_import("intel_extension_for_transformers")
+if intel_extension_for_transformers is not None:
+    qbits = getattr(intel_extension_for_transformers, 'qbits')
 
 BITS_DTYPE_MAPPING = {
     4: "int4_clip",
@@ -34,8 +32,8 @@ class WQLinear_QBits(nn.Module):
 
     def __init__(self, w_bit, group_size, in_features, out_features, bias, zero_point, dev):
         super().__init__()
-        assert QBITS_INSTALLED, \
-            "Please install ITREX qbits package with `pip install intel-extension-for-transformers`."
+        if intel_extension_for_transformers is None:
+            raise ModuleNotFoundError("Please install ITREX qbits package with `pip install intel-extension-for-transformers`." + msg)
 
         self.use_bf16 = qbits.check_isa_supported("AMX")
 
@@ -118,10 +116,12 @@ class WQLinear_QBits(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        assert QBITS_INSTALLED, (
-            "QBits kernels could not be loaded. "
-            "Please install with `pip install intel-extension-for-transformers` and "
-            "refer to the detial https://github.com/intel/intel-extension-for-transformers/blob/main/docs/qbits.md")
+        if intel_extension_for_transformers is None:
+            raise ModuleNotFoundError(
+                "QBits kernels could not be loaded. "
+                "Please install with `pip install intel-extension-for-transformers` and "
+                "refer to the detial https://github.com/intel/intel-extension-for-transformers/blob/main/docs/qbits.md"
+            )
 
         input_dtype = x.dtype
         out_shape = x.shape[:-1] + (self.out_features,)

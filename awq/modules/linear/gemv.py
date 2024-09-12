@@ -1,14 +1,9 @@
 import torch
 import warnings
 import torch.nn as nn
+from awq.utils.module import try_import
 
-try:
-    import awq_ext  # with CUDA kernels
-
-    AWQ_INSTALLED = True
-except Exception as ex:
-    AWQ_INSTALLED = False
-    warnings.warn(f"AutoAWQ could not load GEMV kernels extension. Details: {ex}")
+awq_ext, msg = try_import("awq_ext")
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
@@ -160,10 +155,8 @@ class WQLinear_GEMV(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        assert AWQ_INSTALLED, (
-            "AWQ kernels could not be loaded. "
-            "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
-        )
+        if awq_ext is None:
+            raise ModuleNotFoundError("External AWQ kernels are not properly installed." + msg)
 
         out_shape = x.shape[:-1] + (self.out_features,)
         inputs = x.reshape(-1, x.shape[-1])
