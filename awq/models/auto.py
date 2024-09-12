@@ -60,7 +60,7 @@ class AutoAWQForCausalLM:
         model_path,
         trust_remote_code=True,
         safetensors=True,
-        device_map=None,
+        device_map="auto",
         download_kwargs=None,
         **model_init_kwargs,
     ) -> BaseAWQForCausalLM:

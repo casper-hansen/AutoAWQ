@@ -21,7 +21,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -50,7 +50,9 @@ quant_path = 'vicuna-7b-v1.5-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(model_path)
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Define data loading methods
@@ -106,7 +108,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -149,7 +151,7 @@ quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": 
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -195,7 +197,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, device_map="cuda", **{"low_cpu_mem_usage": True}
+    model_path, low_cpu_mem_usage=True, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -234,9 +236,8 @@ llama_cpp_path = '/workspace/llama.cpp'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 6, "version": "GEMM" }
 
 # Load model
-# NOTE: pass safetensors=True to load safetensors
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 

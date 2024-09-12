@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--no-low_cpu_mem_usage", action="store_false", dest="low_cpu_mem_usage", help="Don't use low CPU memory")
     parser.add_argument("--use_cache", action="store_true", help="Use cache")
     parser.add_argument("--no-use_cache", action="store_false", dest="use_cache", help="Don't use cache")
-    parser.add_argument("--device_map", type=str, default=None, help="Device map for loading the pretrained model")
+    parser.add_argument("--device_map", type=str, default="auto", help="Device map for loading the pretrained model")
 
     parser.set_defaults(zero_point=True, low_cpu_mem_usage=True, use_cache=None)
 

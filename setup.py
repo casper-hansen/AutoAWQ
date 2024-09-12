@@ -1,40 +1,14 @@
 import os
 import torch
-import platform
-import requests
 from pathlib import Path
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import CUDAExtension
 
-
-def get_latest_kernels_version(repo):
-    """
-    Get the latest version of the kernels from the github repo.
-    """
-    response = requests.get(f"https://api.github.com/repos/{repo}/releases/latest")
-    data = response.json()
-    tag_name = data["tag_name"]
-    version = tag_name.replace("v", "")
-    return version
-
-
-def get_kernels_whl_url(
-    gpu_system_version,
-    release_version,
-    python_version,
-    platform,
-    architecture,
-):
-    """
-    Get the url for the kernels wheel file.
-    """
-    return f"https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v{release_version}/autoawq_kernels-{release_version}+{gpu_system_version}-cp{python_version}-cp{python_version}-{platform}_{architecture}.whl"
-
-
 AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
-NO_KERNELS = int(os.getenv("NO_KERNELS", "0"))
+INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
+TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 if CUDA_VERSION:
@@ -42,10 +16,8 @@ if CUDA_VERSION:
 
 ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
 if ROCM_VERSION:
-    if ROCM_VERSION.startswith("5.7"):
-        ROCM_VERSION = "5.7.1"
-
-    ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:3]
+    ROCM_VERSION_LEN = min(len(ROCM_VERSION.split(".")), 3)
+    ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:ROCM_VERSION_LEN]
 
 if not PYPI_BUILD:
     if IS_CPU_ONLY:
@@ -87,7 +59,8 @@ common_setup_kwargs = {
 }
 
 requirements = [
-    "torch>=2.4.0",
+    f"torch>={TORCH_VERSION}",
+    "triton",
     "transformers>=4.35.0",
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
@@ -97,41 +70,15 @@ requirements = [
 ]
 
 try:
-    if ROCM_VERSION:
-        import exlv2_ext
-    else:
-        import awq_ext
+    import awq_ext
 
     KERNELS_INSTALLED = True
 except ImportError:
     KERNELS_INSTALLED = False
 
-# kernels can be downloaded from pypi for cuda+121 only
-# for everything else, we need to download the wheels from github
-if not KERNELS_INSTALLED and (CUDA_VERSION or ROCM_VERSION) and not NO_KERNELS:
-    if CUDA_VERSION and CUDA_VERSION.startswith("12"):
-        requirements.append("autoawq-kernels")
-    elif CUDA_VERSION and CUDA_VERSION.startswith("11") or ROCM_VERSION in ["571"]:
-        gpu_system_version = (
-            f"cu{CUDA_VERSION}" if CUDA_VERSION else f"rocm{ROCM_VERSION}"
-        )
-        kernels_version = get_latest_kernels_version("casper-hansen/AutoAWQ_kernels")
-        python_version = "".join(platform.python_version_tuple()[:2])
-        platform_name = platform.system().lower()
-        architecture = platform.machine().lower()
-        latest_rocm_kernels_wheels = get_kernels_whl_url(
-            gpu_system_version,
-            kernels_version,
-            python_version,
-            platform_name,
-            architecture,
-        )
-        requirements.append(f"autoawq-kernels@{latest_rocm_kernels_wheels}")
-    else:
-        raise RuntimeError(
-            "Your system have a GPU with an unsupported CUDA or ROCm version. "
-            "Please install the kernels manually from https://github.com/casper-hansen/AutoAWQ_kernels"
-        )
+if not KERNELS_INSTALLED and CUDA_VERSION and INSTALL_KERNELS and CUDA_VERSION.startswith("12"):
+    requirements.append("autoawq-kernels")
+
 elif IS_CPU_ONLY:
     requirements.append("intel-extension-for-pytorch>=2.4.0")
 
@@ -152,7 +99,7 @@ setup(
     install_requires=requirements,
     extras_require={
         "eval": ["lm_eval==0.4.1", "tabulate", "protobuf", "evaluate", "scipy"],
-        "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"]
+        "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"],
     },
     **common_setup_kwargs,
 )

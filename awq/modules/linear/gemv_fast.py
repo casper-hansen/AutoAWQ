@@ -1,13 +1,8 @@
 import torch
 import warnings
+from awq.utils.module import try_import
 
-try:
-    import awq_v2_ext  # with CUDA kernels (AutoAWQ_kernels)
-
-    AWQ_INSTALLED = True
-except Exception as ex:
-    AWQ_INSTALLED = False
-    warnings.warn(f"AutoAWQ could not load GEMVFast kernels extension. Details: {ex}")
+awq_v2_ext, msg = try_import("awq_v2_ext")
 
 def make_divisible(c, divisor):
     return (c + divisor - 1) // divisor
@@ -189,6 +184,8 @@ class WQLinear_GEMVFast(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
+        if awq_v2_ext is None:
+            raise ModuleNotFoundError("External AWQ V2 kernels are not properly installed." + msg)
         inputs = x
         batch_size, n_tokens, _ = inputs.shape
         if batch_size < 8 and n_tokens == 1:
