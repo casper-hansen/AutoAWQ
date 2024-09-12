@@ -176,6 +176,7 @@ class QuantAttentionFused(nn.Module):
             self.is_neox = kwargs["is_neox"]
         
         self.attn_logit_softcapping = attn_logit_softcapping
+        self.use_sdpa = kwargs.get("use_sdpa", False)
 
     def forward(
         self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
@@ -273,7 +274,20 @@ class QuantAttentionFused(nn.Module):
                 scores = torch.tanh(scores)
                 scores = scores * self.attn_logit_softcapping
 
-            if self.use_alibi:
+            if self.use_sdpa:
+                causal_mask = attention_mask
+                if attention_mask is not None:
+                    causal_mask = causal_mask[:, :, :, : keys.shape[-2]]
+                is_causal = True if causal_mask is None and seqlen > 1 else False
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    xq,
+                    keys,
+                    values,
+                    attn_mask=causal_mask,
+                    dropout_p=0.0,
+                    is_causal=is_causal,
+                )
+            else:
                 scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
                 if self.use_alibi:
                     scores = self.alibi.forward(scores, seqlen)
@@ -290,19 +304,6 @@ class QuantAttentionFused(nn.Module):
                     )  # (bs, n_local_heads, slen, cache_len + slen)
                 scores = F.softmax(scores.float(), dim=-1).type_as(xq)
                 output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
-            else:
-                causal_mask = attention_mask
-                if attention_mask is not None:
-                    causal_mask = causal_mask[:, :, :, : keys.shape[-2]]
-                is_causal = True if causal_mask is None and seqlen > 1 else False
-                output = torch.nn.functional.scaled_dot_product_attention(
-                    xq,
-                    keys,
-                    values,
-                    attn_mask=causal_mask,
-                    dropout_p=0.0,
-                    is_causal=is_causal,
-                )
 
             attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         else:
