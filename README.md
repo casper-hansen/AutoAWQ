@@ -46,41 +46,19 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
   - Your NVIDIA GPU(s) must be of Compute Capability 7.5. Turing and later architectures are supported.
   - Your CUDA version must be CUDA 11.8 or later.
 - AMD:
-  -  Your ROCm version must be ROCm 5.6 or later.
+  -  Your ROCm version must be compatible with Triton.
 
 ### Install from PyPi
 
-To install the newest AutoAWQ from PyPi, you need CUDA 12.1 installed.
+There are a few ways to install AutoAWQ:
 
-```
-pip install autoawq
-```
-
-### Build from source
-
-For CUDA 11.8, ROCm 5.6, and ROCm 5.7, you can install wheels from the [release page](https://github.com/casper-hansen/AutoAWQ/releases/latest):
-
-```
-pip install autoawq@https://github.com/casper-hansen/AutoAWQ/releases/download/v0.2.0/autoawq-0.2.0+cu118-cp310-cp310-linux_x86_64.whl
-```
-
-Or from the main branch directly:
-
-```
-pip install autoawq@https://github.com/casper-hansen/AutoAWQ.git
-```
-
-Or by cloning the repository and installing from source:
-
-```
-git clone https://github.com/casper-hansen/AutoAWQ
-cd AutoAWQ
-pip install -e .
-```
-
-All three methods will install the latest and correct kernels for your system from [AutoAWQ_Kernels](https://github.com/casper-hansen/AutoAWQ_kernels/releases). 
-
-If your system is not supported (i.e. not on the release page), you can build the kernels yourself by following the instructions in [AutoAWQ_Kernels](https://github.com/casper-hansen/AutoAWQ_kernels/releases) and then install AutoAWQ from source.
+1. Default:
+    - `pip install autoawq`
+    - NOTE: The default installation includes no external kernels and relies on Triton for inference.
+    
+2. From main branch with kernels:
+    - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
+    - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
 
 ## Usage
 
@@ -131,7 +109,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 

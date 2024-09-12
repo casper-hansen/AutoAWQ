@@ -1,6 +1,7 @@
 import os
 import gc
 import json
+import warnings
 import logging
 import torch
 import transformers
@@ -30,6 +31,7 @@ from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
+    try_import,
 )
 from awq.utils.utils import get_best_device, qbits_available
 from transformers import (
@@ -345,7 +347,7 @@ class BaseAWQForCausalLM(nn.Module):
             Doc(
                 "A device map that will be passed onto the model loading method from transformers."
             ),
-        ] = None,
+        ] = "auto",
         download_kwargs: Annotated[
             Dict,
             Doc("Used for configure download model"),
@@ -530,8 +532,12 @@ class BaseAWQForCausalLM(nn.Module):
         )
 
         # Dispath to devices
+        awq_ext, msg = try_import("awq_ext")
         if fuse_layers:
-            self.fuse_layers(model)
+            if awq_ext is None:
+                warnings.warn("Skipping fusing modules because AWQ extension is not installed." + msg)
+            else:
+                self.fuse_layers(model)
 
         if use_cpu_qbits:
             dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32

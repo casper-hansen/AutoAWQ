@@ -1,14 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from awq.utils.module import try_import
 
-try:
-    import marlin_cuda  # with CUDA kernels (AutoAWQ_kernels)
-
-    MARLIN_INSTALLED = True
-except:
-    MARLIN_INSTALLED = False
-
+marlin_cuda, msg = try_import("marlin_cuda")
 
 def _get_perms():
     perm = []
@@ -179,10 +174,8 @@ class WQLinear_Marlin(nn.Module):
             "module.post_init() must be called before module.forward(). "
             "Use marlin_post_init() on the whole model."
         )
-        assert MARLIN_INSTALLED, (
-            "Marlin kernels are not installed. "
-            "Please install AWQ compatible Marlin kernels from AutoAWQ_kernels."
-        )
+        if marlin_cuda is None:
+            raise ModuleNotFoundError("External Marlin kernels are not properly installed." + msg)
 
         out_shape = x.shape[:-1] + (self.out_features,)
 
