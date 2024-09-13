@@ -663,18 +663,10 @@ class BaseAWQForCausalLM(nn.Module):
                 elif version == "gemv_fast":
                     q_linear_module = WQLinear_GEMVFast
 
-                if use_ipex:
-                    q_linear = q_linear_module.from_linear(
-                        module,
-                        quant_config.w_bit,
-                        quant_config.q_group_size,
-                        True,
-                        has_zero_points=quant_config.zero_point,
-                    )
-                else:
-                    q_linear = q_linear_module.from_linear(
-                        module, quant_config.w_bit, quant_config.q_group_size, True
-                    )
+
+                q_linear = q_linear_module.from_linear(
+                    module, quant_config.w_bit, quant_config.q_group_size, True
+                )
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
 

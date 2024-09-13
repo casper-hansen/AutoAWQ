@@ -11,7 +11,7 @@ except:
 
 class WQLinear_IPEX(nn.Module):
 
-    def __init__(self, w_bit, group_size, in_features, out_features, bias, zero_point, dev):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
         super().__init__()
         assert IPEX_INSTALLED, \
             "Please install IPEX package with `pip install intel_extension_for_pytorch`."
@@ -23,7 +23,6 @@ class WQLinear_IPEX(nn.Module):
         self.out_features = out_features
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
-        self.zero_point = zero_point
         self.scale_dtype = torch.float32
 
         # quick sanity check (make sure aligment)
@@ -35,9 +34,9 @@ class WQLinear_IPEX(nn.Module):
             "qzeros",
             torch.zeros(
                 (in_features // self.group_size, out_features // self.pack_num),
-                dtype=torch.int8,
+                dtype=torch.int32,
                 device=dev,
-            ) if self.zero_point else None,
+            ),
         )
         self.register_buffer(
             "scales",
@@ -66,14 +65,13 @@ class WQLinear_IPEX(nn.Module):
                                                                 self.group_size, None, 0, 1)
 
     @classmethod
-    def from_linear(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None, has_zero_points=False):
+    def from_linear(cls, linear, w_bit, group_size, init_only=False, scales=None):
         awq_linear = cls(
             w_bit,
             group_size,
             linear.in_features,
             linear.out_features,
             linear.bias is not None,
-            has_zero_points,
             linear.weight.device,
         )
         if init_only:  # just prepare for loading sd
