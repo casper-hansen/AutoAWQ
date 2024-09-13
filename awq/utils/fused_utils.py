@@ -82,25 +82,14 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
     elif isinstance(q_proj, WQLinear_IPEX):
         q_linear = WQLinear_IPEX
 
-    if isinstance(q_proj, WQLinear_IPEX):
-        qkv_layer = q_linear(
-            q_proj.w_bit,
-            q_proj.group_size,
-            q_proj.in_features,
-            q_proj.out_features + k_proj.out_features + v_proj.out_features,
-            q_proj.bias is not None,
-            q_proj.zero_point,
-            next(iter(module.state_dict().values())).device,
-        )
-    else:
-        qkv_layer = q_linear(
-            q_proj.w_bit,
-            q_proj.group_size,
-            q_proj.in_features,
-            q_proj.out_features + k_proj.out_features + v_proj.out_features,
-            q_proj.bias is not None,
-            next(iter(module.state_dict().values())).device,
-        )
+    qkv_layer = q_linear(
+        q_proj.w_bit,
+        q_proj.group_size,
+        q_proj.in_features,
+        q_proj.out_features + k_proj.out_features + v_proj.out_features,
+        q_proj.bias is not None,
+        next(iter(module.state_dict().values())).device,
+    )
 
     if isinstance(q_proj, WQLinear_GEMV):
         qkv_layer.qweight = torch.cat(
