@@ -542,6 +542,7 @@ class AwqQuantizer:
         best_device = get_best_device()
         modules[0] = modules[0].to(best_device)
         self.awq_model.move_embed(self.model, best_device)
+        self.awq_model.model.model.rotary_emb.to(best_device)
 
         # get input and kwargs to layer 0
         # with_kwargs is only supported in PyTorch 2.0
@@ -583,6 +584,7 @@ class AwqQuantizer:
 
         modules[0] = modules[0].cpu()
         self.awq_model.move_embed(self.model, "cpu")
+        self.awq_model.model.model.rotary_emb.to("cpu")
 
         clear_memory()
 
