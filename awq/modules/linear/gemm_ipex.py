@@ -82,7 +82,6 @@ class WQLinear_IPEX(WQLinear_GEMM):
 
         raise NotImplementedError("Only inference is supported for IPEX kernels")
 
-    # @torch.no_grad()
     def forward(self, x):
         assert IPEX_INSTALLED, (
             "IPEX kernels could not be loaded. "
