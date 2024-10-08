@@ -13,7 +13,7 @@ except:
 
 class WQLinear_IPEX(WQLinear_GEMM):
 
-    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev, training=False):
         # super().__init__()
         nn.Module.__init__(self)
         assert IPEX_INSTALLED, \
@@ -27,6 +27,7 @@ class WQLinear_IPEX(WQLinear_GEMM):
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
         self.scale_dtype = torch.float32
+        self.training = training
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0
@@ -88,7 +89,11 @@ class WQLinear_IPEX(WQLinear_GEMM):
             "Please install with `pip install intel_extension_for_pytorch` and "
             "refer to the detial https://github.com/intel/intel-extension-for-pytorch/tree/main")
 
-        outputs = self.ipex_linear(x)
+        if self.training:
+            outputs = self.ipex_linear(x)
+        else:
+            with torch.no_grad():
+                outputs = self.ipex_linear(x)
 
         return outputs
     
