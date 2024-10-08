@@ -48,7 +48,7 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
 - AMD:
   -  Your ROCm version must be compatible with Triton.
 - Intel CPU:
-  - Your torch and intel_extension_for_pytorch package version should at least 2.4 so can get a high speed inference.
+  - Your torch and intel_extension_for_pytorch package version should at least 2.4 for optimized performance.
 
 ### Install from PyPi
 
@@ -62,7 +62,7 @@ There are a few ways to install AutoAWQ:
     - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
 
-3. From main branch without kernels for Intel CPU:
+3. From main branch for Intel CPU optimized performance:
     - `pip install intel_extension_for_pytorch`
     - `pip install git+https://github.com/casper-hansen/AutoAWQ.git`
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
@@ -146,7 +146,7 @@ device = get_best_device()
 quant_path = "TheBloke/zephyr-7B-beta-AWQ"
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True, use_ipex=True if device == "cpu" else False)
+model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=True)
 tokenizer = AutoTokenizer.from_pretrained(quant_path, trust_remote_code=True)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 

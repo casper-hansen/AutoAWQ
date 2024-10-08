@@ -24,10 +24,7 @@ def run_eval(
         if task_use_pretrained:
             model = AutoAWQForCausalLM.from_pretrained(model_path, safetensors=pretrained_safetensors)
         else:
-            model = AutoAWQForCausalLM.from_quantized(model_path,
-                                                      quant_file,
-                                                      fuse_layers=False,
-                                                      use_ipex=True if device == "cpu" else False)
+            model = AutoAWQForCausalLM.from_quantized(model_path, quant_file, fuse_layers=False)
 
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 

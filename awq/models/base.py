@@ -33,7 +33,7 @@ from awq.utils.module import (
     exclude_layers_to_not_quantize,
     try_import,
 )
-from awq.utils.utils import ipex_available
+from awq.utils.utils import get_best_device, ipex_available
 from transformers import (
     AutoConfig,
     PreTrainedModel,
@@ -491,7 +491,7 @@ class BaseAWQForCausalLM(nn.Module):
                 trust_remote_code=trust_remote_code,
             )
 
-        use_cpu_ipex = use_ipex
+        use_cpu_ipex = use_ipex or get_best_device() == "cpu"
         if use_cpu_ipex and not ipex_available:
             raise ImportError(
                 "Please install intel_extension_for_pytorch with "

@@ -13,7 +13,6 @@ model = AutoAWQForCausalLM.from_quantized(
   torch_dtype=torch.float16,
   low_cpu_mem_usage=True,
   device_map="auto",
-  use_ipex=True if device == "cpu" else False,
 )
 
 prompt = [

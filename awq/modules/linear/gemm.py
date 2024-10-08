@@ -10,7 +10,6 @@ from awq.utils.packing_utils import dequantize_gemm
 
 awq_ext, msg = try_import("awq_ext")
 user_has_been_warned = False
-TRITON_AVAILABLE = False
 
 try:
     from awq.modules.triton.gemm import awq_gemm_triton, awq_dequantize_triton
@@ -39,9 +38,7 @@ class WQLinearMMFunction(Function):
     ):
         # The forward pass can use ctx.
         ctx.save_for_backward(x, qweight, qzeros, scales, bias)
-        ctx.group_size = group_size
         ctx.out_features = out_features
-        ctx.w_bit = w_bit
 
         out_shape = x.shape[:-1] + (out_features,)
         x = x.to(torch.float16)
@@ -71,7 +68,6 @@ class WQLinearMMFunction(Function):
                 )
 
         else:
-            global user_has_been_warned
             if not user_has_been_warned:
                 warnings.warn("Using naive (slow) implementation." + msg)
                 user_has_been_warned = True
@@ -90,19 +86,21 @@ class WQLinearMMFunction(Function):
     @staticmethod
     def backward(ctx, grad_output):
         input, qweight, qzeros, scales, bias = ctx.saved_tensors
+
+        if awq_ext is None and not TRITON_AVAILABLE:
+            raise ValueError(
+                "either triton or autoawq-kernels is needed to be installed to use `.backward()`. Make sure to install the auto-awq kernels"
+                " by following the installation guides in https://github.com/casper-hansen/AutoAWQ_kernels"
+            )
         
         # Cast to correct dtype for mixed precision training
         if awq_ext is not None:
             weights = awq_ext.dequantize_weights_cuda(
                 qweight, scales, qzeros, 1, 0, 0, False
             ).to(grad_output.dtype)
-        elif TRITON_AVAILABLE:
+        else:
             weights = awq_dequantize_triton(
                 qweight, scales, qzeros
-            ).to(grad_output.dtype)
-        else:
-            weights = dequantize_gemm(
-                qweight, qzeros, scales, ctx.w_bit, ctx.group_size
             ).to(grad_output.dtype)
 
         if ctx.needs_input_grad[0]:

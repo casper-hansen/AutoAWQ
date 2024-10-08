@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from .gemm import WQLinear_GEMM
+from awq.utils.packing_utils import dequantize_gemm
 
 try:
     from intel_extension_for_pytorch.nn.modules.weight_only_quantization import WeightOnlyQuantizedLinear
@@ -9,10 +11,11 @@ except:
     IPEX_INSTALLED = False
 
 
-class WQLinear_IPEX(nn.Module):
+class WQLinear_IPEX(WQLinear_GEMM):
 
     def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
-        super().__init__()
+        # super().__init__()
+        nn.Module.__init__(self)
         assert IPEX_INSTALLED, \
             "Please install IPEX package with `pip install intel_extension_for_pytorch`."
         assert w_bit == 4, "Only 4 bit are supported for now."
@@ -79,7 +82,7 @@ class WQLinear_IPEX(nn.Module):
 
         raise NotImplementedError("Only inference is supported for IPEX kernels")
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def forward(self, x):
         assert IPEX_INSTALLED, (
             "IPEX kernels could not be loaded. "
@@ -89,6 +92,14 @@ class WQLinear_IPEX(nn.Module):
         outputs = self.ipex_linear(x)
 
         return outputs
+    
+    def backward(self, grad_output):
+        import pdb; pdb.set_trace()
+        weights = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(grad_output.dtype)
+        batch_size = grad_output.shape[0]
+        grad_input = grad_output.bmm(weights.transpose(0, 1).unsqueeze(0).repeat(batch_size, 1, 1))
+
+        return grad_input, None, None, None, None, None, None, None
 
     def extra_repr(self) -> str:
         return ("in_features={}, out_features={}, bias={}, w_bit={}, group_size={}".format(
