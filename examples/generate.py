@@ -1,7 +1,9 @@
 import torch
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
+from awq.utils.utils import get_best_device
 
+device = get_best_device()
 model_id = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
@@ -26,7 +28,7 @@ inputs = tokenizer.apply_chat_template(
   add_generation_prompt=True,
   return_tensors="pt",
   return_dict=True,
-).to("cuda")
+).to(device)
 
 outputs = model.generate(
     **inputs,
