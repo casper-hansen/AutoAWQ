@@ -90,7 +90,8 @@ class WQLinear_IPEX(WQLinear_GEMM):
             "refer to the detial https://github.com/intel/intel-extension-for-pytorch/tree/main")
 
         if self.training:
-            outputs = self.ipex_linear(x)
+            outputs = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(x.dtype)
+            outputs = torch.matmul(x, outputs)
         else:
             with torch.no_grad():
                 outputs = self.ipex_linear(x)
@@ -98,7 +99,6 @@ class WQLinear_IPEX(WQLinear_GEMM):
         return outputs
     
     def backward(self, grad_output):
-        import pdb; pdb.set_trace()
         weights = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(grad_output.dtype)
         batch_size = grad_output.shape[0]
         grad_input = grad_output.bmm(weights.transpose(0, 1).unsqueeze(0).repeat(batch_size, 1, 1))
