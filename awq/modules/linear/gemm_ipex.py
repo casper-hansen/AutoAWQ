@@ -64,9 +64,10 @@ class WQLinear_IPEX(WQLinear_GEMM):
 
     def post_init(self):
         assert self.qweight.device.type == "cpu"
-        self.ipex_linear = WeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
-                                                                self.in_features, self.out_features, None, self.bias, \
-                                                                self.group_size, None, 0, 1)
+        if not self.training:
+            self.ipex_linear = WeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
+                                                                    self.in_features, self.out_features, None, self.bias, \
+                                                                    self.group_size, None, 0, 1)
 
     @classmethod
     def from_linear(cls, linear, w_bit, group_size, init_only=False, scales=None):
@@ -93,6 +94,7 @@ class WQLinear_IPEX(WQLinear_GEMM):
             outputs = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(x.dtype)
             outputs = torch.matmul(x, outputs)
         else:
+            assert hasattr(self, "ipex_linear")
             with torch.no_grad():
                 outputs = self.ipex_linear(x)
 
