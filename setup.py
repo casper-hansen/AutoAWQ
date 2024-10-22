@@ -4,10 +4,21 @@ from pathlib import Path
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import CUDAExtension
 
+
+def is_hpex_available():
+    try:
+        import habana_frameworks.torch.core as htcore
+        return True
+    except ImportError:
+        return False
+
+HPEX_AVAILABLE = is_hpex_available()
+
+
 AUTOAWQ_VERSION = "0.2.6"
 PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
 INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
-IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
+IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available() and not HPEX_AVAILABLE
 TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
 
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
@@ -19,6 +30,7 @@ if ROCM_VERSION:
     ROCM_VERSION_LEN = min(len(ROCM_VERSION.split(".")), 3)
     ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:ROCM_VERSION_LEN]
 
+
 if not PYPI_BUILD:
     if IS_CPU_ONLY:
         AUTOAWQ_VERSION += "+cpu"
@@ -26,6 +38,8 @@ if not PYPI_BUILD:
         AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
     elif ROCM_VERSION:
         AUTOAWQ_VERSION += f"+rocm{ROCM_VERSION}"
+    elif HPEX_AVAILABLE:
+        AUTOAWQ_VERSION += "+hpu"
     else:
         raise RuntimeError(
             "Your system must have either Nvidia or AMD GPU to build this package."
@@ -76,9 +90,9 @@ try:
 except ImportError:
     KERNELS_INSTALLED = False
 
+
 if not KERNELS_INSTALLED and CUDA_VERSION and INSTALL_KERNELS and CUDA_VERSION.startswith("12"):
     requirements.append("autoawq-kernels")
-
 elif IS_CPU_ONLY:
     requirements.append("intel-extension-for-pytorch>=2.4.0")
 

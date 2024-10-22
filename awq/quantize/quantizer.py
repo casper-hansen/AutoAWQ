@@ -22,7 +22,9 @@ from awq.utils.module import (
     set_op_by_name,
     exclude_layers_to_not_quantize,
 )
-
+import logging
+logger = logging.getLogger(__name__)
+import habana_frameworks.torch.core as htcore
 
 class AwqQuantizer:
     def __init__(
@@ -70,13 +72,17 @@ class AwqQuantizer:
             n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
         )
 
-    def pseudo_quantize_tensor(self, w: torch.Tensor):
+    def pseudo_quantize_tensor(self, w: torch.Tensor, return_int=False):
         org_w_shape = w.shape
         if self.group_size > 0:
             assert org_w_shape[-1] % self.group_size == 0
             w = w.reshape(-1, self.group_size)
+        if torch.isnan(w).sum() > 0:
+            breakpoint()
+            logging.error(f"Found {torch.isnan(w).sum()} NaNs in weight matrix")
         assert w.dim() == 2
         assert torch.isnan(w).sum() == 0
+        # breakpoint()
 
         # zero point quantization
         if self.zero_point:
@@ -86,9 +92,8 @@ class AwqQuantizer:
             min_int = 0
             scales = (max_val - min_val).clamp(min=1e-5) / max_int
             zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
-            w = (
-                torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
-            ) * scales
+            w_int = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+            w = w_int * scales
             zeros = zeros.view(org_w_shape[0], -1)
         else:
             max_val = w.abs().amax(dim=1, keepdim=True)
@@ -97,14 +102,19 @@ class AwqQuantizer:
             min_int = -(2 ** (self.w_bit - 1))
             scales = max_val / max_int
             zeros = None
-            w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
-
+            w_int = torch.clamp(torch.round(w / scales), min_int, max_int)
+            w = w_int * scales
+        if torch.isnan(w).sum() > 0:
+            breakpoint()
+            logging.error(f"Found {torch.isnan(w).sum()} NaNs in weight matrix {w.shape}")
         assert torch.isnan(scales).sum() == 0
         assert torch.isnan(w).sum() == 0
 
         scales = scales.view(org_w_shape[0], -1)
         w = w.reshape(org_w_shape)
-
+        
+        if return_int:
+            return w, scales, zeros, w_int.reshape(org_w_shape)
         return w, scales, zeros
 
     def pseudo_dequantize_tensor(
@@ -124,7 +134,10 @@ class AwqQuantizer:
         return w
 
     def quantize(self):
+        self._num_modules = len(self.modules)
         for i in tqdm(range(len(self.modules)), desc="AWQ"):
+            # if i > 1:
+            #     return
             # Move module and inputs to correct device
             common_device = next(self.modules[i].parameters()).device
             if common_device is None or str(common_device) == "cpu":
@@ -171,6 +184,7 @@ class AwqQuantizer:
             scales_list = append_str_prefix(
                 scales_list, get_op_name(self.model, self.modules[i]) + "."
             )
+            logger.warning(f"Applied scales: {scales_list}")
 
             # [STEP 3]: Compute and apply clipping list
             if self.apply_clip:
@@ -199,43 +213,61 @@ class AwqQuantizer:
 
     def _apply_quant(self, module, named_linears: Dict[str, nn.Linear]):
         for name, linear_layer in named_linears.items():
-            # NOTE: small regression in perplexity if linear layer uses .cpu().float()
-            linear_layer = linear_layer.to(get_best_device()).half()
+            logger.warning(f"Quantizing {name}")
+            # linear_layer = linear_layer.cpu().half()
+            # # NOTE: small regression in perplexity if linear layer uses .cpu().float()
+            # # linear_layer = linear_layer.to(get_best_device()).half()
 
-            linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
-                linear_layer.weight.data
-            )
+            # linear_layer.weight.data, scales, zeros = self.pseudo_quantize_tensor(
+            #     linear_layer.weight.data
+            # )
 
-            if self.version == "gemm":
-                scales = scales.t().contiguous()
-                if zeros is not None:
-                    zeros = zeros.t().contiguous()
-                q_linear_module = WQLinear_GEMM
+            # if self.version == "gemm":
+            #     scales = scales.t().contiguous()
+            #     if zeros is not None:
+            #         zeros = zeros.t().contiguous()
+            #     q_linear_module = WQLinear_GEMM
 
-            elif self.version == "gemv":
-                q_linear_module = WQLinear_GEMV
+            # elif self.version == "gemv":
+            #     q_linear_module = WQLinear_GEMV
 
-            elif self.version == "marlin":
-                q_linear_module = WQLinear_Marlin
+            # elif self.version == "marlin":
+            #     q_linear_module = WQLinear_Marlin
 
-            elif self.version == "gemv_fast":
-                q_linear_module = WQLinear_GEMVFast
+            # elif self.version == "gemv_fast":
+            #     q_linear_module = WQLinear_GEMVFast
 
-            else:
-                raise ValueError(f"Unknown version {self.version}")
+            # else:
+            #     raise ValueError(f"Unknown version {self.version}")
+            # linear_layer = linear_layer.cpu()
+            # from neural_compressor.torch.algorithms.weight_only.rtn import RTNQuantizer
+            # from neural_compressor.torch.quantization.config import RTNConfig
+            # config = RTNConfig(group_size=self.group_size, bits=self.w_bit)
+            # config_dict = config.to_dict()
+            # config_dict["scheme"] = "sym"  # ?
+            # rtn_quantizer = RTNQuantizer(quant_config={'': config_dict})
+            # q_linear = rtn_quantizer.quantize(linear_layer)
+            # # breakpoint()
+            # # breakpoint()
+            
+            # # q_linear = linear_layer
 
-            q_linear = q_linear_module.from_linear(
-                linear=linear_layer,
-                w_bit=self.w_bit,
-                group_size=self.group_size,
-                init_only=False,
-                scales=scales,
-                zeros=zeros,
-            )
+            # # q_linear = q_linear_module.from_linear(
+            # #     linear=linear_layer,
+            # #     w_bit=self.w_bit,
+            # #     group_size=self.group_size,
+            # #     init_only=False,
+            # #     scales=scales,
+            # #     zeros=zeros,
+            # # )
+            # logger.warning(f"got q_linear {q_linear}")
 
-            linear_layer.cpu()
-            q_linear.to(next(module.parameters()).device)
+            # linear_layer.cpu()
+            # q_linear.to(next(module.parameters()).device)
+            q_linear = linear_layer
             set_op_by_name(module, name, q_linear)
+            # set_op_by_name(module, name, q_linear)
+            logger.warning(f"update {name} to {q_linear}")
             clear_memory()
 
     @torch.no_grad()
@@ -325,11 +357,13 @@ class AwqQuantizer:
         with torch.no_grad():
             module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
             fp16_output = self._module_forward(inp, module2inspect, module_kwargs)
+            htcore.mark_step()
 
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
             inp, w_mean, x_mean, module2inspect, layers, fp16_output, module_kwargs
         )
+        htcore.mark_step()
 
         return (
             get_op_name(module, prev_op),
@@ -367,7 +401,8 @@ class AwqQuantizer:
         device = x.device
         x_mean = x_mean.view(-1).to(device)
         w_mean = w_mean.view(-1).to(device)
-
+        
+        logger.warning("Searching for best scale")
         for ratio in range(n_grid):
             # create new scales
             ratio = ratio / n_grid
@@ -450,6 +485,7 @@ class AwqQuantizer:
         avoid_clipping = ["q_", "k_", "query", "key", "Wqkv"]
 
         for name in named_linears:
+            logger.warning(f"Searching for best clip: {name}")
             # due to qk bmm, it is hard to clip precisely
             if any([_ in name for _ in avoid_clipping]):
                 continue
@@ -594,6 +630,7 @@ class AwqQuantizer:
         return modules, layer_kwargs, inps
 
     def _get_input_feat(self, layer, named_linears):
+        logger.warning("Computing input features for layer %s", layer)
         # firstly, get input features of all linear layers
         def cache_input_hook(m, x, y, name, feat_dict):
             x = x[0]

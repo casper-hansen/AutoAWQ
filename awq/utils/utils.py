@@ -73,6 +73,10 @@ def clear_memory(weight=None):
     if weight is not None:
         del weight
     gc.collect()
+    if is_hpex_available():
+        # import habana_frameworks.torch.core as htcore
+        # torch.hpu.empty_cache()
+        return 
     torch.cuda.empty_cache()
 
 
@@ -86,9 +90,20 @@ def compute_memory_used_pct(device):
     return memory_pct
 
 
+def is_hpex_available():
+    try:
+        import habana_frameworks.torch.core as htcore
+        HPEX_AVAILABLE = True
+    except ImportError:
+        HPEX_AVAILABLE = False
+    return HPEX_AVAILABLE
+
 def get_best_device():
     if torch.backends.mps.is_available():
         return "mps"
+    elif is_hpex_available():
+        # FIXME: return device name with index?
+        return "hpu"
     elif torch.cuda.is_available():
         return "cuda:0"
     else:

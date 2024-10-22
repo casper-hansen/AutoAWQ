@@ -5,6 +5,8 @@ from torch.autograd import Function
 from awq.utils.module import try_import
 from awq.utils.utils import get_best_device
 from awq.utils.packing_utils import dequantize_gemm
+import logging
+logger = logging.getLogger(__name__)
 
 # NOTE: We check if awq_ext or triton is available. awq_ext will be preferred if both are installed.
 
@@ -199,6 +201,7 @@ class WQLinear_GEMM(nn.Module):
                     / awq_linear.scales[idx // group_size]
                 ).to(torch.int)[:, None]
             )
+        logger.warning("Got int weight...")
         intweight = torch.cat(intweight, dim=1)
         intweight = intweight.t().contiguous()
         intweight = intweight.to(dtype=torch.int32)
@@ -225,7 +228,7 @@ class WQLinear_GEMM(nn.Module):
                 qweight[:, col] |= qweight_col << (i * awq_linear.w_bit)
         awq_linear.qweight = qweight
 
-        zeros = zeros.to(dtype=torch.int32, device=best_device)
+        zeros = zeros.to(dtype=torch.int32, device="cpu")
 
         if "mps" in best_device:
             zeros = zeros.to("cpu")
@@ -235,7 +238,7 @@ class WQLinear_GEMM(nn.Module):
             dtype=torch.int32,
             device=zeros.device,
         )
-
+        logger.warning("PACK Qzeros...")
         for col in range(zeros.shape[1] // pack_num):
             if awq_linear.w_bit == 4:
                 order_map = [0, 2, 4, 6, 1, 3, 5, 7]
@@ -244,7 +247,9 @@ class WQLinear_GEMM(nn.Module):
             for i in range(pack_num):
                 qzero_col = zeros[:, col * pack_num + order_map[i]]
                 qzeros[:, col] |= qzero_col << (i * awq_linear.w_bit)
+        logger.warning("PACK Qzeros done...")
         awq_linear.qzeros = qzeros
+        awq_linear = awq_linear.to(best_device)
 
         return awq_linear
 
