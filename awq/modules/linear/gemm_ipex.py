@@ -67,7 +67,7 @@ class WQLinear_IPEX(WQLinear_GEMM):
         if not self.training:
             self.ipex_linear = IPEXWeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
                                                                     self.in_features, self.out_features, None, self.bias, \
-                                                                    self.group_size, None, dtype=0, quant_method=1)
+                                                                    self.group_size, None, quant_method=1, dtype=0)
 
     @classmethod
     def from_linear(cls, linear, w_bit, group_size, init_only=False, scales=None):
