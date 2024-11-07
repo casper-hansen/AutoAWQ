@@ -4,8 +4,8 @@ from .gemm import WQLinear_GEMM
 from awq.utils.packing_utils import dequantize_gemm
 
 try:
-    from intel_extension_for_pytorch.nn.modules.weight_only_quantization import WeightOnlyQuantizedLinear
-    assert hasattr(WeightOnlyQuantizedLinear, "from_weight"), "The minimum version for ipex is at least 2.4"
+    from intel_extension_for_pytorch.llm.quantization import IPEXWeightOnlyQuantizedLinear
+    assert hasattr(IPEXWeightOnlyQuantizedLinear, "from_weight"), "The minimum version for ipex is at least 2.4"
     IPEX_INSTALLED = True
 except:
     IPEX_INSTALLED = False
@@ -65,7 +65,7 @@ class WQLinear_IPEX(WQLinear_GEMM):
     def post_init(self):
         assert self.qweight.device.type in ("cpu", "xpu")
         if not self.training:
-            self.ipex_linear = WeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
+            self.ipex_linear = IPEXWeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
                                                                     self.in_features, self.out_features, None, self.bias, \
                                                                     self.group_size, None, dtype=0, quant_method=1)
 
