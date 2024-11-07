@@ -438,7 +438,7 @@ class BaseAWQForCausalLM(nn.Module):
             bool, Doc("Whether to map the weights to ExLlamaV2 kernels.")
         ] = False,
         use_ipex: Annotated[
-            bool, Doc("Whether to map the weights to ipex kernels for CPU device.")
+            bool, Doc("Whether to map the weights to ipex kernels for CPU and XPU device.")
         ] = False,
         device_map: Annotated[
             Union[str, Dict],
@@ -491,8 +491,9 @@ class BaseAWQForCausalLM(nn.Module):
                 trust_remote_code=trust_remote_code,
             )
 
-        use_cpu_ipex = use_ipex or get_best_device() == "cpu"
-        if use_cpu_ipex and not ipex_available:
+        best_device = get_best_device()
+        use_ipex = use_ipex or best_device == "cpu" or "xpu" in best_device
+        if use_ipex and not ipex_available:
             raise ImportError(
                 "Please install intel_extension_for_pytorch with "
                 "`pip install intel_extension_for_pytorch` for 'ipex' kernel!"
@@ -505,7 +506,7 @@ class BaseAWQForCausalLM(nn.Module):
             quant_config.version,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
-            use_ipex=use_cpu_ipex,
+            use_ipex=use_ipex,
         )
 
         model.tie_weights()
@@ -530,9 +531,9 @@ class BaseAWQForCausalLM(nn.Module):
             else:
                 self.fuse_layers(model)
 
-        if use_cpu_ipex:
-            dtype = torch.bfloat16
-            model.to(dtype=dtype, device="cpu")
+        if use_ipex:
+            dtype = torch.float16 if "xpu" in best_device else torch.bfloat16
+            model.to(dtype=dtype, device=best_device)
             # repack qweight to match the ipex kernel.
             model = ipex_post_init(model)
         elif quant_config.version == "marlin":

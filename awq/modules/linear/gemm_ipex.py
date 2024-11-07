@@ -63,7 +63,7 @@ class WQLinear_IPEX(WQLinear_GEMM):
         self.register_buffer("qweight", qweight)
 
     def post_init(self):
-        assert self.qweight.device.type == "cpu"
+        assert self.qweight.device.type in ("cpu", "xpu")
         if not self.training:
             self.ipex_linear = WeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
                                                                     self.in_features, self.out_features, None, self.bias, \
