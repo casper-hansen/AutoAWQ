@@ -34,6 +34,8 @@ class WQLinear_IPEX(WQLinear_GEMM):
         assert out_features % (32 // self.w_bit) == 0
         self.pack_num = 32 // self.w_bit
 
+        self.init_ipex = False
+
         self.register_buffer(
             "qzeros",
             torch.zeros(
@@ -64,6 +66,8 @@ class WQLinear_IPEX(WQLinear_GEMM):
 
     def post_init(self):
         assert self.qweight.device.type in ("cpu", "xpu")
+
+    def init_ipex_linear(self):
         if not self.training:
             self.ipex_linear = IPEXWeightOnlyQuantizedLinear.from_weight(self.qweight, self.scales, self.qzeros, \
                                                                     self.in_features, self.out_features, None, self.bias, \
@@ -89,6 +93,10 @@ class WQLinear_IPEX(WQLinear_GEMM):
             "IPEX kernels could not be loaded. "
             "Please install with `pip install intel_extension_for_pytorch` and "
             "refer to the detial https://github.com/intel/intel-extension-for-pytorch/tree/main")
+
+        if not self.init_ipex:
+            self.init_ipex_linear()
+            self.init_ipex = True
 
         if self.training:
             outputs = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(x.dtype)
