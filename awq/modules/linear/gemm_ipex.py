@@ -98,13 +98,12 @@ class WQLinear_IPEX(WQLinear_GEMM):
             self.init_ipex_linear()
             self.init_ipex = True
 
-        if self.training:
-            outputs = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(x.dtype)
-            outputs = torch.matmul(x, outputs)
-        else:
-            assert hasattr(self, "ipex_linear")
+        if hasattr(self, "ipex_linear"):
             with torch.no_grad():
                 outputs = self.ipex_linear(x)
+        else:
+            outputs = dequantize_gemm(self.qweight, self.qzeros, self.scales, self.w_bit, self.group_size).to(x.dtype)
+            outputs = torch.matmul(x, outputs)
 
         return outputs
     
