@@ -67,7 +67,9 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         else None
     )
 
-    if isinstance(q_proj, WQLinear_GEMV):
+    if isinstance(q_proj, WQLinear_IPEX):
+        q_linear = WQLinear_IPEX
+    elif isinstance(q_proj, WQLinear_GEMV):
         q_linear = WQLinear_GEMV
     elif isinstance(q_proj, WQLinear_GEMM):
         q_linear = WQLinear_GEMM
@@ -79,8 +81,6 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         q_linear = WQLinear_Marlin
     elif isinstance(q_proj, WQLinear_GEMVFast):
         q_linear = WQLinear_GEMVFast
-    elif isinstance(q_proj, WQLinear_IPEX):
-        q_linear = WQLinear_IPEX
 
     qkv_layer = q_linear(
         q_proj.w_bit,

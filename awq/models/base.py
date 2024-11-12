@@ -526,7 +526,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Dispath to devices
         awq_ext, msg = try_import("awq_ext")
         if fuse_layers:
-            if awq_ext is None:
+            if ("cuda" in best_device or "mps" in best_device) and awq_ext is None:
                 warnings.warn("Skipping fusing modules because AWQ extension is not installed." + msg)
             else:
                 self.fuse_layers(model)
