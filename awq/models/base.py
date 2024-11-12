@@ -532,8 +532,6 @@ class BaseAWQForCausalLM(nn.Module):
                 self.fuse_layers(model)
 
         if use_ipex:
-            dtype = torch.float16 if "xpu" in best_device else torch.bfloat16
-            model.to(dtype=dtype, device=best_device)
             # repack qweight to match the ipex kernel.
             model = ipex_post_init(model)
         elif quant_config.version == "marlin":
