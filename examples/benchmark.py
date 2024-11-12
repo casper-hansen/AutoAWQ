@@ -11,9 +11,9 @@ from awq.utils.utils import get_best_device, ipex_available
 from transformers import AutoTokenizer, GenerationConfig, LogitsProcessor, LogitsProcessorList
 
 DEVICE = get_best_device()
-if DEVICE == "cpu":
+if DEVICE in ["cpu", "xpu:0"]:
     if ipex_available:
-        torch_dtype = torch.bfloat16
+        torch_dtype = torch.bfloat16 if DEVICE == "cpu" else torch.float16
     else:
         raise ImportError("Please import intel_extension_for_pytorch "
                           "by `pip install intel_extension_for_pytorch`")
@@ -29,8 +29,10 @@ class TimeMeasuringLogitsProcessor(LogitsProcessor):
         """The logit processor is called after the model forward."""
 
         # cuda runs async operates, so we synchronize for accurate time measurement
-        if DEVICE != "cpu":
+        if DEVICE == "cuda:0":
             torch.cuda.synchronize()
+        elif DEVICE == "xpu:0":
+            torch.xpu.synchronize()
 
         # measure time
         start_time = time.time()
@@ -56,8 +58,10 @@ def generate_torch(model, input_ids, n_generate):
 
     with torch.inference_mode():
         for i in range(n_generate):
-            if DEVICE != "cpu":
+            if DEVICE == "cuda:0":
                 torch.cuda.synchronize()
+            elif DEVICE == "xpu:0":
+                torch.xpu.synchronize()
             start = time.time()
 
             if i == 0:
@@ -69,8 +73,10 @@ def generate_torch(model, input_ids, n_generate):
 
             out = model(inputs, use_cache=True)
 
-            if DEVICE != "cpu":
+            if DEVICE == "cuda:0":
                 torch.cuda.synchronize()
+            elif DEVICE == "xpu:0":
+                torch.xpu.synchronize()
             token = out[0][:, -1].max(1)[1].unsqueeze(1)
 
             if i == 0:
@@ -149,6 +155,12 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
             memory_pct = mem_info.rss / memory_info.total
             total_memory_used = float(mem_info.rss) / (1024 ** 3)
             print(f" ** Max Memory (device: {DEVICE}): {total_memory_used:.2f} GB ({memory_pct:.2f}%)")
+        elif DEVICE == "xpu:0":
+            for device in range(torch.xpu.device_count()):
+                memory_used = torch.xpu.max_memory_allocated(device) / (1024 ** 3)
+                total_memory_used += memory_used
+                memory_pct = memory_used / (torch.xpu.get_device_properties(device).total_memory / (1024 ** 3)) * 100
+                print(f" ** Max Memory (device: {device}): {memory_used:.2f} GB ({memory_pct:.2f}%)")
         else:
             for device in range(torch.cuda.device_count()):
                 memory_used = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
@@ -197,8 +209,10 @@ def main(args):
 
     for settings in rounds:
         input_ids = torch.randint(0, tokenizer.vocab_size, (args.batch_size, settings["context"]))
-        if DEVICE != "cpu":
+        if DEVICE == "cuda:0":
             input_ids = input_ids.cuda()
+        elif DEVICE == "xpu:0":
+            input_ids = input_ids.to("xpu:0")
 
         stats, model_version = run_round(
             generator,
@@ -218,8 +232,10 @@ def main(args):
 
     df = pd.DataFrame(all_stats)
     print('Device:', DEVICE)
-    if DEVICE != "cpu":
+    if DEVICE == "cuda:0":
         print('GPU:', torch.cuda.get_device_name())
+    elif DEVICE == "xpu:0":
+        print('XPU:', torch.xpu.get_device_name())
     print('Model:', args.model_path)
     print('Version:', model_version)
     print(df.to_markdown(index=False))
