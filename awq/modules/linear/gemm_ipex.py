@@ -14,7 +14,6 @@ except:
 class WQLinear_IPEX(WQLinear_GEMM):
 
     def __init__(self, w_bit, group_size, in_features, out_features, bias, dev, training=False):
-        # super().__init__()
         nn.Module.__init__(self)
         assert IPEX_INSTALLED, \
             "Please install IPEX package with `pip install intel_extension_for_pytorch`."

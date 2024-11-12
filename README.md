@@ -47,7 +47,7 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
   - Your CUDA version must be CUDA 11.8 or later.
 - AMD:
   -  Your ROCm version must be compatible with Triton.
-- Intel CPU:
+- Intel CPU and Intel GPU:
   - Your torch and intel_extension_for_pytorch package version should at least 2.4 for optimized performance.
 
 ### Install from PyPi
@@ -62,10 +62,9 @@ There are a few ways to install AutoAWQ:
     - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
 
-3. From main branch for Intel CPU optimized performance:
+3. From main branch for Intel CPU and Intel XPU optimized performance:
     - `pip install intel_extension_for_pytorch`
     - `pip install git+https://github.com/casper-hansen/AutoAWQ.git`
-    - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
 
 ## Usage
 
