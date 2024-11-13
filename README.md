@@ -238,7 +238,7 @@ GPU: 2x NVIDIA GeForce RTX 4090
 ### CPU
 
 - CPU: 48 cores SPR (Intel 4th Gen Xeon CPU)
-- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
+- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1 --generator hf`
 
 | Model | Version | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory |
 |-------|---------|------------|----------------|---------------|-------------------|------------------|---------------|
