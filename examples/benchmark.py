@@ -108,7 +108,7 @@ def generate_hf(model: BaseAWQForCausalLM, input_ids, n_generate):
 
     return context_time, generate_time
 
-def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_size, no_safetensors, pretrained):
+def run_round(generator, model_path, quant_file, n_generate, context, input_ids, batch_size, no_safetensors, pretrained):
     print(f" -- Loading model...")
 
     if pretrained:
@@ -120,7 +120,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         )
     else:
         model = AutoAWQForCausalLM.from_quantized(
-            model_path, quant_file, max_seq_len=n_generate, batch_size=batch_size, safetensors=not no_safetensors
+            model_path, quant_file, max_seq_len=n_generate+context, batch_size=batch_size, safetensors=not no_safetensors
         )
 
     print(f" -- Warming up...")
@@ -219,6 +219,7 @@ def main(args):
             args.model_path,
             args.quant_file,
             settings["n_generate"],
+            settings["context"],
             input_ids,
             args.batch_size,
             args.no_safetensors,
