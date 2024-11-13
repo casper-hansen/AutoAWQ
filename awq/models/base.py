@@ -492,7 +492,7 @@ class BaseAWQForCausalLM(nn.Module):
             )
 
         best_device = get_best_device()
-        use_ipex = use_ipex or best_device == "cpu" or "xpu" in best_device
+        use_ipex = use_ipex or best_device in ["cpu", "xpu:0"]
         if use_ipex and not ipex_available:
             raise ImportError(
                 "Please install intel_extension_for_pytorch with "
