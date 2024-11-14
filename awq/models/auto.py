@@ -30,10 +30,13 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "starcoder2": Starcoder2AWQForCausalLM,
     "llava_next": LlavaNextAWQForCausalLM,
     "phi3": Phi3AWQForCausalLM,
+    "phi3_v": Phi3VAWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
     "minicpm": MiniCPMAWQForCausalLM,
     "internlm2": InternLM2AWQForCausalLM,
+    "minicpm3": MiniCPM3AWQForCausalLM,
+    "qwen2_vl": Qwen2VLAWQForCausalLM,
 }
 
 
