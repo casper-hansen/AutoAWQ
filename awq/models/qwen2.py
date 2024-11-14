@@ -30,6 +30,7 @@ class Qwen2AWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def move_embed(model: OldQwen2ForCausalLM, device: str):
+        model.model.rotary_emb = model.model.rotary_emb.to(device)
         model.model.embed_tokens = model.model.embed_tokens.to(device)
 
     @staticmethod
@@ -125,6 +126,7 @@ class Qwen2Fuser:
                     norm_2=norm_2,
                     dev=device,
                     max_seq_len=self.model.config.max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
                 )
             )
 

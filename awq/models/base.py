@@ -1,20 +1,19 @@
 import os
 import gc
-import json
+import warnings
 import torch
 import transformers
 import torch.nn as nn
 
 from tqdm import tqdm
 from typing import List, Union, Dict
-from safetensors.torch import save_file
 from typing_extensions import Doc, Annotated
-from huggingface_hub import snapshot_download
-from transformers.modeling_utils import shard_checkpoint
+from huggingface_hub import snapshot_download, save_torch_state_dict
 
 from awq.modules.linear import (
     WQLinear_GEMM,
     WQLinear_GEMV,
+    WQLinear_IPEX,
     WQLinear_Marlin,
     WQLinear_Exllama,
     WQLinear_ExllamaV2,
@@ -22,18 +21,21 @@ from awq.modules.linear import (
     marlin_post_init,
     exllama_post_init,
     exllamav2_post_init,
+    ipex_post_init,
 )
 from awq.utils.module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
+    try_import,
 )
+from awq.utils.utils import get_best_device, ipex_available
 from transformers import (
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
     AutoProcessor,
-    CLIPImageProcessor,
+    BaseImageProcessor,
     PreTrainedTokenizer,
 )
 from accelerate.big_modeling import (
@@ -45,6 +47,7 @@ from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.quantize.quantizer import AwqQuantizer
 from awq.utils.module import get_named_linears, set_op_by_name
+
 
 # Since we support different `AutoModelForxxx` from transformers
 # we need to define a custom mapping dict as below:
@@ -67,10 +70,21 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
     "qwen2": "AutoModelForCausalLM",
+    "qwen2_vl": "AutoModelForVision2Seq",
     "gemma": "AutoModelForCausalLM",
+    "gemma2": "AutoModelForCausalLM",
     "stablelm": "AutoModelForCausalLM",
     "starcoder2": "AutoModelForCausalLM",
     "jamba": "AutoModelForCausalLM",
+    "llava_next": "AutoModelForVision2Seq",
+    "phi3": "AutoModelForCausalLM",
+    "phi3_v": "AutoModelForCausalLM",
+    "cohere": "AutoModelForCausalLM",
+    "deepseek_v2": "AutoModelForCausalLM",
+    "minicpm": "AutoModelForCausalLM",
+    "minicpm3":"AutoModelForCausalLM",
+    "internlm2": "AutoModelForCausalLM",
+    "qwen2_vl": "AutoModelForVision2Seq",
 }
 
 
@@ -87,7 +101,7 @@ class BaseAWQForCausalLM(nn.Module):
             AwqConfig, Doc("The quantization config of the model.")
         ],
         processor: Annotated[
-            AutoProcessor, Doc("An optional processor, e.g. for vision models.")
+            BaseImageProcessor, Doc("An optional processor, e.g. for vision models.")
         ],
     ):
         """The base model for all AutoAWQ models."""
@@ -98,7 +112,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
-        self.processor: CLIPImageProcessor = processor
+        self.processor: BaseImageProcessor = processor
 
     def to(self, device: Annotated[str, Doc("The device to move your model to.")]):
         """A utility function for moving the model to a device."""
@@ -145,6 +159,39 @@ class BaseAWQForCausalLM(nn.Module):
                 "Whether to apply clipping to the model during quantization. Some models may perform better with this set to False."
             ),
         ] = True,
+        n_parallel_calib_samples: Annotated[
+            int,
+            Doc(
+                "The number of parallel samples to run through the model. "
+                "A high number of parallel samples can result in OOM during quantization if max_calib_samples is high enough. "
+                "If None, runs through all samples at the same time. "
+                "You can set this to a low number for more memory efficient quantization."
+            ),
+        ] = None,
+        max_calib_samples: Annotated[
+            int, Doc("The maximum number of samples to run through the model.")
+        ] = 128,
+        max_calib_seq_len: Annotated[
+            int,
+            Doc(
+                "The maximum sequence length of the calibration dataset. Discard samples greater than max_calib_seq_len."
+            ),
+        ] = 512,
+        max_chunk_memory: Annotated[
+            int,
+            Doc(
+                "The loss computation and per-channel mean is optimized into chunked computations."
+                " Adjust this parameter to increase or decrease memory usage for these computations."
+                " Default is 1GB (1024 * 1024 * 1024)."
+            ),
+        ] = 1024
+        * 1024
+        * 1024,
+        quantizer_cls: Annotated[
+            AwqQuantizer,
+            Doc("If you want to customize the quantization class, you can use AwqQuantizer as a base class.")
+        ] = AwqQuantizer,
+        **kwargs,
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -168,7 +215,7 @@ class BaseAWQForCausalLM(nn.Module):
         if hasattr(self, "modules_to_not_convert"):
             self.quant_config.modules_to_not_convert = self.modules_to_not_convert
 
-        self.quantizer = AwqQuantizer(
+        self.quantizer = quantizer_cls(
             self,
             self.model,
             tokenizer,
@@ -183,6 +230,11 @@ class BaseAWQForCausalLM(nn.Module):
             modules_to_not_convert=self.quant_config.modules_to_not_convert,
             export_compatible=export_compatible,
             apply_clip=apply_clip,
+            n_parallel_calib_samples=n_parallel_calib_samples,
+            max_calib_samples=max_calib_samples,
+            max_calib_seq_len=max_calib_seq_len,
+            max_chunk_memory=max_chunk_memory,
+            **kwargs,
         )
         self.quantizer.quantize()
 
@@ -251,28 +303,13 @@ class BaseAWQForCausalLM(nn.Module):
             if os.path.exists(path):
                 os.remove(path)
 
-        # model_name has no extension, add it when saving state_dict
-        model_name = "model.safetensors" if safetensors else "pytorch_model.bin"
-
-        # shard checkpoint into chunks (10GB default)
-        shards, index = shard_checkpoint(
-            self.model.state_dict(), max_shard_size=shard_size, weights_name=model_name
+        save_torch_state_dict(
+            state_dict=self.model.state_dict(),
+            save_directory=save_dir,
+            max_shard_size=shard_size,
+            safe_serialization=safetensors,
+            force_contiguous=True,
         )
-
-        for shard_file, shard in shards.items():
-            if safetensors:
-                # safetensors must be in the same memory, so we duplicate and use contiguous memory
-                shard = {k: v.clone().contiguous() for k, v in shard.items()}
-                save_file(
-                    shard, os.path.join(save_dir, shard_file), metadata={"format": "pt"}
-                )
-            else:
-                torch.save(shard, os.path.join(save_dir, shard_file))
-
-        # save shard index
-        if index is not None:
-            with open(f"{save_dir}/{model_name}.index.json", "w+") as file:
-                file.write(json.dumps(index, indent=4))
 
     @classmethod
     def from_pretrained(
@@ -299,9 +336,10 @@ class BaseAWQForCausalLM(nn.Module):
             Doc(
                 "A device map that will be passed onto the model loading method from transformers."
             ),
-        ] = None,
+        ] = "auto",
         download_kwargs: Annotated[
-            Dict, Doc("Used for configure download model"),
+            Dict,
+            Doc("Used for configure download model"),
         ] = None,
         **model_init_kwargs: Annotated[
             Dict,
@@ -313,9 +351,12 @@ class BaseAWQForCausalLM(nn.Module):
         """A method for initialization of pretrained models, usually in FP16."""
         # Get weights path and quant config
         model_weights_path, config, quant_config = self._load_config(
-            self, model_path, "", safetensors,
+            self,
+            model_path,
+            "",
+            safetensors,
             trust_remote_code=trust_remote_code,
-            download_kwargs=download_kwargs
+            download_kwargs=download_kwargs,
         )
 
         target_cls_name = TRANSFORMERS_AUTO_MAPPING_DICT[config.model_type]
@@ -324,7 +365,6 @@ class BaseAWQForCausalLM(nn.Module):
         processor = None
         if target_cls_name == "AutoModelForVision2Seq":
             processor = AutoProcessor.from_pretrained(model_weights_path)
-            processor: CLIPImageProcessor = processor.image_processor
 
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(
@@ -388,18 +428,28 @@ class BaseAWQForCausalLM(nn.Module):
         use_exllama_v2: Annotated[
             bool, Doc("Whether to map the weights to ExLlamaV2 kernels.")
         ] = False,
+        use_ipex: Annotated[
+            bool, Doc("Whether to map the weights to ipex kernels for CPU and XPU device.")
+        ] = False,
         device_map: Annotated[
             Union[str, Dict],
             Doc(
                 "A device map that will be passed onto the model loading method from transformers."
             ),
         ] = "balanced",
+        max_memory: Annotated[
+            Dict[Union[int, str], Union[int, str]],
+            Doc(
+                'A dictionary device identifier to maximum memory which will be passed onto the model loading method from transformers. For example：{0: "4GB",1: "10GB"'
+            ),
+        ] = None,
         offload_folder: Annotated[
             str,
             Doc("The folder ot offload the model to."),
         ] = None,
         download_kwargs: Annotated[
-            Dict, Doc("Used for configure download model"),
+            Dict,
+            Doc("Used for configure download model"),
         ] = None,
         **config_kwargs: Annotated[
             Dict,
@@ -432,6 +482,13 @@ class BaseAWQForCausalLM(nn.Module):
                 trust_remote_code=trust_remote_code,
             )
 
+        best_device = get_best_device()
+        use_ipex = use_ipex or best_device in ["cpu", "xpu:0"]
+        if use_ipex and not ipex_available:
+            raise ImportError(
+                "Please install intel_extension_for_pytorch with "
+                "`pip install intel_extension_for_pytorch` for 'ipex' kernel!"
+            )
         # Prepare WQLinear layers, replace nn.Linear
         self._load_quantized_modules(
             self,
@@ -440,6 +497,7 @@ class BaseAWQForCausalLM(nn.Module):
             quant_config.version,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
+            use_ipex=use_ipex,
         )
 
         model.tie_weights()
@@ -456,12 +514,18 @@ class BaseAWQForCausalLM(nn.Module):
         )
 
         # Dispath to devices
+        awq_ext, msg = try_import("awq_ext")
         if fuse_layers:
-            self.fuse_layers(model)
+            if best_device in ["mps", "cuda:0"] and awq_ext is None:
+                warnings.warn("Skipping fusing modules because AWQ extension is not installed." + msg)
+            else:
+                self.fuse_layers(model)
 
-        if quant_config.version == "marlin":
+        if use_ipex:
+            # repack qweight to match the ipex kernel.
+            model = ipex_post_init(model)
+        elif quant_config.version == "marlin":
             model = marlin_post_init(model)
-
         elif use_exllama:
             # creates q4 handle
             model = exllama_post_init(model)
@@ -472,6 +536,8 @@ class BaseAWQForCausalLM(nn.Module):
                 max_input_len=max_seq_len or 2048,
                 max_batch_size=int(os.getenv("AWQ_BATCH_SIZE", 1)),
             )
+
+        model.eval()
 
         return self(
             model,
@@ -494,15 +560,15 @@ class BaseAWQForCausalLM(nn.Module):
     ):
         # [STEP 1] Download model if path is not a directory
         if not os.path.isdir(model_path):
-            ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt"]
+            ignore_patterns = ["*msgpack*", "*h5*", "optimizer.pt", "*.onnx*"]
             if safetensors:
                 ignore_patterns.extend(["*.pt*", "*.bin*", "consolidated*"])
             else:
                 ignore_patterns.append("*.safetensors*")
-            
+
             if download_kwargs is None:
                 download_kwargs = {}
-            
+
             if "ignore_patterns" in download_kwargs:
                 download_kwargs_ignore_patterns = download_kwargs.pop("ignore_patterns")
 
@@ -511,7 +577,9 @@ class BaseAWQForCausalLM(nn.Module):
                 elif isinstance(download_kwargs_ignore_patterns, list):
                     ignore_patterns.extend(download_kwargs_ignore_patterns)
 
-            model_path = snapshot_download(model_path, ignore_patterns=ignore_patterns, **download_kwargs)
+            model_path = snapshot_download(
+                model_path, ignore_patterns=ignore_patterns, **download_kwargs
+            )
 
         if model_filename != "":
             model_weights_path = model_path + f"/{model_filename}"
@@ -543,11 +611,11 @@ class BaseAWQForCausalLM(nn.Module):
         return model_weights_path, config, quant_config
 
     def _load_quantized_modules(
-        self, model, quant_config, version, use_exllama, use_exllama_v2
+        self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
     ):
         # Real quantization of weights
         assert not (
-            version == "gemv" and (use_exllama or use_exllama_v2)
+            version == "gemv" and (use_exllama or use_exllama_v2 or use_ipex)
         ), "Exllama kernels only support GEMM version."
 
         # Get blocks of model
@@ -559,7 +627,7 @@ class BaseAWQForCausalLM(nn.Module):
             # Get every linear layer in a block
             named_linears = get_named_linears(layer)
 
-            # Filter out the linear layers we don't want to exclude
+            # Filter out the linear layers we don't want to include
             named_linears = exclude_layers_to_not_quantize(
                 named_linears, quant_config.modules_to_not_convert
             )
@@ -569,7 +637,9 @@ class BaseAWQForCausalLM(nn.Module):
 
             # Replace nn.Linear with WQLinear
             for name, module in named_linears.items():
-                if version == "marlin":
+                if use_ipex:
+                    q_linear_module = WQLinear_IPEX
+                elif version == "marlin":
                     q_linear_module = WQLinear_Marlin
                 elif use_exllama:
                     q_linear_module = WQLinear_Exllama
@@ -582,13 +652,15 @@ class BaseAWQForCausalLM(nn.Module):
                 elif version == "gemv_fast":
                     q_linear_module = WQLinear_GEMVFast
 
+
                 q_linear = q_linear_module.from_linear(
                     module, quant_config.w_bit, quant_config.q_group_size, True
                 )
                 q_linear.to(next(layer.parameters()).device)
                 set_op_by_name(layer, name, q_linear)
 
-            torch.cuda.empty_cache()
+            if not use_ipex:
+                torch.cuda.empty_cache()
             gc.collect()
 
     @staticmethod

@@ -1,6 +1,10 @@
 import gc
+import importlib
 import torch
 import accelerate
+
+
+ipex_available = importlib.util.find_spec("intel_extension_for_pytorch") is not None
 
 
 def get_module_by_name_suffix(model, module_name: str):
@@ -87,6 +91,8 @@ def get_best_device():
         return "mps"
     elif torch.cuda.is_available():
         return "cuda:0"
+    elif torch.xpu.is_available():
+        return "xpu:0"
     else:
         return "cpu"
 

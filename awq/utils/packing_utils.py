@@ -15,17 +15,20 @@ def unpack_awq(qweight: torch.Tensor, qzeros: torch.Tensor, bits: int):
     iweights = iweights.view(iweights.shape[0], -1)
 
     # unpacking columnwise
-    izeros = torch.bitwise_right_shift(qzeros[:, :, None], shifts[None, None, :]).to(
-        torch.int8  # smallest dtype available
-    )
-    izeros = izeros.view(izeros.shape[0], -1)
+    if qzeros is not None:
+        izeros = torch.bitwise_right_shift(qzeros[:, :, None], shifts[None, None, :]).to(
+            torch.int8  # smallest dtype available
+        )
+        izeros = izeros.view(izeros.shape[0], -1)
+    else:
+        izeros = qzeros
 
     return iweights, izeros
 
 
 def reverse_awq_order(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
     reverse_order_tensor = torch.arange(
-        izeros.shape[-1],
+        iweights.shape[-1],
         dtype=torch.int32,
         device=izeros.device,
     )
@@ -33,7 +36,8 @@ def reverse_awq_order(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
     reverse_order_tensor = reverse_order_tensor[:, AWQ_REVERSE_ORDER]
     reverse_order_tensor = reverse_order_tensor.view(-1)
 
-    izeros = izeros[:, reverse_order_tensor]
+    if izeros is not None:
+        izeros = izeros[:, reverse_order_tensor]
     iweights = iweights[:, reverse_order_tensor]
 
     return iweights, izeros

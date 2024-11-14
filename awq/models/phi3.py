@@ -2,73 +2,66 @@ import tqdm
 from typing import List, Tuple
 from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
-from awq.modules.fused.block import LlamaLikeBlock
-from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.llama.modeling_llama import (
-    LlamaDecoderLayer as OldLlamaDecoderLayer,
-    LlamaForCausalLM as OldLlamaForCausalLM,
+from awq.modules.fused.block import Phi3Block
+from awq.modules.fused.model import Phi3Model as AWQPhi3Model
+from transformers.models.phi3.modeling_phi3 import (
+    Phi3DecoderLayer as OldPhi3DecoderLayer,
+    Phi3ForCausalLM as OldPhi3ForCausalLM,
 )
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
-class LlamaAWQForCausalLM(BaseAWQForCausalLM):
-    layer_type = "LlamaDecoderLayer"
+class Phi3AWQForCausalLM(BaseAWQForCausalLM):
+    layer_type = "Phi3DecoderLayer"
     max_seq_len_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = LlamaFuser(model)
+    def fuse_layers(model: OldPhi3ForCausalLM):
+        fuser = Phi3Fuser(model)
         fuser.fuse_transformer()
 
     @staticmethod
-    def get_model_layers(model: OldLlamaForCausalLM):
+    def get_model_layers(model: OldPhi3ForCausalLM):
         return model.model.layers
 
     @staticmethod
-    def get_act_for_scaling(module: OldLlamaDecoderLayer):
+    def get_act_for_scaling(module: OldPhi3DecoderLayer):
         return dict(is_scalable=False)
 
     @staticmethod
-    def move_embed(model: OldLlamaForCausalLM, device: str):
-        model.model.rotary_emb = model.model.rotary_emb.to(device)
+    def move_embed(model: OldPhi3ForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
 
     @staticmethod
-    def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
+    def get_layers_for_scaling(module: OldPhi3DecoderLayer, input_feat, module_kwargs):
         layers = []
 
         # attention input
         layers.append(
             dict(
                 prev_op=module.input_layernorm,
-                layers=[
-                    module.self_attn.q_proj,
-                    module.self_attn.k_proj,
-                    module.self_attn.v_proj,
-                ],
-                inp=input_feat["self_attn.q_proj"],
+                layers=[module.self_attn.qkv_proj],
+                inp=input_feat["self_attn.qkv_proj"],
                 module2inspect=module.self_attn,
                 kwargs=module_kwargs,
             )
         )
 
         # attention out
-        # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
-        if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
-            layers.append(
-                dict(
-                    prev_op=module.self_attn.v_proj,
-                    layers=[module.self_attn.o_proj],
-                    inp=input_feat["self_attn.o_proj"],
-                )
+        layers.append(
+            dict(
+                prev_op=module.self_attn.qkv_proj,
+                layers=[module.self_attn.o_proj],
+                inp=input_feat["self_attn.o_proj"],
             )
+        )
 
         # linear 1
         layers.append(
             dict(
                 prev_op=module.post_attention_layernorm,
-                layers=[module.mlp.gate_proj, module.mlp.up_proj],
-                inp=input_feat["mlp.gate_proj"],
+                layers=[module.mlp.gate_up_proj],
+                inp=input_feat["mlp.gate_up_proj"],
                 module2inspect=module.mlp,
             )
         )
@@ -76,7 +69,7 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         # linear 2
         layers.append(
             dict(
-                prev_op=module.mlp.up_proj,
+                prev_op=module.mlp.gate_up_proj,
                 layers=[module.mlp.down_proj],
                 inp=input_feat["mlp.down_proj"],
             )
@@ -85,28 +78,23 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class LlamaFuser:
-    def __init__(self, model: OldLlamaForCausalLM):
+class Phi3Fuser:
+    def __init__(self, model: OldPhi3ForCausalLM):
         self.model = model
 
-        self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
+        self.phi3_blocks: List[Tuple[str, OldPhi3DecoderLayer]] = [
             (name, module)
             for name, module in self.model.named_modules()
-            if "LlamaDecoderLayer".lower() in module.__class__.__name__.lower()
+            if "Phi3DecoderLayer".lower() in module.__class__.__name__.lower()
         ]
 
     def fuse_transformer(self):
         blocks = []
 
-        module: OldLlamaDecoderLayer
+        module: OldPhi3DecoderLayer
         for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
             device = next(iter(module.state_dict().values())).device
-            qkv = fuse_qkv(
-                module,
-                module.self_attn.q_proj,
-                module.self_attn.k_proj,
-                module.self_attn.v_proj,
-            )
+            qkv = module.self_attn.qkv_proj
             norm_1 = FasterTransformerRMSNorm(
                 module.input_layernorm.weight, module.input_layernorm.variance_epsilon
             )
@@ -115,7 +103,7 @@ class LlamaFuser:
                 module.post_attention_layernorm.variance_epsilon,
             )
             blocks.append(
-                LlamaLikeBlock(
+                Phi3Block(
                     hidden_size=self.model.config.hidden_size,
                     n_heads=self.model.config.num_attention_heads,
                     n_kv_heads=self.model.config.num_key_value_heads,
@@ -125,12 +113,13 @@ class LlamaFuser:
                     norm_1=norm_1,
                     norm_2=norm_2,
                     dev=device,
-                    max_seq_len=self.model.config.max_seq_len,
+                    max_seq_len=self.model.config.max_position_embeddings,
                     rope_theta=self.model.config.rope_theta,
+                    rope_scaling=self.model.config.rope_scaling,
                 )
             )
 
-        self.model.model = LlamaLikeModel(
+        self.model.model = AWQPhi3Model(
             self.model.config.vocab_size,
             blocks,
             self.model.model.embed_tokens,

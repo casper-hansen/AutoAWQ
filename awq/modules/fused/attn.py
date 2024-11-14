@@ -29,7 +29,7 @@ class RoPE(nn.Module):
         super(RoPE, self).__init__()
 
         self.freqs_cis = nn.Parameter(
-            self.precompute_freqs_cis(head_dim, max_seq_len * 2, rope_theta).to(device),
+            self.precompute_freqs_cis(head_dim, max_seq_len, rope_theta).to(device),
             requires_grad=False,
         )
 
@@ -118,6 +118,7 @@ class QuantAttentionFused(nn.Module):
         rope_theta=10000,
         partial_rotary_factor=1.0,
         head_dim=None,
+        attn_logit_softcapping=None,
         **kwargs
     ):
         super().__init__()
@@ -136,8 +137,8 @@ class QuantAttentionFused(nn.Module):
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
 
-        if kwargs.get("max_new_tokens") is not None:
-            max_seq_len = kwargs["max_new_tokens"]
+        if kwargs.get("max_length") is not None:
+            max_seq_len = kwargs["max_length"]
 
         self.max_seq_len = max_seq_len
         self.is_hf_transformers = False
@@ -171,6 +172,12 @@ class QuantAttentionFused(nn.Module):
             self.rope = RoPE(self.rotary_dim, max_seq_len, dev, rope_theta)
             self.is_neox = True
 
+        if kwargs.get("is_neox") is not None:
+            self.is_neox = kwargs["is_neox"]
+        
+        self.attn_logit_softcapping = attn_logit_softcapping
+        self.use_sdpa = kwargs.get("use_sdpa", False)
+
     def forward(
         self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
     ):
@@ -189,16 +196,19 @@ class QuantAttentionFused(nn.Module):
             self.start_pos = 0
 
         hf_is_generating = False
+        hf_is_first_forward = "past_key_value" in kwargs and kwargs["past_key_value"] is None
+        hf_is_new_cache_first_forward = "past_key_value" in kwargs and isinstance(kwargs["past_key_value"], DynamicCache) and kwargs["past_key_value"].get_seq_length() == 0
 
         if self.is_hf_transformers and "use_cache" in kwargs:
             hf_is_generating = kwargs["use_cache"]
 
+        # print(kwargs["past_key_value"].get_seq_length())
 
         # In case we re-generate, we need to refresh the starting position
         # to 0. We detect it by checking if `past_key_values` is set to None,
         # which indicates that we are on the first step of `generate()`.
         # This is only applicable for `transformers` integration
-        if (self.is_hf_transformers and "past_key_value" in kwargs and kwargs["past_key_value"] is None) or (self.is_hf_transformers and not hf_is_generating):
+        if (self.is_hf_transformers and (hf_is_first_forward or hf_is_new_cache_first_forward)) or (self.is_hf_transformers and not hf_is_generating):
             self.start_pos = 0
     
 
@@ -257,23 +267,44 @@ class QuantAttentionFused(nn.Module):
             xq = xq.transpose(1, 2)
             keys = keys.transpose(1, 2)
             values = values.transpose(1, 2)
-            scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
 
-            if self.use_alibi:
-                scores = self.alibi.forward(scores, seqlen)
+            # Used in Gemma2
+            if self.attn_logit_softcapping is not None:
+                scores = scores / self.attn_logit_softcapping
+                scores = torch.tanh(scores)
+                scores = scores * self.attn_logit_softcapping
 
-            # When seqlen is 1, there is nothing else to attend to
-            if attention_mask is not None and seqlen > 1:
-                # For llama-arch, the causal mask is preallocated with bsz x 1 x max_seq_len x max_seq_len, thus we 
-                # need to slice it
-                if attention_mask.shape[-1] != seqlen:
-                    attention_mask = attention_mask[:, :, :seqlen, :seqlen]
+            if self.use_sdpa:
+                causal_mask = attention_mask
+                if attention_mask is not None:
+                    causal_mask = causal_mask[:, :, :, : keys.shape[-2]]
+                is_causal = True if causal_mask is None and seqlen > 1 else False
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    xq,
+                    keys,
+                    values,
+                    attn_mask=causal_mask,
+                    dropout_p=0.0,
+                    is_causal=is_causal,
+                )
+            else:
+                scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
+                if self.use_alibi:
+                    scores = self.alibi.forward(scores, seqlen)
 
-                scores = (
-                    scores + attention_mask
-                )  # (bs, n_local_heads, slen, cache_len + slen)
-            scores = F.softmax(scores.float(), dim=-1).type_as(xq)
-            output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
+                # When seqlen is 1, there is nothing else to attend to
+                if attention_mask is not None and seqlen > 1:
+                    # For llama-arch, the causal mask is preallocated with bsz x 1 x max_seq_len x max_seq_len, thus we 
+                    # need to slice it
+                    if attention_mask.shape[-1] != seqlen:
+                        attention_mask = attention_mask[:, :, :seqlen, :seqlen]
+
+                    scores = (
+                        scores + attention_mask
+                    )  # (bs, n_local_heads, slen, cache_len + slen)
+                scores = F.softmax(scores.float(), dim=-1).type_as(xq)
+                output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
+
             attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         else:
             xq = xq.view((bsz,) + self.attention_shapes["single_xq_view"])

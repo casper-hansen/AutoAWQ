@@ -7,6 +7,7 @@ from awq.modules.linear import (
     WQLinear_Exllama,
     WQLinear_ExllamaV2,
     WQLinear_GEMVFast,
+    WQLinear_IPEX,
 )
 
 
@@ -66,7 +67,9 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
         else None
     )
 
-    if isinstance(q_proj, WQLinear_GEMV):
+    if isinstance(q_proj, WQLinear_IPEX):
+        q_linear = WQLinear_IPEX
+    elif isinstance(q_proj, WQLinear_GEMV):
         q_linear = WQLinear_GEMV
     elif isinstance(q_proj, WQLinear_GEMM):
         q_linear = WQLinear_GEMM
@@ -99,7 +102,7 @@ def fuse_qkv(module, q_proj, k_proj, v_proj):
             [q_proj.scales, k_proj.scales, v_proj.scales], dim=0
         )
         qkv_layer.split_k_iters = q_proj.split_k_iters
-    elif isinstance(q_proj, WQLinear_GEMM):
+    elif isinstance(q_proj, WQLinear_GEMM) or isinstance(q_proj, WQLinear_IPEX):
         qkv_layer.qweight = torch.cat(
             [q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1
         )

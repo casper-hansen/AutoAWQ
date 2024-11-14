@@ -41,6 +41,10 @@ class AwqQuantizer:
         modules_to_not_convert=None,
         export_compatible=False,
         apply_clip=True,
+        n_parallel_calib_samples=None,
+        max_calib_samples=128,
+        max_calib_seq_len=512,
+        max_chunk_memory=1024 * 1024 * 1024,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -55,10 +59,16 @@ class AwqQuantizer:
         self.duo_scaling = duo_scaling
         self.export_compatible = export_compatible
         self.apply_clip = apply_clip
+        self.n_parallel_calib_samples = n_parallel_calib_samples
+        self.max_calib_samples = max_calib_samples
+        self.max_calib_seq_len = max_calib_seq_len
+        self.max_chunk_memory = max_chunk_memory
         self.modules_to_not_convert = (
             modules_to_not_convert if modules_to_not_convert is not None else []
         )
-        self.modules, self.module_kwargs, self.inps = self.init_quant()
+        self.modules, self.module_kwargs, self.inps = self.init_quant(
+            n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
+        )
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
@@ -198,7 +208,8 @@ class AwqQuantizer:
 
             if self.version == "gemm":
                 scales = scales.t().contiguous()
-                zeros = zeros.t().contiguous()
+                if zeros is not None:
+                    zeros = zeros.t().contiguous()
                 q_linear_module = WQLinear_GEMM
 
             elif self.version == "gemv":
@@ -206,7 +217,7 @@ class AwqQuantizer:
 
             elif self.version == "marlin":
                 q_linear_module = WQLinear_Marlin
-            
+
             elif self.version == "gemv_fast":
                 q_linear_module = WQLinear_GEMVFast
 
@@ -226,6 +237,32 @@ class AwqQuantizer:
             q_linear.to(next(module.parameters()).device)
             set_op_by_name(module, name, q_linear)
             clear_memory()
+
+    @torch.no_grad()
+    def _module_forward(
+        self, x: torch.Tensor, module: torch.nn.Module, module_kwargs: Dict
+    ) -> torch.Tensor:
+        if self.n_parallel_calib_samples is None:
+            # runs through all samples at once
+            module_output = module(x, **module_kwargs)
+            if isinstance(module_output, tuple):
+                module_output = module_output[0]
+        else:
+            # memory efficiently runs through all calibration samples
+            # but only n_parallel_calib_samples at a time
+            module_output = []
+            partitioned_inputs = torch.split(x, self.n_parallel_calib_samples)
+            for x_partial in partitioned_inputs:
+                partial_output = module(x_partial, **module_kwargs)
+
+                if isinstance(partial_output, tuple):
+                    partial_output = partial_output[0]
+
+                module_output.append(partial_output.cpu())
+
+            module_output = torch.cat(module_output, dim=0)
+
+        return module_output
 
     @torch.no_grad()
     def _search_best_scale(
@@ -253,25 +290,41 @@ class AwqQuantizer:
         org_shape = weight.shape
         # The weights are reshaped to be organised by quantization group
         weight = weight.view(-1, self.group_size)
-        # Calculates the relative magnitude of the weights within each of the quantization groups, 
+        # Calculates the relative magnitude of the weights within each of the quantization groups,
         # and rescales each group individually so that each group has weights on a 0-1 scale.
-        w_scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+        w_scale = weight.abs() / (weight.abs().amax(dim=1, keepdim=True) + 1e-6)
         # Resizes the rescaled weight matrix back up to its original dimensions
         w_scale = w_scale.view(org_shape)
         # Gets the average rescaled magnitude for each output channel
         w_mean = w_scale.mean(0)
         clear_memory(weight)
 
-        # [STEP 2]: Compute per-channel mean of the input activation
-        x_mean = inp.abs().view(-1, inp.shape[-1]).mean(0)
+        # [STEP 2]: Compute per-channel mean of the input activation with chunking
+        # move inp to cpu to avoid memory leak
+        inp_flat = inp.cpu().abs().view(-1, inp.shape[-1])
+        num_elements = inp_flat.size(0)
+        num_channels = inp_flat.size(1)
+        element_size_bytes = inp_flat.element_size() * 2 # multiplied by 2 for FP32
+
+        # Calculate chunk size dynamically based on max_chunk_memory
+        chunk_size = int(self.max_chunk_memory // (element_size_bytes * num_channels))
+        chunk_size = min(chunk_size, num_elements)
+
+        # Use float32 for sum calculation
+        x_sum = torch.zeros(num_channels, dtype=torch.float32, device=inp.device)
+        
+        for i in range(0, num_elements, chunk_size):
+            end = min(i + chunk_size, num_elements)
+            chunk_sum = inp_flat[i:end].to(torch.float32).sum(dim=0)
+            x_sum += chunk_sum.to(inp.device)
+
+        x_mean = (x_sum / num_elements).to(inp.dtype)
+        clear_memory(x_sum)
 
         # [STEP 3]: Compute output of module
         with torch.no_grad():
             module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
-
-            fp16_output = module2inspect(inp, **module_kwargs)
-            if isinstance(fp16_output, tuple):
-                fp16_output = fp16_output[0]
+            fp16_output = self._module_forward(inp, module2inspect, module_kwargs)
 
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
@@ -286,13 +339,13 @@ class AwqQuantizer:
 
     def _compute_best_scale(
         self,
-        x,
-        w_mean,
-        x_mean,
-        module2inspect,
+        x: torch.Tensor,
+        w_mean: torch.Tensor,
+        x_mean: torch.Tensor,
+        module2inspect: torch.nn.Module,
         linears2scale: List[nn.Linear],
-        fp16_output,
-        kwargs={},
+        fp16_output: torch.Tensor,
+        kwargs: Dict={},
     ):
         """
         Compute loss and select best scales
@@ -321,11 +374,15 @@ class AwqQuantizer:
 
             # NOTE: s^-1 * x is fused here, according to paper
             if self.duo_scaling:
-                scales = (x_mean.pow(ratio) / w_mean.pow(1 - ratio)).clamp(min=1e-4)
+                scales = (x_mean.pow(ratio) / (w_mean.pow(1 - ratio) + 1e-4)).clamp(min=1e-4)
             else:
                 scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
             scales = scales / (scales.max() * scales.min()).sqrt()
             scales_view = scales.view(1, -1).to(device)
+
+            # avoid scaling values that overflow
+            scales[torch.isinf(scales)] = 1
+            scales[torch.isnan(scales)] = 1
 
             # Q(W * s)
             for fc in linears2scale:
@@ -335,14 +392,10 @@ class AwqQuantizer:
                 )
 
             # W * X
-            int_w_output = module2inspect(x, **kwargs)
-            if isinstance(int_w_output, tuple):
-                int_w_output = int_w_output[0]
+            int_w_output = self._module_forward(x, module2inspect, kwargs)
 
             # compute mean squared error (L2 norm)
-            loss = (
-                (fp16_output - int_w_output).float().pow(2).mean().item()
-            )  # NOTE: float prevents overflow
+            loss = self._compute_loss(fp16_output, int_w_output, device)
 
             history.append(loss)
             if loss < best_error:
@@ -358,6 +411,38 @@ class AwqQuantizer:
         assert torch.isnan(best_scales).sum() == 0, best_scales
 
         return best_scales.detach().cpu()
+
+    @torch.no_grad()
+    def _compute_loss(
+        self,
+        fp16_output: torch.Tensor,
+        int_w_output: torch.Tensor,
+        device: torch.device,
+    ):
+        loss = 0.0
+        fp16_output_flat = fp16_output.view(-1)
+        int_w_output_flat = int_w_output.view(-1)
+        num_elements = fp16_output_flat.size(0)
+        element_size_bytes = fp16_output.element_size()
+
+        # Calculate chunk size dynamically based on max_chunk_memory
+        # Divide the max_chunk_memory by twice the element size
+        chunk_size = self.max_chunk_memory // (element_size_bytes * 2)
+        chunk_size = min(chunk_size, num_elements)
+
+        # Split the computation into chunks
+        fp16_chunks = torch.split(fp16_output_flat, chunk_size)
+        int_w_chunks = torch.split(int_w_output_flat, chunk_size)
+
+        # Compute the loss for each chunk
+        for fp16_chunk, int_w_chunk in zip(fp16_chunks, int_w_chunks):
+            chunk_loss = (fp16_chunk.to(device) - int_w_chunk.to(device)).float().pow(2).sum().item()
+            loss += chunk_loss
+
+        # Normalize the loss by the total number of elements
+        loss /= num_elements
+
+        return loss
 
     @torch.no_grad()
     def _search_best_clip(self, layer, named_linears, input_feat):
@@ -394,7 +479,11 @@ class AwqQuantizer:
         group_size = self.group_size if self.group_size > 0 else org_w_shape[1]
         input_feat = input_feat.view(-1, input_feat.shape[-1])
         input_feat = input_feat.reshape(1, input_feat.shape[0], -1, group_size)
-        input_feat = input_feat[:, 0 :: input_feat.shape[1] // n_sample_token]
+
+        # Compute input feature step size (minimum 1)
+        step_size = max(1, input_feat.shape[1] // n_sample_token)
+        input_feat = input_feat[:, ::step_size]
+        
         w = w.reshape(org_w_shape[0], 1, -1, group_size)
 
         oc_batch_size = 256 if org_w_shape[0] % 256 == 0 else 64  # prevent OOM
@@ -435,13 +524,13 @@ class AwqQuantizer:
 
         return best_max_val.squeeze(1)
 
-    def init_quant(self, n_samples=128, seqlen=512):
+    def init_quant(self, n_samples=128, max_seq_len=512):
         modules = self.awq_model.get_model_layers(self.model)
         samples = get_calib_dataset(
             data=self.calib_data,
             tokenizer=self.tokenizer,
             n_samples=n_samples,
-            block_size=seqlen,
+            max_seq_len=max_seq_len,
             split=self.split,
             text_column=self.text_column,
         )
@@ -520,11 +609,15 @@ class AwqQuantizer:
                 **named_linears,
                 "block_sparse_moe": layer.block_sparse_moe,
             }
-
         if self.awq_model.model_type == "jamba":
             named_linears = {
                 **named_linears,
                 "feed_forward": layer.feed_forward,
+            }
+        if self.awq_model.model_type == "deepseek_v2":
+            named_linears = {
+                **named_linears,
+                "mlp": layer.mlp,
             }
 
         for name in named_linears:
@@ -541,7 +634,7 @@ class AwqQuantizer:
         # Useful for trust_remote_code models.
         module_kwargs = self._sanitize_kwargs(self.module_kwargs, layer)
 
-        self.inps = layer(self.inps, **module_kwargs)[0]
+        self.inps = self._module_forward(self.inps, layer, module_kwargs)
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
