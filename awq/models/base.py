@@ -39,7 +39,7 @@ from transformers import (
     PreTrainedModel,
     PretrainedConfig,
     AutoProcessor,
-    CLIPImageProcessor,
+    BaseImageProcessor,
     PreTrainedTokenizer,
 )
 from accelerate.big_modeling import (
@@ -74,6 +74,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "baichuan": "AutoModelForCausalLM",
     "llava": "AutoModelForVision2Seq",
     "qwen2": "AutoModelForCausalLM",
+    "qwen2_vl": "AutoModelForVision2Seq",
     "gemma": "AutoModelForCausalLM",
     "gemma2": "AutoModelForCausalLM",
     "stablelm": "AutoModelForCausalLM",
@@ -84,6 +85,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "deepseek_v2": "AutoModelForCausalLM",
     "minicpm": "AutoModelForCausalLM",
     "internlm2": "AutoModelForCausalLM",
+    "qwen2_vl": "AutoModelForVision2Seq",
 }
 
 
@@ -100,7 +102,7 @@ class BaseAWQForCausalLM(nn.Module):
             AwqConfig, Doc("The quantization config of the model.")
         ],
         processor: Annotated[
-            AutoProcessor, Doc("An optional processor, e.g. for vision models.")
+            BaseImageProcessor, Doc("An optional processor, e.g. for vision models.")
         ],
     ):
         """The base model for all AutoAWQ models."""
@@ -111,7 +113,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
-        self.processor: CLIPImageProcessor = processor
+        self.processor: BaseImageProcessor = processor
 
     def to(self, device: Annotated[str, Doc("The device to move your model to.")]):
         """A utility function for moving the model to a device."""
@@ -186,6 +188,11 @@ class BaseAWQForCausalLM(nn.Module):
         ] = 1024
         * 1024
         * 1024,
+        quantizer_cls: Annotated[
+            AwqQuantizer,
+            Doc("If you want to customize the quantization class, you can use AwqQuantizer as a base class.")
+        ] = AwqQuantizer,
+        **kwargs,
     ):
         """
         The main quantization function that you can use to quantize your model.
@@ -209,7 +216,7 @@ class BaseAWQForCausalLM(nn.Module):
         if hasattr(self, "modules_to_not_convert"):
             self.quant_config.modules_to_not_convert = self.modules_to_not_convert
 
-        self.quantizer = AwqQuantizer(
+        self.quantizer = quantizer_cls(
             self,
             self.model,
             tokenizer,
@@ -228,6 +235,7 @@ class BaseAWQForCausalLM(nn.Module):
             max_calib_samples=max_calib_samples,
             max_calib_seq_len=max_calib_seq_len,
             max_chunk_memory=max_chunk_memory,
+            **kwargs,
         )
         self.quantizer.quantize()
 
@@ -373,7 +381,6 @@ class BaseAWQForCausalLM(nn.Module):
         processor = None
         if target_cls_name == "AutoModelForVision2Seq":
             processor = AutoProcessor.from_pretrained(model_weights_path)
-            processor: CLIPImageProcessor = processor.image_processor
 
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(

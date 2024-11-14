@@ -24,3 +24,4 @@ from .cohere import CohereAWQForCausalLM
 from .deepseek_v2 import DeepseekV2AWQForCausalLM
 from .minicpm import MiniCPMAWQForCausalLM
 from .internlm2 import InternLM2AWQForCausalLM
+from .qwen2vl import Qwen2VLAWQForCausalLM
