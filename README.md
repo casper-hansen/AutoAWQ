@@ -47,6 +47,8 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
   - Your CUDA version must be CUDA 11.8 or later.
 - AMD:
   -  Your ROCm version must be compatible with Triton.
+- Intel CPU and Intel GPU:
+  - Your torch and intel_extension_for_pytorch package version should at least 2.4 for optimized performance.
 
 ### Install from PyPi
 
@@ -59,6 +61,10 @@ There are a few ways to install AutoAWQ:
 2. From main branch with kernels:
     - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
+
+3. From main branch for Intel CPU and Intel XPU optimized performance:
+    - `pip install intel_extension_for_pytorch`
+    - `pip install git+https://github.com/casper-hansen/AutoAWQ.git`
 
 ## Usage
 
@@ -132,6 +138,9 @@ print(f'Model is quantized and saved at "{quant_path}"')
 ```python
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, TextStreamer
+from awq.utils.utils import get_best_device
+
+device = get_best_device()
 
 quant_path = "TheBloke/zephyr-7B-beta-AWQ"
 
@@ -155,7 +164,7 @@ prompt = "You're standing on the surface of the Earth. "\
 tokens = tokenizer(
     prompt_template.format(prompt=prompt), 
     return_tensors='pt'
-).input_ids.cuda()
+).input_ids.to(device)
 
 # Generate output
 generation_output = model.generate(
@@ -229,18 +238,18 @@ GPU: 2x NVIDIA GeForce RTX 4090
 ### CPU
 
 - CPU: 48 cores SPR (Intel 4th Gen Xeon CPU)
-- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1`
+- Command: `python examples/benchmark.py --model_path <hf_model> --batch_size 1 --generator hf`
 
 | Model | Version | Batch Size | Prefill Length | Decode Length | Prefill tokens/s | Decode tokens/s | Memory |
 |-------|---------|------------|----------------|---------------|-------------------|------------------|---------------|
-| Llama 2 7B | gemm | 1 | 32 | 32 | 817.86 | 70.93 | 1.94 GB (0.00%) |
-| Llama 2 7B | gemm | 1 | 2048 | 2048 | 5279.15 | 36.83 | 2.31 GB (0.00%) |
-| Falcon | gemm | 1 | 32 | 32 | 337.51 | 26.41 | 9.57 GB (0.01%) |
-| Falcon | gemm | 1 | 2048 | 2048 | 546.71 | 18.8 | 13.46 GB (0.01%) |
-| Mistral | gemm | 1 | 32 | 32 | 343.08 | 28.46 | 9.74 GB (0.01%) |
-| Mistral | gemm | 1 | 2048 | 2048 | 1135.23 | 13.23 | 10.35 GB (0.01%) |
-| Vicuna | gemm | 1 | 32 | 32 | 340.73 | 28.86 | 9.59 GB (0.01%) |
-| Vicuna | gemm | 1 | 2048 | 2048 | 1143.19 | 11.14 | 10.98 GB (0.01%) |
+| TinyLlama 1B | gemm | 1 | 32 | 32 | 817.86 | 70.93 | 1.94 GB (0.00%) |
+| TinyLlama 1B | gemm | 1 | 2048 | 2048 | 5279.15 | 36.83 | 2.31 GB (0.00%) |
+| Falcon 7B | gemm | 1 | 32 | 32 | 337.51 | 26.41 | 9.57 GB (0.01%) |
+| Falcon 7B | gemm | 1 | 2048 | 2048 | 546.71 | 18.8 | 13.46 GB (0.01%) |
+| Mistral 7B | gemm | 1 | 32 | 32 | 343.08 | 28.46 | 9.74 GB (0.01%) |
+| Mistral 7B | gemm | 1 | 2048 | 2048 | 1135.23 | 13.23 | 10.35 GB (0.01%) |
+| Vicuna 7B | gemm | 1 | 32 | 32 | 340.73 | 28.86 | 9.59 GB (0.01%) |
+| Vicuna 7B | gemm | 1 | 2048 | 2048 | 1143.19 | 11.14 | 10.98 GB (0.01%) |
 | Llama 2 13B | gemm | 1 | 32 | 32 | 220.79 | 18.14 | 17.46 GB (0.02%) |
 | Llama 2 13B | gemm | 1 | 2048 | 2048 | 650.94 | 6.54 | 19.84 GB (0.02%) |
 | DeepSeek Coder 33B | gemm | 1 | 32 | 32 | 101.61 | 8.58 | 40.80 GB (0.04%) |

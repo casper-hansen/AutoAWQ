@@ -29,7 +29,7 @@ class RoPE(nn.Module):
         super(RoPE, self).__init__()
 
         self.freqs_cis = nn.Parameter(
-            self.precompute_freqs_cis(head_dim, max_seq_len * 2, rope_theta).to(device),
+            self.precompute_freqs_cis(head_dim, max_seq_len, rope_theta).to(device),
             requires_grad=False,
         )
 
@@ -137,8 +137,8 @@ class QuantAttentionFused(nn.Module):
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
 
-        if kwargs.get("max_new_tokens") is not None:
-            max_seq_len = kwargs["max_new_tokens"]
+        if kwargs.get("max_length") is not None:
+            max_seq_len = kwargs["max_length"]
 
         self.max_seq_len = max_seq_len
         self.is_hf_transformers = False
