@@ -466,3 +466,52 @@ generation_output = model.generate(
     streamer=streamer
 )
 ```
+
+### Qwen2 VL
+
+Below is an example of how to run inference using Qwen2 VL.
+
+```python
+from awq import AutoAWQForCausalLM
+from awq.utils.qwen_vl_utils import process_vision_info
+from transformers import AutoProcessor, TextStreamer
+
+# Load model
+quant_path = "Qwen/Qwen2-VL-7B-Instruct-AWQ"
+model = AutoAWQForCausalLM.from_quantized(quant_path)
+processor = AutoProcessor.from_pretrained(quant_path)
+streamer = TextStreamer(processor, skip_prompt=True)
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+            },
+            {"type": "text", "text": "Describe this image."},
+        ],
+    }
+]
+
+# Load inputs
+text = processor.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
+image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text],
+    images=image_inputs,
+    videos=video_inputs,
+    padding=True,
+    return_tensors="pt",
+)
+inputs = inputs.to("cuda")
+
+generation_output = model.generate(
+    **inputs,
+    max_new_tokens=512,
+    streamer=streamer
+)
+```
