@@ -21,7 +21,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -50,7 +50,9 @@ quant_path = 'vicuna-7b-v1.5-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(model_path)
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Define data loading methods
@@ -106,7 +108,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -149,7 +151,7 @@ quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": 
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -173,6 +175,34 @@ model.quantize(
     # max_calib_samples=128,
     # max_calib_seq_len=4096
 )
+
+# Save quantized model
+model.save_quantized(quant_path)
+tokenizer.save_pretrained(quant_path)
+
+print(f'Model is quantized and saved at "{quant_path}"')
+```
+
+### Vision-Language Models
+
+AutoAWQ supports a few vision-language models. So far, we support LLaVa 1.5 and LLaVa 1.6 (next).
+
+```python
+from awq import AutoAWQForCausalLM
+from transformers import AutoTokenizer
+
+model_path = 'llava-hf/llama3-llava-next-8b-hf'
+quant_path = 'llama3-llava-next-8b-awq'
+quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
+
+# Load model
+model = AutoAWQForCausalLM.from_pretrained(
+    model_path, low_cpu_mem_usage=True, device_map="cuda",
+)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+# Quantize
+model.quantize(tokenizer, quant_config=quant_config)
 
 # Save quantized model
 model.save_quantized(quant_path)
@@ -206,9 +236,8 @@ llama_cpp_path = '/workspace/llama.cpp'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 6, "version": "GEMM" }
 
 # Load model
-# NOTE: pass safetensors=True to load safetensors
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, **{"low_cpu_mem_usage": True, "use_cache": False}
+    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -287,14 +316,14 @@ generation_output = model.generate(
 ```
 
 ### Inference With CPU
-To run inference with CPU , you should specify `use_qbits=True`. QBits is the backend for CPU including kernel for operators. QBits is a module of the intel-extension-for-transformers package. Up to now, the feature of fusing layers hasn't been ready, you should run model with `fuse_layers=False`.
+To run inference with CPU , you should specify `use_ipex=True`. ipex is the backend for CPU including kernel for operators. ipex is intel_extension_for_pytorch package.
 
 ```python
 from awq import AutoAWQForCausalLM
 
 quant_path = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, fuse_layers=False, use_qbits=True)
+model = AutoAWQForCausalLM.from_quantized(quant_path, use_ipex=True)
 ```
 
 ### Transformers
@@ -405,29 +434,35 @@ AutoAWQ also supports the LLaVa model. You simply need to load an
 AutoProcessor to process the prompt and image to generate inputs for the AWQ model.
 
 ```python
-import requests
 import torch
+import requests
 from PIL import Image
-
 from awq import AutoAWQForCausalLM
-from transformers import AutoProcessor
-
-quant_path = "ybelkada/llava-1.5-7b-hf-awq"
+from transformers import AutoProcessor, TextStreamer
 
 # Load model
-model = AutoAWQForCausalLM.from_quantized(quant_path, safetensors=True, device_map={"": 0})
+quant_path = "casperhansen/llama3-llava-next-8b-awq"
+model = AutoAWQForCausalLM.from_quantized(quant_path)
 processor = AutoProcessor.from_pretrained(quant_path)
+streamer = TextStreamer(processor, skip_prompt=True)
 
-prompt = "USER: <image>\nWhat are these?\nASSISTANT:"
-image_file = "http://images.cocodataset.org/val2017/000000039769.jpg"
+# Define prompt
+prompt = """\
+<|im_start|>system\nAnswer the questions.<|im_end|>
+<|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|>
+<|im_start|>assistant
+"""
 
-raw_image = Image.open(requests.get(image_file, stream=True).raw)
-inputs = processor(prompt, raw_image, return_tensors='pt').to(0, torch.float16)
-# Generate output
+# Define image
+url = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
+image = Image.open(requests.get(url, stream=True).raw)
+
+# Load inputs
+inputs = processor(prompt, image, return_tensors='pt').to(0, torch.float16)
+
 generation_output = model.generate(
-    **inputs, 
-    max_new_tokens=512
+    **inputs,
+    max_new_tokens=512,
+    streamer=streamer
 )
-
-print(processor.decode(generation_output[0], skip_special_tokens=True))
 ```

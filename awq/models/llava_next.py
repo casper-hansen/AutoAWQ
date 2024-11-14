@@ -6,32 +6,32 @@ from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OldLlamaDecoderLayer,
-    LlamaForCausalLM as OldLlamaForCausalLM,
 )
+from transformers.models.llava_next.modeling_llava_next import LlavaNextForConditionalGeneration
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
-class LlamaAWQForCausalLM(BaseAWQForCausalLM):
+class LlavaNextAWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "LlamaDecoderLayer"
     max_seq_len_key = "max_position_embeddings"
 
     @staticmethod
-    def fuse_layers(model: OldLlamaForCausalLM):
-        fuser = LlamaFuser(model)
-        fuser.fuse_transformer()
+    def fuse_layers(model: LlavaNextForConditionalGeneration):
+        pass
 
     @staticmethod
-    def get_model_layers(model: OldLlamaForCausalLM):
-        return model.model.layers
+    def get_model_layers(model: LlavaNextForConditionalGeneration):
+        return model.language_model.model.layers
 
     @staticmethod
     def get_act_for_scaling(module: OldLlamaDecoderLayer):
         return dict(is_scalable=False)
 
     @staticmethod
-    def move_embed(model: OldLlamaForCausalLM, device: str):
-        model.model.rotary_emb = model.model.rotary_emb.to(device)
-        model.model.embed_tokens = model.model.embed_tokens.to(device)
+    def move_embed(model: LlavaNextForConditionalGeneration, device: str):
+        model.language_model.model.embed_tokens = model.get_input_embeddings().to(
+            device
+        )
 
     @staticmethod
     def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):
@@ -85,9 +85,9 @@ class LlamaAWQForCausalLM(BaseAWQForCausalLM):
         return layers
 
 
-class LlamaFuser:
-    def __init__(self, model: OldLlamaForCausalLM):
-        self.model = model
+class LlavaNextFuser:
+    def __init__(self, model: LlavaNextForConditionalGeneration):
+        self.model = model.language_model
 
         self.llama_blocks: List[Tuple[str, OldLlamaDecoderLayer]] = [
             (name, module)
@@ -114,6 +114,10 @@ class LlamaFuser:
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.variance_epsilon,
             )
+            if hasattr(self.model.config, "max_seq_len"):
+                max_seq_len = self.model.config.max_seq_len
+            else:
+                max_seq_len = self.model.config.max_position_embeddings
             blocks.append(
                 LlamaLikeBlock(
                     hidden_size=self.model.config.hidden_size,
@@ -125,7 +129,7 @@ class LlamaFuser:
                     norm_1=norm_1,
                     norm_2=norm_2,
                     dev=device,
-                    max_seq_len=self.model.config.max_seq_len,
+                    max_seq_len=max_seq_len,
                     rope_theta=self.model.config.rope_theta,
                 )
             )
@@ -137,3 +141,6 @@ class LlamaFuser:
             self.model.model.norm,
         )
         setattr(self.model.model, "blocks", self.model.model.blocks)
+
+
+

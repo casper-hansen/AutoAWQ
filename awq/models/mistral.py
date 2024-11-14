@@ -127,6 +127,7 @@ class MistralFuser:
                     norm_2=norm_2,
                     dev=device,
                     max_seq_len=self.model.config.max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
                 )
             )
 

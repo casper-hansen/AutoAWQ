@@ -117,6 +117,10 @@ class LlavaFuser:
                 module.post_attention_layernorm.weight,
                 module.post_attention_layernorm.variance_epsilon,
             )
+            if hasattr(self.model.config, "max_seq_len"):
+                max_seq_len = self.model.config.max_seq_len
+            else:
+                max_seq_len = self.model.config.max_position_embeddings
             blocks.append(
                 LlamaLikeBlock(
                     hidden_size=self.model.config.hidden_size,
@@ -128,7 +132,8 @@ class LlavaFuser:
                     norm_1=norm_1,
                     norm_2=norm_2,
                     dev=device,
-                    max_seq_len=self.model.config.max_seq_len,
+                    max_seq_len=max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
                 )
             )
 
