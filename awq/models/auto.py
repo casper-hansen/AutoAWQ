@@ -30,11 +30,13 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "starcoder2": Starcoder2AWQForCausalLM,
     "llava_next": LlavaNextAWQForCausalLM,
     "phi3": Phi3AWQForCausalLM,
+    "phi3_v": Phi3VAWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
     "minicpm": MiniCPMAWQForCausalLM,
     "internlm2": InternLM2AWQForCausalLM,
-    "minicpm3": MiniCPM3AWQForCausalLM
+    "minicpm3": MiniCPM3AWQForCausalLM,
+    "qwen2_vl": Qwen2VLAWQForCausalLM,
 }
 
 
@@ -61,7 +63,7 @@ class AutoAWQForCausalLM:
         model_path,
         trust_remote_code=True,
         safetensors=True,
-        device_map=None,
+        device_map="auto",
         download_kwargs=None,
         **model_init_kwargs,
     ) -> BaseAWQForCausalLM:
@@ -89,7 +91,7 @@ class AutoAWQForCausalLM:
         fuse_layers=True,
         use_exllama=False,
         use_exllama_v2=False,
-        use_qbits=False,
+        use_ipex=False,
         batch_size=1,
         safetensors=True,
         device_map="balanced",
@@ -117,7 +119,7 @@ class AutoAWQForCausalLM:
             fuse_layers=fuse_layers,
             use_exllama=use_exllama,
             use_exllama_v2=use_exllama_v2,
-            use_qbits=use_qbits,
+            use_ipex=use_ipex,
             safetensors=safetensors,
             device_map=device_map,
             max_memory=max_memory,

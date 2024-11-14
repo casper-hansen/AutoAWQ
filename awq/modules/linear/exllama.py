@@ -1,15 +1,9 @@
 import torch
-import warnings
 import torch.nn as nn
+from awq.utils.module import try_import
 from awq.utils.packing_utils import unpack_reorder_pack
 
-try:
-    import exl_ext  # with CUDA kernels (AutoAWQ_kernels)
-
-    EXL_INSTALLED = True
-except Exception as ex:
-    EXL_INSTALLED = False
-    warnings.warn(f"AutoAWQ could not load ExLlama kernels extension. Details: {ex}")
+exl_ext, msg = try_import("exl_ext")
 
 # Dummy tensor to pass instead of g_idx since there is no way to pass "None" to a C++ extension
 none_tensor = torch.empty((1, 1), device="meta")
@@ -106,15 +100,8 @@ class WQLinear_Exllama(nn.Module):
             "module.post_init() must be called before module.forward(). "
             "Use exllama_post_init() on the whole model."
         )
-        assert EXL_INSTALLED, (
-            "Exllama kernels could not be loaded. "
-            "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
-        )
-
-        assert EXL_INSTALLED, (
-            "ExllamaV2 kernels are not installed. "
-            "Please install AWQ compatible ExllamaV2 kernels from AutoAWQ_kernels."
-        )
+        if exl_ext is None:
+            raise ModuleNotFoundError("External ExLlama kernels are not properly installed." + msg)
 
         input_dtype = x.dtype
         out_shape = x.shape[:-1] + (self.out_features,)

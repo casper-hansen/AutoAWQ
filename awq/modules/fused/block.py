@@ -106,6 +106,7 @@ class LlamaLikeBlock(nn.Module):
             rope_theta=rope_theta,
             partial_rotary_factor=partial_rotary_factor,
             head_dim=head_dim,
+            use_sdpa=True,
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)
