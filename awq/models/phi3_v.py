@@ -15,11 +15,6 @@ class Phi3VAWQForCausalLM(BaseAWQForCausalLM):
     modules_to_not_convert = ["vision_embed_tokens"]
 
     @staticmethod
-    def fuse_layers(model):
-        fuser = Phi3VFuser(model)
-        fuser.fuse_transformer()
-
-    @staticmethod
     def get_model_layers(model):
         return model.model.layers
 
@@ -75,53 +70,3 @@ class Phi3VAWQForCausalLM(BaseAWQForCausalLM):
         )
 
         return layers
-
-
-class Phi3VFuser:
-    def __init__(self, model):
-        self.model = model
-
-        self.phi3_blocks: List[Tuple[str, OldPhi3DecoderLayer]] = [
-            (name, module)
-            for name, module in self.model.named_modules()
-            if "Phi3DecoderLayer".lower() in module.__class__.__name__.lower()
-        ]
-
-    def fuse_transformer(self):
-        blocks = []
-
-        module: OldPhi3DecoderLayer
-        for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
-            device = next(iter(module.state_dict().values())).device
-            qkv = module.self_attn.qkv_proj
-            norm_1 = FasterTransformerRMSNorm(
-                module.input_layernorm.weight, module.input_layernorm.variance_epsilon
-            )
-            norm_2 = FasterTransformerRMSNorm(
-                module.post_attention_layernorm.weight,
-                module.post_attention_layernorm.variance_epsilon,
-            )
-            blocks.append(
-                Phi3Block(
-                    hidden_size=self.model.config.hidden_size,
-                    n_heads=self.model.config.num_attention_heads,
-                    n_kv_heads=self.model.config.num_key_value_heads,
-                    qkv_layer=qkv,
-                    o_proj=module.self_attn.o_proj,
-                    mlp=module.mlp,
-                    norm_1=norm_1,
-                    norm_2=norm_2,
-                    dev=device,
-                    max_seq_len=self.model.config.max_position_embeddings,
-                    rope_theta=self.model.config.rope_theta,
-                    rope_scaling=self.model.config.rope_scaling,
-                )
-            )
-
-        self.model.model = AWQPhi3Model(
-            self.model.config.vocab_size,
-            blocks,
-            self.model.model.embed_tokens,
-            self.model.model.norm,
-        )
-        setattr(self.model.model, "blocks", self.model.model.blocks)
