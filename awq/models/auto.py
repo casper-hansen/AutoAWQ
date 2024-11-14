@@ -34,6 +34,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "deepseek_v2": DeepseekV2AWQForCausalLM,
     "minicpm": MiniCPMAWQForCausalLM,
     "internlm2": InternLM2AWQForCausalLM,
+    "qwen2_vl": Qwen2VLAWQForCausalLM,
 }
 
 
