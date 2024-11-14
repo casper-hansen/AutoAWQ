@@ -7,17 +7,16 @@ import pandas as pd
 import psutil
 from awq import AutoAWQForCausalLM
 from awq.models.base import BaseAWQForCausalLM
-from awq.utils.utils import get_best_device, qbits_available
+from awq.utils.utils import get_best_device, ipex_available
 from transformers import AutoTokenizer, GenerationConfig, LogitsProcessor, LogitsProcessorList
 
 DEVICE = get_best_device()
 if DEVICE == "cpu":
-    if qbits_available:
-        from intel_extension_for_transformers.qbits import check_isa_supported
-        torch_dtype = torch.bfloat16 if check_isa_supported("AMX") else torch.float32
+    if ipex_available:
+        torch_dtype = torch.bfloat16
     else:
-        raise ImportError("Please import intel-extension-for-transformers "
-                          "by `pip install intel-extension-for-transformers`")
+        raise ImportError("Please import intel_extension_for_pytorch "
+                          "by `pip install intel_extension_for_pytorch`")
 else:
     torch_dtype = torch.float16
 
@@ -86,8 +85,8 @@ def generate_hf(model: BaseAWQForCausalLM, input_ids, n_generate):
         min_new_tokens=n_generate,
         max_new_tokens=n_generate,
         use_cache=True,
-        forced_eos_token_id=-100,
-        eos_token_id=-100,
+        forced_eos_token_id=1,
+        eos_token_id=1,
     )
 
     time_processor = TimeMeasuringLogitsProcessor()
@@ -115,9 +114,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         )
     else:
         model = AutoAWQForCausalLM.from_quantized(
-            model_path, quant_file, fuse_layers=False if DEVICE == "cpu" else True,
-            max_seq_len=n_generate, batch_size=batch_size,
-            safetensors=not no_safetensors
+            model_path, quant_file, max_seq_len=n_generate, batch_size=batch_size, safetensors=not no_safetensors
         )
 
     print(f" -- Warming up...")
@@ -163,7 +160,7 @@ def run_round(generator, model_path, quant_file, n_generate, input_ids, batch_si
         decode_tokens_per_second = 'OOM'
 
     if pretrained:
-        version = "FP16" if DEVICE != "cpu" else "BF16" if check_isa_supported("AMX") else "FP32"
+        version = "FP16" if DEVICE != "cpu" else "BF16"
     else:
         version = model.quant_config.version
 
