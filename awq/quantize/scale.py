@@ -1,3 +1,5 @@
+from turtle import ht
+from venv import logger
 import torch
 import torch.nn as nn
 from typing import Tuple, List
@@ -10,6 +12,7 @@ from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
 from transformers.models.gemma2.modeling_gemma2 import Gemma2RMSNorm
 from transformers.models.cohere.modeling_cohere import CohereLayerNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
+import habana_frameworks.torch.core as htcore
 
 allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, Gemma2RMSNorm, CohereLayerNorm]
 allowed_act_fns = [
@@ -36,6 +39,7 @@ def apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
 
 def apply_scale(module, scales_list, input_feat_dict=None):
     for prev_op_name, layer_names, scales in scales_list:
+        logger.warning(f"Apply scale {prev_op_name} -> {layer_names}")
         prev_op = get_op_by_name(module, prev_op_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
 
@@ -77,7 +81,7 @@ def apply_scale(module, scales_list, input_feat_dict=None):
                 if layer_name in input_feat_dict:
                     inp = input_feat_dict[layer_name]
                     inp.div_(scales.view(1, -1).to(inp.device))
-
+        htcore.mark_step()
         prev_op.cpu()
         for layer in layers:
             layer.cpu()
