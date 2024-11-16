@@ -32,22 +32,18 @@ jobs:
             const script = require('.github/workflows/scripts/github_create_release.js')
             await script(github, context, core)
 
-  build_cuda_wheels:
-    name: Build AWQ with CUDA
+  build_wheels:
+    name: Build AWQ
     runs-on: ${{ matrix.os }}
     needs: release
     
     strategy:
       matrix:
         os: [ubuntu-20.04, windows-latest]
-        pyver: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["12.1.1"]
+        pyver: ["3.9", "3.10", "3.11", "3.12"]
     defaults:
       run:
         shell: pwsh
-    env:
-      PYPI_CUDA_VERSION: "12.1.1"
-      CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
       - name: Free Disk Space
@@ -81,38 +77,16 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          # Install CUDA toolkit
-          mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}"
-
-          # Env variables
-          $env:CUDA_PATH = $env:CONDA_PREFIX
-          $env:CUDA_HOME = $env:CONDA_PREFIX
-          
           # Install torch
-          $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
-          $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          $pytorchVersion = "torch==2.3.1"
-          python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
-          python -m pip install build setuptools wheel ninja requests
+          python -m pip install --upgrade --no-cache-dir torch==2.5.1
+          python -m pip install build setuptools wheel
 
           # Print version information
           python --version
           python -c "import torch; print('PyTorch:', torch.__version__)"
-          python -c "import torch; print('CUDA:', torch.version.cuda)"
-          python -c "import os; print('CUDA_HOME:', os.getenv('CUDA_HOME', None))"
-          python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
 
       - name: Build Wheel
         run: |
-          $env:CUDA_PATH = $env:CONDA_PREFIX
-          $env:CUDA_HOME = $env:CONDA_PREFIX
-
-          # Only add +cu118 to wheel if not releasing on PyPi
-          if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
-            $env:PYPI_BUILD = 1
-          }
-          $env:PYPI_FORCE_TAGS = 1
-
           python setup.py sdist bdist_wheel
 
       - name: Upload Assets

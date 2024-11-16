@@ -2,10 +2,8 @@ import os
 import torch
 from pathlib import Path
 from setuptools import setup, find_packages
-from torch.utils.cpp_extension import CUDAExtension
 
-AUTOAWQ_VERSION = "0.2.6"
-PYPI_BUILD = os.getenv("PYPI_BUILD", "0") == "1"
+AUTOAWQ_VERSION = "0.2.7"
 INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
@@ -13,23 +11,6 @@ TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split
 CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
 if CUDA_VERSION:
     CUDA_VERSION = "".join(CUDA_VERSION.split("."))[:3]
-
-ROCM_VERSION = os.getenv("ROCM_VERSION", None) or torch.version.hip
-if ROCM_VERSION:
-    ROCM_VERSION_LEN = min(len(ROCM_VERSION.split(".")), 3)
-    ROCM_VERSION = "".join(ROCM_VERSION.split("."))[:ROCM_VERSION_LEN]
-
-if not PYPI_BUILD:
-    if IS_CPU_ONLY:
-        AUTOAWQ_VERSION += "+cpu"
-    elif CUDA_VERSION:
-        AUTOAWQ_VERSION += f"+cu{CUDA_VERSION}"
-    elif ROCM_VERSION:
-        AUTOAWQ_VERSION += f"+rocm{ROCM_VERSION}"
-    else:
-        raise RuntimeError(
-            "Your system must have either Nvidia or AMD GPU to build this package."
-        )
 
 common_setup_kwargs = {
     "version": AUTOAWQ_VERSION,
@@ -50,10 +31,10 @@ common_setup_kwargs = {
         "Environment :: GPU :: NVIDIA CUDA :: 12",
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Programming Language :: C++",
     ],
 }
@@ -81,18 +62,6 @@ if not KERNELS_INSTALLED and CUDA_VERSION and INSTALL_KERNELS and CUDA_VERSION.s
 
 elif IS_CPU_ONLY:
     requirements.append("intel-extension-for-pytorch>=2.4.0")
-
-force_extension = os.getenv("PYPI_FORCE_TAGS", "0")
-if force_extension == "1":
-    # NOTE: We create an empty CUDAExtension because torch helps us with
-    # creating the right boilerplate to enable correct targeting of
-    # the autoawq-kernels package
-    common_setup_kwargs["ext_modules"] = [
-        CUDAExtension(
-            name="test_kernel",
-            sources=[],
-        )
-    ]
 
 setup(
     packages=find_packages(),
