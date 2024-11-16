@@ -17,9 +17,4 @@ curl -s $RELEASE_URL | \
     grep -v '%2Brocm' | \
     xargs -n 1 -P 4 wget
 
-# Rename the wheels from 'linux_x86_64' to 'manylinux_x86_64'
-for file in *linux_x86_64.whl; do
-    mv "$file" "$(echo $file | sed 's/linux_x86_64/manylinux2014_x86_64/')"
-done
-
 cd ..
