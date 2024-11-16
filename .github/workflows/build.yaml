@@ -44,6 +44,8 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    env:
+      MIN_TORCH_VER: "2.2.0"
     
     steps:
       - name: Free Disk Space
@@ -78,7 +80,7 @@ jobs:
       - name: Install Dependencies
         run: |
           # Install torch
-          python -m pip install --upgrade --no-cache-dir torch==2.5.1
+          python -m pip install --upgrade --no-cache-dir torch==$env:MIN_TORCH_VER
           python -m pip install build setuptools wheel
 
           # Print version information
