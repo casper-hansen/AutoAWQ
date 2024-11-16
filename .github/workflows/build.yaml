@@ -79,13 +79,6 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          # Install CUDA toolkit
-          mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}"
-
-          # Env variables
-          $env:CUDA_PATH = $env:CONDA_PREFIX
-          $env:CUDA_HOME = $env:CONDA_PREFIX
-          
           # Install torch
           python -m pip install --upgrade --no-cache-dir torch==2.5.1
           python -m pip install build setuptools wheel
