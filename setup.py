@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from setuptools import setup, find_packages
 
-AUTOAWQ_VERSION = "0.2.6"
+AUTOAWQ_VERSION = "0.2.7"
 INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
 IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
 TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
