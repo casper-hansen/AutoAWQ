@@ -57,14 +57,15 @@ There are a few ways to install AutoAWQ:
 1. Default:
     - `pip install autoawq`
     - NOTE: The default installation includes no external kernels and relies on Triton for inference.
-    
-2. From main branch with kernels:
-    - `INSTALL_KERNELS=1 pip install git+https://github.com/casper-hansen/AutoAWQ.git`
+
+2. From release with kernels:
+    - `pip install autoawq[kernels]`
+    - NOTE: This requires you to match the latest torch version that the kernels were build with.
     - NOTE: This installs https://github.com/casper-hansen/AutoAWQ_kernels
 
 3. From main branch for Intel CPU and Intel XPU optimized performance:
-    - `pip install intel_extension_for_pytorch`
-    - `pip install git+https://github.com/casper-hansen/AutoAWQ.git`
+    - `pip install autoawq[cpu]`
+    - NOTE: Minimum of torch 2.4.0 is required.
 
 ## Usage
 
