@@ -3,14 +3,8 @@ import torch
 from pathlib import Path
 from setuptools import setup, find_packages
 
-AUTOAWQ_VERSION = "0.2.7.post1"
-INSTALL_KERNELS = os.getenv("INSTALL_KERNELS", "0") == "1"
-IS_CPU_ONLY = not torch.backends.mps.is_available() and not torch.cuda.is_available()
+AUTOAWQ_VERSION = "0.2.7.post2"
 TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
-
-CUDA_VERSION = os.getenv("CUDA_VERSION", None) or torch.version.cuda
-if CUDA_VERSION:
-    CUDA_VERSION = "".join(CUDA_VERSION.split("."))[:3]
 
 common_setup_kwargs = {
     "version": AUTOAWQ_VERSION,
@@ -50,25 +44,14 @@ requirements = [
     "zstandard",
 ]
 
-try:
-    import awq_ext
-
-    KERNELS_INSTALLED = True
-except ImportError:
-    KERNELS_INSTALLED = False
-
-if not KERNELS_INSTALLED and CUDA_VERSION and INSTALL_KERNELS and CUDA_VERSION.startswith("12"):
-    requirements.append("autoawq-kernels")
-
-elif IS_CPU_ONLY:
-    requirements.append("intel-extension-for-pytorch>=2.4.0")
-
 setup(
     packages=find_packages(),
     install_requires=requirements,
     extras_require={
         "eval": ["lm_eval==0.4.1", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"],
+        "cpu": ["intel-extension-for-pytorch>=2.4.0"],
+        "kernels": ["autoawq-kernels"],
     },
     **common_setup_kwargs,
 )
