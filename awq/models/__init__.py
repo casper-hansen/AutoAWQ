@@ -19,6 +19,7 @@ from .gemma2 import Gemma2AWQForCausalLM
 from .stablelm import StableLmAWQForCausalLM
 from .starcoder2 import Starcoder2AWQForCausalLM
 from .llava_next import LlavaNextAWQForCausalLM
+from .phimoe import PhiMoEAWQForCausalLM
 from .phi3 import Phi3AWQForCausalLM
 from .phi3_v import Phi3VAWQForCausalLM
 from .cohere import CohereAWQForCausalLM

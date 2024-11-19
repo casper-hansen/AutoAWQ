@@ -604,7 +604,7 @@ class AwqQuantizer:
         handles = []
 
         # FIXME: Workaround for Mixtral to use block_sparse_moe input features
-        if self.awq_model.model_type == "mixtral":
+        if self.awq_model.model_type in ["mixtral", "phimoe"]:
             named_linears = {
                 **named_linears,
                 "block_sparse_moe": layer.block_sparse_moe,
