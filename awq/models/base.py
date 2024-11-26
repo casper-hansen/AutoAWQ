@@ -57,6 +57,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "opt": "AutoModelForCausalLM",
     "RefinedWeb": "AutoModelForCausalLM",
     "RefinedWebModel": "AutoModelForCausalLM",
+    "exaone": "AutoModelForCausalLM",
     "falcon": "AutoModelForCausalLM",
     "bloom": "AutoModelForCausalLM",
     "gptj": "AutoModelForCausalLM",
