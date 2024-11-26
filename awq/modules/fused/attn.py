@@ -231,17 +231,17 @@ class QuantAttentionFused(nn.Module):
 
         if not self.use_alibi:
             xq, xk = self.rope.forward(xq, xk, self.start_pos, seqlen, partial=self.partial_rotary_factor < 1)
+        
+        self.cache.to(xq)
+        self.cache.update_kv(
+            values_store=xv,
+            keys_store=xk,
+            batch_size=bsz,
+            start_pos=self.start_pos,
+            seqlen=seqlen,
+        )
 
         if seqlen > 1:
-            self.cache.to(xq)
-            self.cache.update_kv(
-                values_store=xv,
-                keys_store=xk,
-                batch_size=bsz,
-                start_pos=self.start_pos,
-                seqlen=seqlen,
-            )
-            
             output = flash_attn_func(
                 q=xq,
                 k=xk,
@@ -251,9 +251,9 @@ class QuantAttentionFused(nn.Module):
                 softcap=self.attn_logit_softcapping,
             )
 
-            attention_weight = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
+            attention_weight = output.view(bsz, seqlen, -1)
         else:
-            xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen, self.head_dim)
+            xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen)
 
             output = flash_attn_func(
                 q=xq,
@@ -263,7 +263,7 @@ class QuantAttentionFused(nn.Module):
                 alibi_slopes=self.alibi.slopes if self.alibi is not None else None,
                 softcap=self.attn_logit_softcapping,
             )
-            attention_weight = output.reshape(bsz, seqlen, -1)
+            attention_weight = output.view(bsz, 1, -1)
 
         attn_output = self.o_proj(attention_weight)
         self.start_pos += seqlen

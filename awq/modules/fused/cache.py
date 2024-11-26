@@ -25,19 +25,12 @@ class WindowedCache:
         )
         self.max_seq_len = max_seq_len
 
-    def get_kv(self, batch_size, start_pos, seqlen, head_dim):
+    def get_kv(self, batch_size, start_pos, seqlen):
         """
         Gets the key-value store in correct shapes.
         """
-        xv = (
-            self.v[:batch_size, start_pos + seqlen].transpose(1, 2).contiguous()
-        )
-        xk = (
-            self.k[:batch_size, start_pos + seqlen]
-            .transpose(2, 3)
-            .contiguous()
-        )
-        xk = xk.reshape(xk.shape[:-2] + (head_dim,)).transpose(1, 2).contiguous()
+        xv = self.v[:batch_size, :start_pos + seqlen]
+        xk = self.k[:batch_size, :start_pos + seqlen]
 
         return xv, xk
 
