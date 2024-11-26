@@ -231,7 +231,7 @@ class QuantAttentionFused(nn.Module):
 
         if not self.use_alibi:
             xq, xk = self.rope.forward(xq, xk, self.start_pos, seqlen, partial=self.partial_rotary_factor < 1)
-        
+
         self.cache.to(xq)
         self.cache.update_kv(
             values_store=xv,
@@ -250,21 +250,27 @@ class QuantAttentionFused(nn.Module):
                 alibi_slopes=self.alibi.slopes if self.alibi is not None else None,
                 softcap=self.attn_logit_softcapping,
             )
-
-            attention_weight = output.view(bsz, seqlen, -1)
         else:
-            xv, xk = self.cache.get_kv(bsz, self.start_pos, seqlen)
+            cache_seqlens = torch.full(
+                (bsz,),
+                self.start_pos + seqlen,
+                dtype=torch.int32,
+                device=xq.device
+            )
 
-            output = flash_attn_func(
+            output = flash_attn_with_kvcache(
                 q=xq,
                 k=xk,
+                k_cache=self.cache.k,
                 v=xv,
+                v_cache=self.cache.v,
+                cache_seqlens=cache_seqlens,
                 causal=True,
                 alibi_slopes=self.alibi.slopes if self.alibi is not None else None,
                 softcap=self.attn_logit_softcapping,
             )
-            attention_weight = output.view(bsz, 1, -1)
 
+        attention_weight = output.view(bsz, seqlen, -1)
         attn_output = self.o_proj(attention_weight)
         self.start_pos += seqlen
 

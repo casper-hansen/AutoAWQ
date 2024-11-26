@@ -28,6 +28,8 @@ class WindowedCache:
     def get_kv(self, batch_size, start_pos, seqlen):
         """
         Gets the key-value store in correct shapes.
+        NOTE: This function is a legacy function. It is only available to showcase
+              how to accurately retrieve the KV-cache but is not currently used.
         """
         xv = self.v[:batch_size, :start_pos + seqlen]
         xk = self.k[:batch_size, :start_pos + seqlen]
