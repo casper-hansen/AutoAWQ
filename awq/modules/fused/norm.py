@@ -31,6 +31,8 @@ class FasterTransformerRMSNorm(nn.Module):
                 "Please install them from https://github.com/casper-hansen/AutoAWQ_kernels"
             )
             output = torch.empty_like(x)
-            awq_ext.layernorm_forward_cuda(x, self.weight, output, self.variance_epsilon)
+            awq_ext.layernorm_forward_cuda(
+                x, self.weight, output, self.variance_epsilon
+            )
 
         return output

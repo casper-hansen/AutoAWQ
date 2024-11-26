@@ -2,7 +2,9 @@ import torch
 
 
 class WindowedCache:
-    def __init__(self, cache_batch_size, n_heads, n_kv_heads, head_dim, max_seq_len, device):
+    def __init__(
+        self, cache_batch_size, n_heads, n_kv_heads, head_dim, max_seq_len, device
+    ):
         """
         The window size is the same as the max_seq_len. The window will
         automatically roll once max_seq_len is exceeded.
@@ -31,8 +33,8 @@ class WindowedCache:
         NOTE: This function is a legacy function. It is only available to showcase
               how to accurately retrieve the KV-cache but is not currently used.
         """
-        xv = self.v[:batch_size, :start_pos + seqlen]
-        xk = self.k[:batch_size, :start_pos + seqlen]
+        xv = self.v[:batch_size, : start_pos + seqlen]
+        xk = self.k[:batch_size, : start_pos + seqlen]
 
         return xv, xk
 

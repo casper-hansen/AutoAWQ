@@ -11,15 +11,6 @@ from awq.modules.linear import (
 )
 
 
-def prepare_correct_devices(next_layer, hidden_states, mask):
-    hidden_states = hidden_states.to(next_layer.device)
-
-    if mask is not None:
-        mask = mask.to(next_layer.device)
-
-    return hidden_states, mask
-
-
 def prepare_cache(blocks, seqlen: int) -> int:
     for block in blocks:
         start_pos = block.attn.start_pos
@@ -49,15 +40,6 @@ def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
             input_ids = input_ids[:, -1:]
 
     return input_ids, last_forward_num_tokens + num_new_tokens
-
-
-def prepare_attention_mask(seqlen, start_pos, device, type_as: torch.Tensor):
-    mask = None
-    if seqlen > 1:
-        mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=device)
-        mask = torch.triu(mask, diagonal=start_pos + 1).type_as(type_as)
-
-    return mask
 
 
 def fuse_qkv(module, q_proj, k_proj, v_proj):

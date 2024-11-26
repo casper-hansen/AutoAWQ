@@ -91,7 +91,6 @@ def apply_moe_weights(
     return torch.sum(out, dim=1)
 
 
-
 def moe_align_block_size(topk_ids: torch.Tensor, block_size: int, num_experts: int):
     """
     Aligns the token distribution across experts to be compatible with block size for matrix multiplication.

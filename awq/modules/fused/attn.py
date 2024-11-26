@@ -50,7 +50,14 @@ class RoPE(nn.Module):
         shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
         return freqs_cis.view(*shape)
 
-    def forward(self, xq: torch.Tensor, xk: torch.Tensor, start_pos: int, seqlen: int, partial: bool = False):
+    def forward(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        start_pos: int,
+        seqlen: int,
+        partial: bool = False,
+    ):
         if partial:
             xq, xq_pass = (
                 xq[..., : self.head_dim],
@@ -188,12 +195,10 @@ class QuantAttentionFused(nn.Module):
 
         if kwargs.get("is_neox") is not None:
             self.is_neox = kwargs["is_neox"]
-        
+
         self.attn_logit_softcapping = attn_logit_softcapping
 
-    def forward(
-        self, hidden_states: torch.Tensor, attention_mask=None, *args, **kwargs
-    ):
+    def forward(self, hidden_states: torch.Tensor, *args, **kwargs):
         bsz, seqlen, _ = hidden_states.shape
 
         # Reallocate cache if batch size changes
@@ -209,8 +214,14 @@ class QuantAttentionFused(nn.Module):
             self.start_pos = 0
 
         hf_is_generating = False
-        hf_is_first_forward = "past_key_value" in kwargs and kwargs["past_key_value"] is None
-        hf_is_new_cache_first_forward = "past_key_value" in kwargs and isinstance(kwargs["past_key_value"], DynamicCache) and kwargs["past_key_value"].get_seq_length() == 0
+        hf_is_first_forward = (
+            "past_key_value" in kwargs and kwargs["past_key_value"] is None
+        )
+        hf_is_new_cache_first_forward = (
+            "past_key_value" in kwargs
+            and isinstance(kwargs["past_key_value"], DynamicCache)
+            and kwargs["past_key_value"].get_seq_length() == 0
+        )
 
         if self.is_hf_transformers and "use_cache" in kwargs:
             hf_is_generating = kwargs["use_cache"]
@@ -219,7 +230,10 @@ class QuantAttentionFused(nn.Module):
         # to 0. We detect it by checking if `past_key_values` is set to None,
         # which indicates that we are on the first step of `generate()`.
         # This is only applicable for `transformers` integration
-        if (self.is_hf_transformers and (hf_is_first_forward or hf_is_new_cache_first_forward)) or (self.is_hf_transformers and not hf_is_generating):
+        if (
+            self.is_hf_transformers
+            and (hf_is_first_forward or hf_is_new_cache_first_forward)
+        ) or (self.is_hf_transformers and not hf_is_generating):
             self.start_pos = 0
 
         xqkv = self.qkv_proj(hidden_states)
@@ -230,7 +244,9 @@ class QuantAttentionFused(nn.Module):
         xv = self.attention_shapes["xv_slice"](xqkv)
 
         if not self.use_alibi:
-            xq, xk = self.rope.forward(xq, xk, self.start_pos, seqlen, partial=self.partial_rotary_factor < 1)
+            xq, xk = self.rope.forward(
+                xq, xk, self.start_pos, seqlen, partial=self.partial_rotary_factor < 1
+            )
 
         self.cache.to(xq)
         self.cache.update_kv(
@@ -252,10 +268,7 @@ class QuantAttentionFused(nn.Module):
             )
         else:
             cache_seqlens = torch.full(
-                (bsz,),
-                self.start_pos + seqlen,
-                dtype=torch.int32,
-                device=xq.device
+                (bsz,), self.start_pos + seqlen, dtype=torch.int32, device=xq.device
             )
 
             output = flash_attn_with_kvcache(
