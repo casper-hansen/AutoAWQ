@@ -51,7 +51,7 @@ setup(
         "eval": ["lm_eval==0.4.1", "tabulate", "protobuf", "evaluate", "scipy"],
         "dev": ["black", "mkdocstrings-python", "mkdocs-material", "griffe-typingdoc"],
         "cpu": ["intel-extension-for-pytorch>=2.4.0"],
-        "kernels": ["autoawq-kernels"],
+        "kernels": ["autoawq-kernels", "flash-attn>=2.2.0"],
     },
     **common_setup_kwargs,
 )

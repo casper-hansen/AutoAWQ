@@ -11,15 +11,6 @@ from awq.modules.linear import (
 )
 
 
-def prepare_correct_devices(next_layer, hidden_states, mask):
-    hidden_states = hidden_states.to(next_layer.device)
-
-    if mask is not None:
-        mask = mask.to(next_layer.device)
-
-    return hidden_states, mask
-
-
 def prepare_cache(blocks, seqlen: int) -> int:
     for block in blocks:
         start_pos = block.attn.start_pos
@@ -49,15 +40,6 @@ def prepare_input_ids(input_ids: torch.Tensor, last_forward_num_tokens: int):
             input_ids = input_ids[:, -1:]
 
     return input_ids, last_forward_num_tokens + num_new_tokens
-
-
-def prepare_attention_mask(seqlen, start_pos, device, type_as: torch.Tensor):
-    mask = None
-    if seqlen > 1:
-        mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=device)
-        mask = torch.triu(mask, diagonal=start_pos + 1).type_as(type_as)
-
-    return mask
 
 
 def fuse_qkv(module, q_proj, k_proj, v_proj):
@@ -181,28 +163,13 @@ def fuse_linears(linears, device, dim=1, operation=torch.cat):
 
 
 def get_attention_shapes(
-    attention_shapes, max_seq_len, cache_batch_size, n_heads, n_kv_heads, head_dim
+    attention_shapes, n_heads, n_kv_heads, head_dim
 ):
     if attention_shapes is not None:
         attention_shapes = attention_shapes
 
     elif n_kv_heads == 0:
         attention_shapes = {
-            # following fastertransformer definition
-            "cache_v": (
-                cache_batch_size,
-                n_heads,
-                max_seq_len,
-                head_dim,
-            ),
-            # 8: pack 8 fp16 in FT, if fp32 then use 4
-            "cache_k": (
-                cache_batch_size,
-                n_heads,
-                head_dim // 8,
-                max_seq_len,
-                8,
-            ),
             "xqkv_view": (-1, n_heads, head_dim),
             "xq_slice": lambda xqkv: xqkv[:, :, 0],
             "xk_slice": lambda xqkv: xqkv[:, :, 1],
@@ -218,21 +185,6 @@ def get_attention_shapes(
 
     else:
         attention_shapes = {
-            # following fastertransformer definition
-            "cache_v": (
-                cache_batch_size,
-                n_kv_heads,
-                max_seq_len,
-                head_dim,
-            ),
-            # 8: pack 8 fp16 in FT, if fp32 then use 4
-            "cache_k": (
-                cache_batch_size,
-                n_kv_heads,
-                head_dim // 8,
-                max_seq_len,
-                8,
-            ),
             "xqkv_view": (n_heads + n_kv_heads * 2, head_dim),
             "xq_slice": lambda xqkv: xqkv[:, :, 0:n_heads],
             "xk_slice": lambda xqkv: xqkv[:, :, n_heads : (n_heads + n_kv_heads)],

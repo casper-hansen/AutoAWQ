@@ -41,23 +41,17 @@ class MixtralBlock(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         norm_out = self.norm_1(hidden_states)
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=norm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
         out = self.moe.forward(self.norm_2(h))
         out = h + out
 
-        return out, None, past_key_value
+        return out
 
 
 class LlamaLikeBlock(nn.Module):
@@ -106,7 +100,6 @@ class LlamaLikeBlock(nn.Module):
             rope_theta=rope_theta,
             partial_rotary_factor=partial_rotary_factor,
             head_dim=head_dim,
-            use_sdpa=True,
         ).to(dev)
         self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)
@@ -115,22 +108,16 @@ class LlamaLikeBlock(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         norm_out = self.norm_1(hidden_states)
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=norm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.mlp.forward(self.norm_2(h))
 
-        return out, None, past_key_value
+        return out
 
 
 class Gemma2LikeBlock(nn.Module):
@@ -144,8 +131,8 @@ class Gemma2LikeBlock(nn.Module):
         mlp,
         norm_1,
         norm_2,
-    	norm_3,
-    	norm_4,
+        norm_3,
+        norm_4,
         dev,
         max_seq_len,
         rope_theta=10000,
@@ -188,30 +175,24 @@ class Gemma2LikeBlock(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         residual = hidden_states
         hidden_states = self.norm_1(hidden_states)
 
-        hidden_states, _, past_key_value = self.attn.forward(
+        hidden_states, _, _ = self.attn.forward(
             hidden_states=hidden_states,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
         )
 
         hidden_states = self.norm_2(hidden_states)
         hidden_states = residual + hidden_states
-        
+
         residual = hidden_states
         hidden_states = self.norm_3(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = self.norm_4(hidden_states)
         out = residual + hidden_states
 
-        return out, None, past_key_value
+        return out
 
 
 class CohereBlock(nn.Module):
@@ -224,7 +205,6 @@ class CohereBlock(nn.Module):
         o_proj,
         mlp,
         norm_1,
-        # norm_2,
         dev,
         max_seq_len,
         rope_theta=10000,
@@ -256,29 +236,22 @@ class CohereBlock(nn.Module):
             head_dim=head_dim,
             is_neox=False,
         ).to(dev)
-        # self.norm_2 = norm_2.to(dev)
         self.mlp = mlp.to(dev)
         self.device = dev
 
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         norm_out = self.norm_1(hidden_states)
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=norm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.mlp.forward(norm_out)
 
-        return out, None, past_key_value
+        return out
 
 
 class MPTBlock(nn.Module):
@@ -316,24 +289,15 @@ class MPTBlock(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         norm_out = self.norm_1(hidden_states)
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=norm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
-            position_ids=None,
-            output_attentions=False,
-            use_cache=True,
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.ffn.forward(self.norm_2(h))
-        return out, None, past_key_value
+        return out
 
 
 class FalconDecoderLayer(nn.Module):
@@ -423,10 +387,6 @@ class FalconDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         if self.new_decoder_arch:
             layernorm_out = self.ln_attn(hidden_states)
@@ -434,13 +394,8 @@ class FalconDecoderLayer(nn.Module):
         else:
             layernorm_out = self.input_layernorm(hidden_states)
 
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=layernorm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
-            position_ids=None,
-            output_attentions=False,
-            use_cache=True,
         )
 
         h_attn = hidden_states.to(attn_output.device) + attn_output
@@ -452,7 +407,7 @@ class FalconDecoderLayer(nn.Module):
 
         out = h_attn + h_mlp
 
-        return out, None, past_key_value
+        return out
 
 
 class Phi3Block(nn.Module):
@@ -509,19 +464,13 @@ class Phi3Block(nn.Module):
     def forward(
         self,
         hidden_states,
-        past_key_value,
-        attn_bias=None,
-        attention_mask=None,
-        is_causal=None,
     ):
         norm_out = self.norm_1(hidden_states)
-        attn_output, _, past_key_value = self.attn.forward(
+        attn_output, _, _ = self.attn.forward(
             hidden_states=norm_out,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
         )
 
         h = hidden_states.to(attn_output.device) + attn_output
         out = h + self.mlp.forward(self.norm_2(h))
 
-        return out, None, past_key_value
+        return out

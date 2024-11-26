@@ -2,30 +2,39 @@ import torch
 
 
 class WindowedCache:
-    def __init__(self, cache_v_shape, cache_k_shape, max_seq_len, device):
+    def __init__(
+        self, cache_batch_size, n_heads, n_kv_heads, head_dim, max_seq_len, device
+    ):
         """
         The window size is the same as the max_seq_len. The window will
         automatically roll once max_seq_len is exceeded.
         """
-        # [batch_size, n_kv_heads, max_seq_len, head_dim]
-        self.v = torch.zeros(cache_v_shape).to(device).half()
-        # [batch_size, n_kv_heads, head_dim // pack_factor, max_seq_len, pack_factor]
-        self.k = torch.zeros(cache_k_shape).to(device).half()
+        size = (
+            cache_batch_size,
+            max_seq_len,
+            n_kv_heads if n_kv_heads != 0 else n_heads,
+            head_dim,
+        )
+        self.v = torch.zeros(
+            size,
+            device=device,
+            dtype=torch.float16,
+        )
+        self.k = torch.zeros(
+            size,
+            device=device,
+            dtype=torch.float16,
+        )
         self.max_seq_len = max_seq_len
 
-    def get_kv(self, batch_size, start_pos, seqlen, head_dim):
+    def get_kv(self, batch_size, start_pos, seqlen):
         """
         Gets the key-value store in correct shapes.
+        NOTE: This function is a legacy function. It is only available to showcase
+              how to accurately retrieve the KV-cache but is not currently used.
         """
-        xv = (
-            self.v[:batch_size, :, : start_pos + seqlen, :].transpose(1, 2).contiguous()
-        )
-        xk = (
-            self.k[:batch_size, :, :, : start_pos + seqlen, :]
-            .transpose(2, 3)
-            .contiguous()
-        )
-        xk = xk.reshape(xk.shape[:-2] + (head_dim,)).transpose(1, 2).contiguous()
+        xv = self.v[:batch_size, : start_pos + seqlen]
+        xk = self.k[:batch_size, : start_pos + seqlen]
 
         return xv, xk
 
@@ -33,8 +42,8 @@ class WindowedCache:
         """
         Updates the values in the key-value store.
         """
-        self.v[:batch_size, :, start_pos : start_pos + seqlen, :] = values_store
-        self.k[:batch_size, :, :, start_pos : start_pos + seqlen, :] = keys_store
+        self.v[:batch_size, start_pos : start_pos + seqlen, :, :] = values_store
+        self.k[:batch_size, start_pos : start_pos + seqlen, :, :] = keys_store
 
     def roll_kv_n_steps(self, start_pos, n=100):
         """
