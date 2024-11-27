@@ -4,10 +4,14 @@ from .base import BaseAWQForCausalLM
 from awq.utils.fused_utils import fuse_qkv
 from awq.modules.fused.block import LlamaLikeBlock
 from awq.modules.fused.model import LlamaLikeModel
-from transformers.models.exaone.modeling_exaone import (
-    ExaoneBlock as OldExaoneBlock,
-    ExaoneForCausalLM as OldExaoneForCausalLM,
-)
+try:
+    from transformers.models.exaone.modeling_exaone import (
+        ExaoneBlock as OldExaoneBlock,
+        ExaoneForCausalLM as OldExaoneForCausalLM,
+    )
+except:
+    OldExaoneBlock = None
+    OldExaoneForCausalLM = None
 from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
