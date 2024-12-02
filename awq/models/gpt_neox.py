@@ -24,7 +24,6 @@ class GPTNeoXAWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def move_embed(model: GPTNeoXForCausalLM, device: str):
-        model.gpt_neox.rotary_emb = model.gpt_neox.rotary_emb.to(device)
         model.gpt_neox.embed_in = model.gpt_neox.embed_in.to(device)
 
     @staticmethod
