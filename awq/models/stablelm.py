@@ -30,7 +30,6 @@ class StableLmAWQForCausalLM(BaseAWQForCausalLM):
 
     @staticmethod
     def move_embed(model: OldStableLmForCausalLM, device: str):
-        model.model.rotary_emb = model.model.rotary_emb.to(device)
         model.model.embed_tokens = model.model.embed_tokens.to(device)
 
     @staticmethod
