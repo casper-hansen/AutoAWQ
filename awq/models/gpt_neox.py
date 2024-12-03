@@ -25,6 +25,7 @@ class GPTNeoXAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def move_embed(model: GPTNeoXForCausalLM, device: str):
         model.gpt_neox.embed_in = model.gpt_neox.embed_in.to(device)
+        model.gpt_neox.rotary_emb = model.gpt_neox.rotary_emb.to(device)
 
     @staticmethod
     def get_layers_for_scaling(module: GPTNeoXLayer, input_feat, module_kwargs):

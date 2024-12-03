@@ -280,17 +280,18 @@ def awq_dequantize_triton(
         triton.cdiv(X, META["BLOCK_SIZE_X"]),
         triton.cdiv(Y, META["BLOCK_SIZE_Y"]),
     )
-    awq_dequantize_kernel[grid](
-        qweight,
-        scales,
-        zeros,
-        group_size,
-        result,
-        X,
-        Y,
-        BLOCK_SIZE_X=block_size_x,
-        BLOCK_SIZE_Y=block_size_y,
-    )
+    with torch.cuda.device(qweight.device.index):
+        awq_dequantize_kernel[grid](
+            qweight,
+            scales,
+            zeros,
+            group_size,
+            result,
+            X,
+            Y,
+            BLOCK_SIZE_X=block_size_x,
+            BLOCK_SIZE_Y=block_size_y,
+        )
 
     return result
 
@@ -332,20 +333,21 @@ def awq_gemm_triton(
 
     # A = input, B = qweight, C = result
     # A = M x K, B = K x N, C = M x N
-    awq_gemm_kernel[grid](
-        input,
-        qweight,
-        result,
-        qzeros,
-        scales,
-        M,
-        N,
-        K,
-        group_size,
-        BLOCK_SIZE_M=block_size_m,
-        BLOCK_SIZE_N=block_size_n,
-        BLOCK_SIZE_K=block_size_k,
-        SPLIT_K=split_k_iters,
-    )
+    with torch.cuda.device(qweight.device.index):
+        awq_gemm_kernel[grid](
+            input,
+            qweight,
+            result,
+            qzeros,
+            scales,
+            M,
+            N,
+            K,
+            group_size,
+            BLOCK_SIZE_M=block_size_m,
+            BLOCK_SIZE_N=block_size_n,
+            BLOCK_SIZE_K=block_size_k,
+            SPLIT_K=split_k_iters,
+        )
 
     return result

@@ -148,6 +148,19 @@ class AwqQuantizer:
 
             self.inps = self.inps.to(common_device)
 
+            # We need to move the rotary embedding every time we move to a new module.
+            # Transformers 4.45.0 moved rotary embedding to model definition as of this PR:
+            # https://github.com/huggingface/transformers/pull/32617
+            self.awq_model.move_embed(self.model, common_device)
+
+            for k, v in self.module_kwargs.items():
+                # position embeddings found in tuple
+                if isinstance(v, tuple):
+                    self.module_kwargs[k] = tuple(
+                        item.to(common_device) if isinstance(item, (torch.Tensor, nn.Module)) 
+                        else item for item in v
+                    )
+
             # [STEP 1]: Get layer, extract linear modules, extract input features
             named_linears = get_named_linears(self.modules[i])
 

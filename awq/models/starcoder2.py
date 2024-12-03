@@ -37,6 +37,7 @@ class Starcoder2AWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def move_embed(model: OldStarcoder2ForCausalLM, device):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
+        model.model.rotary_emb = model.model.rotary_emb.to(device)
 
     @staticmethod
     def get_layers_for_scaling(module: OldStarcoder2DecoderLayer, input_feat, module_kwargs):
