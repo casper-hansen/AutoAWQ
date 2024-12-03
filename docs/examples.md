@@ -51,7 +51,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+    model_path, low_cpu_mem_usage=True, use_cache=False
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -108,7 +108,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+    model_path, low_cpu_mem_usage=True, use_cache=False,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -151,7 +151,7 @@ quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": 
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+    model_path, low_cpu_mem_usage=True, use_cache=False,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -197,7 +197,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, device_map="cuda",
+    model_path, low_cpu_mem_usage=True,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -237,7 +237,7 @@ quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 6, "version":
 
 # Load model
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False, device_map="cuda",
+    model_path, low_cpu_mem_usage=True, use_cache=False,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -591,7 +591,6 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id, 
     torch_dtype=torch.float16, 
     low_cpu_mem_usage=True,
-    device_map="cuda:0"
 )
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
