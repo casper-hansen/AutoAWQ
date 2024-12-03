@@ -36,7 +36,7 @@ common_setup_kwargs = {
 requirements = [
     f"torch>={TORCH_VERSION}",
     "triton",
-    "transformers>=4.35.0",
+    "transformers>=4.45.0",
     "tokenizers>=0.12.1",
     "typing_extensions>=4.8.0",
     "accelerate",
