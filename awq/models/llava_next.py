@@ -32,6 +32,7 @@ class LlavaNextAWQForCausalLM(BaseAWQForCausalLM):
         model.language_model.model.embed_tokens = model.get_input_embeddings().to(
             device
         )
+        model.language_model.model.rotary_emb = model.language_model.model.rotary_emb.to(device)
 
     @staticmethod
     def get_layers_for_scaling(module: OldLlamaDecoderLayer, input_feat, module_kwargs):

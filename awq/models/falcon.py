@@ -33,6 +33,7 @@ class FalconAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def move_embed(model: FalconForCausalLM, device):
         model.transformer.word_embeddings = model.transformer.word_embeddings.to(device)
+        model.transformer.rotary_emb = model.transformer.rotary_emb.to(device)
 
     @staticmethod
     def get_layers_for_scaling(

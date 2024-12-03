@@ -31,6 +31,7 @@ class AquilaAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def move_embed(model: OldAquilaForCausalLM, device: str):
         model.model.embed_tokens = model.model.embed_tokens.to(device)
+        model.model.rotary_emb = model.model.rotary_emb.to(device)
 
     @staticmethod
     def get_layers_for_scaling(

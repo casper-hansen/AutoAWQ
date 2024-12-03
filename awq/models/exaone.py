@@ -35,6 +35,7 @@ class ExaoneAWQForCausalLM(BaseAWQForCausalLM):
     @staticmethod
     def move_embed(model: OldExaoneForCausalLM, device: str):
         model.transformer.wte = model.transformer.wte.to(device)
+        model.transformer.rotary = model.transformer.rotary.to(device)
 
     @staticmethod
     def get_layers_for_scaling(module: OldExaoneBlock, input_feat, module_kwargs):
