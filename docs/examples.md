@@ -20,9 +20,7 @@ quant_path = 'mistral-instruct-v0.2-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Quantize
@@ -50,9 +48,7 @@ quant_path = 'vicuna-7b-v1.5-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Define data loading methods
@@ -107,9 +103,7 @@ quant_path = 'qwen2-7b-awq'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False,
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 def load_cosmopedia():
@@ -150,9 +144,7 @@ quant_path = 'deepseek-coder-v2-lite-instruct-awq'
 quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False,
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 def load_openhermes_coding():
@@ -236,9 +228,7 @@ llama_cpp_path = '/workspace/llama.cpp'
 quant_config = { "zero_point": True, "q_group_size": 128, "w_bit": 6, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False,
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Quantize
@@ -293,7 +283,7 @@ quant_path = "qwen2-vl-7b-instruct"
 quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM"}
 
 model = AutoAWQForCausalLM.from_pretrained(
-    model_path, use_cache=False, attn_implementation="flash_attention_2"
+    model_path, attn_implementation="flash_attention_2"
 )
 
 # We define our own quantizer by extending the AwqQuantizer.
@@ -505,9 +495,7 @@ quant_path = 'minicpm3-4b-awq'
 quant_config = { "zero_point": True, "q_group_size": 64, "w_bit": 4, "version": "GEMM" }
 
 # Load model
-model = AutoAWQForCausalLM.from_pretrained(
-    model_path, low_cpu_mem_usage=True, use_cache=False, safetensors=False
-)
+model = AutoAWQForCausalLM.from_pretrained(model_path, safetensors=False)
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 # Quantize

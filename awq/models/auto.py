@@ -66,11 +66,18 @@ class AutoAWQForCausalLM:
         safetensors=True,
         device_map=None,
         download_kwargs=None,
+        low_cpu_mem_usage=True,
+        use_cache=False,
         **model_init_kwargs,
     ) -> BaseAWQForCausalLM:
         model_type = check_and_get_model_type(
             model_path, trust_remote_code, **model_init_kwargs
         )
+
+        if model_init_kwargs.get("low_cpu_mem_usage") is None:
+            model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
+        if model_init_kwargs.get("use_cache") is None:
+            model_init_kwargs["use_cache"] = use_cache
 
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_pretrained(
             model_path,

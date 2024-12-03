@@ -45,9 +45,6 @@ cli_args = dict(
     q_group_size = 128,
     w_bit = 4,
     version = "GEMM",
-    low_cpu_mem_usage = True,
-    use_cache = False,
-    device_map = "auto",
 )
 cli_args = " ".join([f"--{k}" if isinstance(v, bool) else f"--{k} {v}" for k,v in cli_args.items()])
 
