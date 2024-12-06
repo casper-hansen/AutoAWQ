@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from setuptools import setup, find_packages
 
-AUTOAWQ_VERSION = "0.2.7.post2"
+AUTOAWQ_VERSION = "0.2.7.post3"
 TORCH_VERSION = str(os.getenv("TORCH_VERSION", None) or torch.__version__).split('+', maxsplit=1)[0]
 
 common_setup_kwargs = {
