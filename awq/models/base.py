@@ -80,6 +80,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "phi3": "AutoModelForCausalLM",
     "phi3_v": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
+    "deepseek": "AutoModelForCausalLM",
     "deepseek_v2": "AutoModelForCausalLM",
     "minicpm": "AutoModelForCausalLM",
     "minicpm3":"AutoModelForCausalLM",
