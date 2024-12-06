@@ -309,6 +309,7 @@ class BaseAWQForCausalLM(nn.Module):
             max_shard_size=shard_size,
             safe_serialization=safetensors,
             force_contiguous=True,
+            shared_tensors_to_discard=self.model._tied_weights_keys,
         )
 
     @classmethod
