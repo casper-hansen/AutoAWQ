@@ -42,7 +42,7 @@ requirements = [
     "accelerate",
     "datasets>=2.20",
     "zstandard",
-    "huggingface_hub @ git+https://github.com/huggingface/huggingface_hub@fix-discard-shared-tensors",
+    "huggingface_hub @ git+https://github.com/huggingface/huggingface_hub",
 ]
 
 setup(
