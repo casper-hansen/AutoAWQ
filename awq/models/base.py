@@ -36,6 +36,7 @@ from transformers import (
     PretrainedConfig,
     AutoProcessor,
     BaseImageProcessor,
+    ProcessorMixin,
     PreTrainedTokenizer,
 )
 from accelerate.big_modeling import (
@@ -112,7 +113,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
-        self.processor: BaseImageProcessor = processor
+        self.processor: ProcessorMixin = processor
 
     def to(self, device: Annotated[str, Doc("The device to move your model to.")]):
         """A utility function for moving the model to a device."""
@@ -342,6 +343,14 @@ class BaseAWQForCausalLM(nn.Module):
             Dict,
             Doc("Used for configure download model"),
         ] = None,
+        low_cpu_mem_usage: Annotated[
+            bool,
+            Doc("Use low_cpu_mem_usage when loading from transformers.")
+        ] = True,
+        use_cache: Annotated[
+            bool,
+            Doc("Use use_cache argument in transformers")
+        ] = False,
         **model_init_kwargs: Annotated[
             Dict,
             Doc(
@@ -366,6 +375,11 @@ class BaseAWQForCausalLM(nn.Module):
         processor = None
         if target_cls_name == "AutoModelForVision2Seq":
             processor = AutoProcessor.from_pretrained(model_weights_path)
+
+        if model_init_kwargs.get("low_cpu_mem_usage") is None:
+            model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
+        if model_init_kwargs.get("use_cache") is None and target_cls_name != "AutoModelForVision2Seq":
+            model_init_kwargs["use_cache"] = use_cache
 
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(
