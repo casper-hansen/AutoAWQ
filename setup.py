@@ -1,5 +1,6 @@
 import os
 import torch
+import platform
 from pathlib import Path
 from setuptools import setup, find_packages
 
@@ -44,6 +45,10 @@ requirements = [
     "zstandard",
     "huggingface_hub>=0.26.5",
 ]
+
+if 'riscv' in platform.machine().lower():
+    # remove triton for riscv platform
+    requirements.remove("triton")
 
 setup(
     packages=find_packages(),
