@@ -77,6 +77,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "gemma2": "AutoModelForCausalLM",
     "stablelm": "AutoModelForCausalLM",
     "starcoder2": "AutoModelForCausalLM",
+    "jamba": "AutoModelForCausalLM",
     "llava_next": "AutoModelForVision2Seq",
     "phi3": "AutoModelForCausalLM",
     "phi3_v": "AutoModelForCausalLM",
@@ -523,8 +524,7 @@ class BaseAWQForCausalLM(nn.Module):
             model,
             checkpoint=model_weights_path,
             device_map=device_map,
-            max_memory=max_memory,
-            no_split_module_classes=[self.layer_type],
+            no_split_module_classes=[self.layer_type] if isinstance(self.layer_type, str) else self.layer_type,
             offload_folder=offload_folder,
             dtype=torch_dtype,
         )

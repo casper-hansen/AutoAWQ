@@ -622,7 +622,11 @@ class AwqQuantizer:
                 **named_linears,
                 "block_sparse_moe": layer.block_sparse_moe,
             }
-
+        if self.awq_model.model_type == "jamba":
+            named_linears = {
+                **named_linears,
+                "feed_forward": layer.feed_forward,
+            }
         if self.awq_model.model_type == "deepseek_v2":
             named_linears = {
                 **named_linears,
