@@ -73,7 +73,7 @@ class AwqQuantizer:
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
         if self.group_size > 0:
-            assert org_w_shape[-1] % self.group_size == 0
+            assert org_w_shape[-1] % self.group_size == 0, f"org_w_shape ({org_w_shape[-1]}) must be a multiple of group_size ({self.group_size})!"
             w = w.reshape(-1, self.group_size)
         assert w.dim() == 2
         assert torch.isnan(w).sum() == 0
@@ -623,7 +623,7 @@ class AwqQuantizer:
                 "block_sparse_moe": layer.block_sparse_moe,
             }
 
-        if self.awq_model.model_type == "deepseek_v2":
+        if self.awq_model.model_type == "deepseek_v2" or self.awq_model.model_type == "deepseek_v3":
             named_linears = {
                 **named_linears,
                 "mlp": layer.mlp,
