@@ -338,6 +338,7 @@ class AwqQuantizer:
         with torch.no_grad():
             module_kwargs = self._sanitize_kwargs(kwargs, module2inspect)
             fp16_output = self._module_forward(inp, module2inspect, module_kwargs)
+            fp16_output = fp16_output.clip(torch.finfo(fp16_output).min, torch.finfo(fp16_output).max)
 
         # [STEP 4]: Compute loss
         best_scales = self._compute_best_scale(
@@ -406,6 +407,7 @@ class AwqQuantizer:
 
             # W * X
             int_w_output = self._module_forward(x, module2inspect, kwargs)
+            int_w_output = int_w_output.clip(torch.finfo(int_w_output).min, torch.finfo(int_w_output).max)
 
             # compute mean squared error (L2 norm)
             loss = self._compute_loss(fp16_output, int_w_output, device)
