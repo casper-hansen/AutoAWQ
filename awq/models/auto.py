@@ -38,6 +38,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "internlm2": InternLM2AWQForCausalLM,
     "minicpm3": MiniCPM3AWQForCausalLM,
     "qwen2_vl": Qwen2VLAWQForCausalLM,
+    "telechat": Telechat2AWQForCausalLM,
 }
 
 

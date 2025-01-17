@@ -297,6 +297,11 @@ class AwqQuantizer:
         # Put x on the right device
         inp = inp.to(next(module2inspect.parameters()).device)
 
+        # Also need put other tensor on the right device
+        for key, value in kwargs.items():
+            if isinstance(value, torch.Tensor):
+                kwargs[key] = value.to(inp.device)
+
         # [STEP 1]: Compute per-channel mean of normalised weights
         # All layer weights are concatted together
         weight = torch.cat([_m.weight for _m in layers], dim=0)
@@ -343,6 +348,11 @@ class AwqQuantizer:
         best_scales = self._compute_best_scale(
             inp, w_mean, x_mean, module2inspect, layers, fp16_output, module_kwargs
         )
+
+        # Avoid memory overflow
+        for key, value in kwargs.items():
+            if isinstance(value, torch.Tensor):
+                kwargs[key].cpu()
 
         return (
             get_op_name(module, prev_op),
@@ -627,6 +637,12 @@ class AwqQuantizer:
             named_linears = {
                 **named_linears,
                 "mlp": layer.mlp,
+            }
+
+        if self.awq_model.model_type == "telechat":
+            named_linears = {
+                **named_linears,
+                "post_attention_layernorm": layer.post_attention_layernorm,
             }
 
         for name in named_linears:

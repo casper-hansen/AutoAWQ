@@ -86,6 +86,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "minicpm3":"AutoModelForCausalLM",
     "internlm2": "AutoModelForCausalLM",
     "qwen2_vl": "AutoModelForVision2Seq",
+    "telechat": "AutoModelForCausalLM",
 }
 
 
