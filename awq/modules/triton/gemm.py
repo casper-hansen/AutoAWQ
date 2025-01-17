@@ -4,7 +4,7 @@
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at 
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -19,6 +19,12 @@ import triton
 import triton.language as tl
 
 AWQ_TRITON_SUPPORTED_GROUP_SIZES = [-1, 32, 64, 128]
+
+def get_same_device_cm(t):
+    if t.device.type == 'xpu':
+        return torch.xpu.device(t.device.index)
+    else:
+        return torch.cuda.device(t.device.index)
 
 
 @triton.jit
@@ -280,7 +286,7 @@ def awq_dequantize_triton(
         triton.cdiv(X, META["BLOCK_SIZE_X"]),
         triton.cdiv(Y, META["BLOCK_SIZE_Y"]),
     )
-    with torch.cuda.device(qweight.device.index):
+    with get_same_device_cm(qweight):
         awq_dequantize_kernel[grid](
             qweight,
             scales,
@@ -333,7 +339,7 @@ def awq_gemm_triton(
 
     # A = input, B = qweight, C = result
     # A = M x K, B = K x N, C = M x N
-    with torch.cuda.device(qweight.device.index):
+    with get_same_device_cm(qweight):
         awq_gemm_kernel[grid](
             input,
             qweight,

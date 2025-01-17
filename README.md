@@ -49,6 +49,7 @@ AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up 
   -  Your ROCm version must be compatible with Triton.
 - Intel CPU and Intel GPU:
   - Your torch and intel_extension_for_pytorch package version should at least 2.4 for optimized performance.
+  - Alternatively, you can rely on triton kernels for GPU, then you'll need to install [intel-xpu-backend-for-triton](https://github.com/intel/intel-xpu-backend-for-triton) along with compatible torch and transformers. Easiest way is to use [pre-built wheels](https://github.com/intel/intel-xpu-backend-for-triton?tab=readme-ov-file#install-pytorch-and-triton-from-nightly-wheels).
 
 ### Install from PyPi
 
