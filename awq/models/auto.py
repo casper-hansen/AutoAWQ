@@ -1,4 +1,5 @@
 import os
+import torch
 import logging
 from transformers import AutoConfig
 from awq.models import *
@@ -63,6 +64,7 @@ class AutoAWQForCausalLM:
     def from_pretrained(
         self,
         model_path,
+        torch_dtype=torch.float16,
         trust_remote_code=True,
         safetensors=True,
         device_map=None,
@@ -78,6 +80,7 @@ class AutoAWQForCausalLM:
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_pretrained(
             model_path,
             model_type,
+            torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
             safetensors=safetensors,
             device_map=device_map,
