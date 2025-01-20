@@ -64,7 +64,9 @@ class WQLinear_IPEX(WQLinear_GEMM):
         self.register_buffer("qweight", qweight)
 
     def post_init(self):
-        assert self.qweight.device.type in ("cpu", "xpu")
+        device_type = self.qweight.device.type
+        if device_type != "meta":
+            assert device_type in ("cpu", "xpu")
 
     def init_ipex_linear(self):
         if not self.training:
