@@ -72,8 +72,8 @@ def set_module_name(model, name, value):
 def clear_memory(weight=None):
     if weight is not None:
         del weight
-    gc.collect()
-    torch.cuda.empty_cache()
+    # gc.collect()
+    # torch.cuda.empty_cache()
 
 
 def compute_memory_used_pct(device):
