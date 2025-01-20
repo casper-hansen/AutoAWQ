@@ -64,7 +64,7 @@ class AutoAWQForCausalLM:
     def from_pretrained(
         self,
         model_path,
-        torch_dtype=torch.float16,
+        torch_dtype="auto",
         trust_remote_code=True,
         safetensors=True,
         device_map=None,
