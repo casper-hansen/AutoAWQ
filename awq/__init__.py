@@ -1,2 +1,2 @@
-__version__ = "0.2.7.post3"
+__version__ = "0.2.8"
 from awq.models.auto import AutoAWQForCausalLM
