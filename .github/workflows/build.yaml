@@ -74,7 +74,7 @@ jobs:
           activate-environment: "build"
           python-version: ${{ matrix.pyver }}
           miniforge-variant: Mambaforge
-          miniforge-version: latest
+          miniforge-version: 24.11.0-0
           use-mamba: true
           add-pip-as-python-dependency: true
           auto-activate-base: false
@@ -91,7 +91,7 @@ jobs:
 
       - name: Build Wheel
         run: |
-          python setup.py sdist bdist_wheel
+          python setup.py sdist
 
       # - name: Upload Assets
       #   uses: shogo82148/actions-upload-release-asset@v1
