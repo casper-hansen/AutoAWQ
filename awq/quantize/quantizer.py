@@ -1,3 +1,4 @@
+import transformers
 import torch
 import inspect
 import logging
@@ -152,6 +153,15 @@ class AwqQuantizer:
             # Transformers 4.45.0 moved rotary embedding to model definition as of this PR:
             # https://github.com/huggingface/transformers/pull/32617
             self.awq_model.move_embed(self.model, common_device)
+
+            # Transformers >= 4.48.0 requires positional embeddings should be computed before forward pass
+            if (
+                transformers.__version__ >= "4.48.0"
+                and self.module_kwargs.get("position_embeddings") is None
+            ):
+                self.module_kwargs["position_embeddings"] = self.model.model.rotary_emb(
+                    self.inps, self.module_kwargs["position_ids"]
+                )
 
             for k, v in self.module_kwargs.items():
                 # position embeddings found in tuple
