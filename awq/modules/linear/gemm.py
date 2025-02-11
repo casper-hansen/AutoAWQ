@@ -67,6 +67,7 @@ class WQLinearMMFunction(Function):
                 )
 
         else:
+            global user_has_been_warned
             if not user_has_been_warned:
                 warnings.warn("Using naive (slow) implementation." + msg)
                 user_has_been_warned = True
