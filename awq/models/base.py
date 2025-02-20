@@ -29,13 +29,14 @@ from awq.utils.module import (
     exclude_layers_to_not_quantize,
     try_import,
 )
-from awq.utils.utils import get_best_device, ipex_available
+from awq.utils.utils import get_best_device, ipex_available, triton_available
 from transformers import (
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
     AutoProcessor,
     BaseImageProcessor,
+    ProcessorMixin,
     PreTrainedTokenizer,
 )
 from accelerate.big_modeling import (
@@ -81,6 +82,7 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "phi3_v": "AutoModelForCausalLM",
     "cohere": "AutoModelForCausalLM",
     "deepseek_v2": "AutoModelForCausalLM",
+    "deepseek_v3": "AutoModelForCausalLM",
     "minicpm": "AutoModelForCausalLM",
     "minicpm3":"AutoModelForCausalLM",
     "internlm2": "AutoModelForCausalLM",
@@ -112,7 +114,7 @@ class BaseAWQForCausalLM(nn.Module):
         self.search_result = None
         self.config: PretrainedConfig = config
         self.quant_config: AwqConfig = quant_config
-        self.processor: BaseImageProcessor = processor
+        self.processor: ProcessorMixin = processor
 
     def to(self, device: Annotated[str, Doc("The device to move your model to.")]):
         """A utility function for moving the model to a device."""
@@ -342,6 +344,14 @@ class BaseAWQForCausalLM(nn.Module):
             Dict,
             Doc("Used for configure download model"),
         ] = None,
+        low_cpu_mem_usage: Annotated[
+            bool,
+            Doc("Use low_cpu_mem_usage when loading from transformers.")
+        ] = True,
+        use_cache: Annotated[
+            bool,
+            Doc("Use use_cache argument in transformers")
+        ] = False,
         **model_init_kwargs: Annotated[
             Dict,
             Doc(
@@ -366,6 +376,11 @@ class BaseAWQForCausalLM(nn.Module):
         processor = None
         if target_cls_name == "AutoModelForVision2Seq":
             processor = AutoProcessor.from_pretrained(model_weights_path)
+
+        if model_init_kwargs.get("low_cpu_mem_usage") is None:
+            model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
+        if model_init_kwargs.get("use_cache") is None and target_cls_name != "AutoModelForVision2Seq":
+            model_init_kwargs["use_cache"] = use_cache
 
         # If not quantized, must load with AutoModelForCausalLM
         model = target_cls.from_pretrained(
@@ -484,7 +499,8 @@ class BaseAWQForCausalLM(nn.Module):
             )
 
         best_device = get_best_device()
-        use_ipex = use_ipex or best_device in ["cpu", "xpu:0"]
+        if best_device == "cpu" or (best_device == "xpu:0" and not triton_available):
+            use_ipex = True
         if use_ipex and not ipex_available:
             raise ImportError(
                 "Please install intel_extension_for_pytorch with "

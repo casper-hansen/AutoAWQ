@@ -1,4 +1,5 @@
 import os
+import torch
 import logging
 from transformers import AutoConfig
 from awq.models import *
@@ -34,6 +35,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "phi3_v": Phi3VAWQForCausalLM,
     "cohere": CohereAWQForCausalLM,
     "deepseek_v2": DeepseekV2AWQForCausalLM,
+    "deepseek_v3": DeepseekV3AWQForCausalLM,
     "minicpm": MiniCPMAWQForCausalLM,
     "internlm2": InternLM2AWQForCausalLM,
     "minicpm3": MiniCPM3AWQForCausalLM,
@@ -62,6 +64,7 @@ class AutoAWQForCausalLM:
     def from_pretrained(
         self,
         model_path,
+        torch_dtype="auto",
         trust_remote_code=True,
         safetensors=True,
         device_map=None,
@@ -74,18 +77,16 @@ class AutoAWQForCausalLM:
             model_path, trust_remote_code, **model_init_kwargs
         )
 
-        if model_init_kwargs.get("low_cpu_mem_usage") is None:
-            model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
-        if model_init_kwargs.get("use_cache") is None:
-            model_init_kwargs["use_cache"] = use_cache
-
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_pretrained(
             model_path,
             model_type,
+            torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
             safetensors=safetensors,
             device_map=device_map,
             download_kwargs=download_kwargs,
+            low_cpu_mem_usage=low_cpu_mem_usage,
+            use_cache=use_cache,
             **model_init_kwargs,
         )
 

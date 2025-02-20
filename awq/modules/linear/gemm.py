@@ -14,9 +14,8 @@ user_has_been_warned = False
 try:
     from awq.modules.triton.gemm import awq_gemm_triton, awq_dequantize_triton
 
-    # covers both CUDA and ROCm
-    if torch.cuda.is_available():
-        TRITON_AVAILABLE = True
+    # covers CUDA, ROCm and XPU. If we can import triton, then we can use it.
+    TRITON_AVAILABLE = True
 
 except ImportError:
     TRITON_AVAILABLE = False

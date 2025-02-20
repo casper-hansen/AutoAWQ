@@ -5,6 +5,12 @@ import accelerate
 
 
 ipex_available = importlib.util.find_spec("intel_extension_for_pytorch") is not None
+try:
+    import triton as tl
+    triton_available = True
+except ImportError:
+    triton_available = False
+
 
 
 def get_module_by_name_suffix(model, module_name: str):
@@ -72,8 +78,8 @@ def set_module_name(model, name, value):
 def clear_memory(weight=None):
     if weight is not None:
         del weight
-    gc.collect()
-    torch.cuda.empty_cache()
+    # gc.collect()
+    # torch.cuda.empty_cache()
 
 
 def compute_memory_used_pct(device):
