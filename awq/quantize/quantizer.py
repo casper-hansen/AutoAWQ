@@ -69,6 +69,9 @@ class AwqQuantizer:
         self.modules, self.module_kwargs, self.inps = self.init_quant(
             n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
         )
+        
+        print(f"zero point - {self.zero_point}")
+
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
@@ -96,8 +99,19 @@ class AwqQuantizer:
             max_int = 2 ** (self.w_bit - 1) - 1
             min_int = -(2 ** (self.w_bit - 1))
             scales = max_val / max_int
-            zeros = None
-            w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
+            
+            ## original block
+            #zeros = None
+            #w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
+            ## 
+            
+            ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
+            ## modified by jude.jh.oh (2025-02-24)
+            zeros = -1 * min_int * torch.ones_like(scales)
+            w = (
+                torch.clamp(torch.round(w / scales) + zeros, 0, max_int-min_int) - zeros
+            ) * scales
+            zeros = zeros.view(org_w_shape[0], -1)
 
         assert torch.isnan(scales).sum() == 0
         assert torch.isnan(w).sum() == 0
@@ -106,6 +120,7 @@ class AwqQuantizer:
         w = w.reshape(org_w_shape)
 
         return w, scales, zeros
+    
 
     def pseudo_dequantize_tensor(
         self, w: nn.Linear, scales: torch.Tensor, zeros: Optional[torch.Tensor] = None
@@ -114,12 +129,19 @@ class AwqQuantizer:
         repeat_count = w.weight.data.shape[-1] // scales.shape[-1]
         scales = scales.repeat(1, repeat_count).reshape(w.weight.data.shape)
 
-        # dequantize
-        if self.zero_point:
-            zeros = zeros.repeat(1, repeat_count).reshape(w.weight.data.shape)
-            w = (w.weight.data - zeros) * scales
-        else:
-            w = w.weight.data * scales
+        ## original block
+        # # dequantize
+        # if self.zero_point:
+        #     zeros = zeros.repeat(1, repeat_count).reshape(w.weight.data.shape)
+        #     w = (w.weight.data - zeros) * scales
+        # else:
+        #     w = w.weight.data * scales
+        ##
+        
+        ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
+        ## modified by jude.jh.oh (2025-02-24)
+        zeros = zeros.repeat(1, repeat_count).reshape(w.weight.data.shape)
+        w = (w.weight.data - zeros) * scales
 
         return w
 
