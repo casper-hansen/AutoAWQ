@@ -52,11 +52,11 @@ class WindowedCache:
         n = min(n, self.max_seq_len)
         # Roll cache to the left
         self.v = torch.roll(self.v, shifts=-n, dims=2)
-        self.k = torch.roll(self.k, shifts=-n, dims=3)
+        self.k = torch.roll(self.k, shifts=-n, dims=2)
 
         # Zero out the new part
         self.v[:, :, -n:, :] = 0
-        self.k[:, :, :, -n:, :] = 0
+        self.k[:, :, -n:, :] = 0
 
         return start_pos - n
 
@@ -76,4 +76,4 @@ class WindowedCache:
     def decrease_batch_size(self, to_bsz):
         """Dynamically remove part of cache if batch size changes."""
         self.v = self.v[:to_bsz, :, :, :]
-        self.k = self.k[:to_bsz, :, :, :, :]
+        self.k = self.k[:to_bsz, :, :, :]
