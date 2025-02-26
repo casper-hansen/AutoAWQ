@@ -193,6 +193,8 @@ class BaseAWQForCausalLM(nn.Module):
             AwqQuantizer,
             Doc("If you want to customize the quantization class, you can use AwqQuantizer as a base class.")
         ] = AwqQuantizer,
+        twosteps = False,
+        shift_scale = False,
         **kwargs,
     ):
         """
@@ -236,6 +238,8 @@ class BaseAWQForCausalLM(nn.Module):
             max_calib_samples=max_calib_samples,
             max_calib_seq_len=max_calib_seq_len,
             max_chunk_memory=max_chunk_memory,
+            twosteps=twosteps,
+            shift_scale=shift_scale,
             **kwargs,
         )
         self.quantizer.quantize()

@@ -45,6 +45,8 @@ class AwqQuantizer:
         max_calib_samples=128,
         max_calib_seq_len=512,
         max_chunk_memory=1024 * 1024 * 1024,
+        twosteps=False,
+        shift_scale=False,
     ) -> None:
         self.awq_model = awq_model
         self.model = model
@@ -69,49 +71,135 @@ class AwqQuantizer:
         self.modules, self.module_kwargs, self.inps = self.init_quant(
             n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
         )
+        self.twosteps = twosteps
+        self.shift_scale = shift_scale
         
         print(f"zero point - {self.zero_point}")
+        print(f"shift_scale - {self.shift_scale}")
+        print(f"twosteps - {self.twosteps}")
 
 
     def pseudo_quantize_tensor(self, w: torch.Tensor):
         org_w_shape = w.shape
-        if self.group_size > 0:
-            assert org_w_shape[-1] % self.group_size == 0, f"org_w_shape ({org_w_shape[-1]}) must be a multiple of group_size ({self.group_size})!"
-            w = w.reshape(-1, self.group_size)
-        assert w.dim() == 2
-        assert torch.isnan(w).sum() == 0
+        
+        # int8 per-channel symmetric quantization w/ fp scale and then follow uint4 quant
+        if self.twosteps:
+            max_val_f = w.abs().amax(dim=1, keepdim=True)
+            min_val_f = max_val_f.clamp(min=1e-5)
+            bit_f = 8
+            max_int_f = 2 ** (bit_f - 1) - 1
+            min_int_f = -(2 ** (bit_f - 1))
+            scales_f = max_val_f / max_int_f
+            w_f = torch.clamp(torch.round(w / scales_f), min_int_f, max_int_f) * scales_f
+            w = w_f  # overwrite w with int8_fakequant(w)
 
-        # zero point quantization
-        if self.zero_point:
-            max_val = w.amax(dim=1, keepdim=True)
-            min_val = w.amin(dim=1, keepdim=True)
-            max_int = 2**self.w_bit - 1
-            min_int = 0
-            scales = (max_val - min_val).clamp(min=1e-5) / max_int
-            zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
-            w = (
-                torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
-            ) * scales
-            zeros = zeros.view(org_w_shape[0], -1)
+            if self.group_size > 0:
+                assert org_w_shape[-1] % self.group_size == 0, f"org_w_shape ({org_w_shape[-1]}) must be a multiple of group_size ({self.group_size})!"
+                w = w.reshape(-1, self.group_size)
+            assert w.dim() == 2
+            assert torch.isnan(w).sum() == 0
+            
+            # asymmetric for uint4 quant
+            if self.zero_point:
+                max_val = w.amax(dim=1, keepdim=True)
+                min_val = w.amin(dim=1, keepdim=True)
+                max_int = 2**self.w_bit - 1
+                min_int = 0
+
+                if self.shift_scale:
+                    shifts = torch.floor(torch.log2((max_val - min_val).clamp(min=1e-5))) - self.w_bit
+                    scales = 2**shifts
+                else:
+                    scales = (max_val - min_val).clamp(min=1e-5) / max_int
+                
+                zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+                w = (
+                    torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+                ) * scales
+                zeros = zeros.view(org_w_shape[0], -1)
+                
+                #scales = (max_val - min_val).clamp(min=1e-5) / max_int
+                #zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+                #w = (
+                #    torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+                #) * scales
+                #zeros = zeros.view(org_w_shape[0], -1)
+                
+            # symmetric for uint4 quant
+            else:
+                max_val = w.abs().amax(dim=1, keepdim=True)
+                max_val = max_val.clamp(min=1e-5)
+                max_int = 2 ** (self.w_bit - 1) - 1
+                min_int = -(2 ** (self.w_bit - 1))
+                
+                if self.shift_scale:
+                    shifts = torch.floor(torch.log2(max_val.clamp(min=1e-5))) - (self.w_bit - 1)
+                    scales = 2**shifts
+                else:
+                    scales = max_val / max_int
+                
+                ## original block
+                #zeros = None
+                #w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
+                ## 
+                
+                ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
+                ## modified by jude.jh.oh (2025-02-24)
+                zeros = -1 * min_int * torch.ones_like(scales)
+                w = (
+                    torch.clamp(torch.round(w / scales) + zeros, 0, max_int-min_int) - zeros
+                ) * scales
+                zeros = zeros.view(org_w_shape[0], -1)            
+            
         else:
-            max_val = w.abs().amax(dim=1, keepdim=True)
-            max_val = max_val.clamp(min=1e-5)
-            max_int = 2 ** (self.w_bit - 1) - 1
-            min_int = -(2 ** (self.w_bit - 1))
-            scales = max_val / max_int
-            
-            ## original block
-            #zeros = None
-            #w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
-            ## 
-            
-            ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
-            ## modified by jude.jh.oh (2025-02-24)
-            zeros = -1 * min_int * torch.ones_like(scales)
-            w = (
-                torch.clamp(torch.round(w / scales) + zeros, 0, max_int-min_int) - zeros
-            ) * scales
-            zeros = zeros.view(org_w_shape[0], -1)
+            if self.group_size > 0:
+                assert org_w_shape[-1] % self.group_size == 0, f"org_w_shape ({org_w_shape[-1]}) must be a multiple of group_size ({self.group_size})!"
+                w = w.reshape(-1, self.group_size)
+            assert w.dim() == 2
+            assert torch.isnan(w).sum() == 0
+        
+            # zero point quantization
+            if self.zero_point:
+                max_val = w.amax(dim=1, keepdim=True)
+                min_val = w.amin(dim=1, keepdim=True)
+                max_int = 2**self.w_bit - 1
+                min_int = 0
+
+                if self.shift_scale:
+                    shifts = torch.floor(torch.log2((max_val - min_val).clamp(min=1e-5))) - self.w_bit
+                    scales = 2**shifts
+                else:
+                    scales = (max_val - min_val).clamp(min=1e-5) / max_int
+                    
+                zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+                w = (
+                    torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+                ) * scales
+                zeros = zeros.view(org_w_shape[0], -1)
+            else:
+                max_val = w.abs().amax(dim=1, keepdim=True)
+                max_val = max_val.clamp(min=1e-5)
+                max_int = 2 ** (self.w_bit - 1) - 1
+                min_int = -(2 ** (self.w_bit - 1))
+                
+                if self.shift_scale:
+                    shifts = torch.floor(torch.log2(max_val.clamp(min=1e-5))) - (self.w_bit - 1)
+                    scales = 2**shifts
+                else:
+                    scales = max_val / max_int
+                
+                ## original block
+                #zeros = None
+                #w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
+                ## 
+                
+                ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
+                ## modified by jude.jh.oh (2025-02-24)
+                zeros = -1 * min_int * torch.ones_like(scales)
+                w = (
+                    torch.clamp(torch.round(w / scales) + zeros, 0, max_int-min_int) - zeros
+                ) * scales
+                zeros = zeros.view(org_w_shape[0], -1)
 
         assert torch.isnan(scales).sum() == 0
         assert torch.isnan(w).sum() == 0
@@ -120,6 +208,55 @@ class AwqQuantizer:
         w = w.reshape(org_w_shape)
 
         return w, scales, zeros
+
+
+    # def pseudo_quantize_tensor(self, w: torch.Tensor):
+    #     org_w_shape = w.shape
+    #     if self.group_size > 0:
+    #         assert org_w_shape[-1] % self.group_size == 0, f"org_w_shape ({org_w_shape[-1]}) must be a multiple of group_size ({self.group_size})!"
+    #         w = w.reshape(-1, self.group_size)
+    #     assert w.dim() == 2
+    #     assert torch.isnan(w).sum() == 0
+
+    #     # zero point quantization
+    #     if self.zero_point:
+    #         max_val = w.amax(dim=1, keepdim=True)
+    #         min_val = w.amin(dim=1, keepdim=True)
+    #         max_int = 2**self.w_bit - 1
+    #         min_int = 0
+    #         scales = (max_val - min_val).clamp(min=1e-5) / max_int
+    #         zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+    #         w = (
+    #             torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+    #         ) * scales
+    #         zeros = zeros.view(org_w_shape[0], -1)
+    #     else:
+    #         max_val = w.abs().amax(dim=1, keepdim=True)
+    #         max_val = max_val.clamp(min=1e-5)
+    #         max_int = 2 ** (self.w_bit - 1) - 1
+    #         min_int = -(2 ** (self.w_bit - 1))
+    #         scales = max_val / max_int
+            
+    #         ## original block
+    #         #zeros = None
+    #         #w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
+    #         ## 
+            
+    #         ## awq does not support signed int kernel, so instead use unsigned int and fixed zero point for symmetric quant
+    #         ## modified by jude.jh.oh (2025-02-24)
+    #         zeros = -1 * min_int * torch.ones_like(scales)
+    #         w = (
+    #             torch.clamp(torch.round(w / scales) + zeros, 0, max_int-min_int) - zeros
+    #         ) * scales
+    #         zeros = zeros.view(org_w_shape[0], -1)
+
+    #     assert torch.isnan(scales).sum() == 0
+    #     assert torch.isnan(w).sum() == 0
+
+    #     scales = scales.view(org_w_shape[0], -1)
+    #     w = w.reshape(org_w_shape)
+
+    #     return w, scales, zeros
     
 
     def pseudo_dequantize_tensor(
