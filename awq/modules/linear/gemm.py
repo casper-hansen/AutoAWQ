@@ -60,7 +60,7 @@ class WQLinearMMFunction(Function):
 
             if FP16_MATMUL_HEURISTIC_CONDITION:
                 out = awq_dequantize_triton(qweight, scales, qzeros)
-                out = torch.matmul(x, out)
+                out = torch.matmul(x, out.to(x.dtype))
             else:
                 out = awq_gemm_triton(
                     x.reshape(-1, x.shape[-1]), qweight, scales, qzeros, split_k_iters=8,
