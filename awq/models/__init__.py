@@ -30,3 +30,4 @@ from .internlm2 import InternLM2AWQForCausalLM
 from .minicpm3 import MiniCPM3AWQForCausalLM
 from .qwen2vl import Qwen2VLAWQForCausalLM
 from .qwen2_5_vl import Qwen2_5_VLAWQForCausalLM
+from .llama4 import Llama4AWQForConditionalGeneration
