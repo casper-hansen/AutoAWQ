@@ -381,7 +381,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         if model_init_kwargs.get("low_cpu_mem_usage") is None:
             model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
-        if model_init_kwargs.get("use_cache") is None and target_cls_name != "AutoModelForVision2Seq":
+        if model_init_kwargs.get("use_cache") is None and target_cls_name not in ["AutoModelForVision2Seq", "AutoModelForImageTextToText"]:
             model_init_kwargs["use_cache"] = use_cache
 
         # If not quantized, must load with AutoModelForCausalLM
