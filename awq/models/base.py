@@ -5,7 +5,7 @@ import torch
 import transformers
 import torch.nn as nn
 
-from tqdm import tqdm
+from tqdm import auto as tqdm_lib
 from typing import List, Union, Dict
 from typing_extensions import Doc, Annotated
 from huggingface_hub import snapshot_download, save_torch_state_dict
@@ -55,6 +55,7 @@ from awq.utils.module import get_named_linears, set_op_by_name
 TRANSFORMERS_AUTO_MAPPING_DICT = {
     "mpt": "AutoModelForCausalLM",
     "llama": "AutoModelForCausalLM",
+    "llama4": "AutoModelForImageTextToText",
     "opt": "AutoModelForCausalLM",
     "RefinedWeb": "AutoModelForCausalLM",
     "RefinedWebModel": "AutoModelForCausalLM",
@@ -88,7 +89,6 @@ TRANSFORMERS_AUTO_MAPPING_DICT = {
     "internlm2": "AutoModelForCausalLM",
     "qwen2_vl": "AutoModelForVision2Seq",
     "qwen2_5_vl": "AutoModelForVision2Seq",
-    "llama4": "AutoModelForImageTextToText",
 }
 
 
@@ -641,7 +641,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Get blocks of model
         layers = self.get_model_layers(model)
 
-        for i in tqdm(range(len(layers)), desc="Replacing layers..."):
+        for i in tqfm_lib.tqdm(range(len(layers)), desc="Replacing layers..."):
             layer = layers[i]
 
             # Get every linear layer in a block

@@ -9,6 +9,7 @@ from awq.models.base import BaseAWQForCausalLM
 AWQ_CAUSAL_LM_MODEL_MAP = {
     "mpt": MptAWQForCausalLM,
     "llama": LlamaAWQForCausalLM,
+    "llama4": Llama4AWQForConditionalGeneration,
     "opt": OptAWQForCausalLM,
     "RefinedWeb": FalconAWQForCausalLM,
     "RefinedWebModel": FalconAWQForCausalLM,
@@ -41,7 +42,6 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "minicpm3": MiniCPM3AWQForCausalLM,
     "qwen2_vl": Qwen2VLAWQForCausalLM,
     "qwen2_5_vl": Qwen2_5_VLAWQForCausalLM,
-    "llama4": Llama4AWQForConditionalGeneration,
 }
 
 

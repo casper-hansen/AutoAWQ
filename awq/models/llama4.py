@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional
 import gc
 from tqdm import auto as tqdm_lib
 
@@ -12,7 +11,7 @@ from transformers.models.llama4.modeling_llama4 import (
     Llama4TextMoe as OldLlama4TextMoe,
     Llama4TextMLP,
 )
-from transformers import AutoProcessor, AutoConfig
+from transformers import AutoProcessor, AutoConfig, PreTrainedModel
 
 from accelerate.big_modeling import init_empty_weights
 
