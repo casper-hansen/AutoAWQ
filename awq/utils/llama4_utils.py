@@ -1,18 +1,18 @@
 import functools
 from collections import defaultdict
-import tqdm
+from tqdm import tqdm
 
-from awq.quantize.quantizer import AwqQuantizer
-from awq.quantize.scale import apply_clip
-from awq.utils.utils import clear_memory, get_best_device
-from awq.utils.calib_data import get_calib_dataset
-from awq.modules.act import ScaledActivation
+from ..quantize.quantizer import AwqQuantizer
+from ..quantize.scale import apply_clip
+from utils import clear_memory, get_best_device
+from calib_data import get_calib_dataset
+from ..modules.act import ScaledActivation
 from transformers.activations import ACT2FN
 
 from transformers.models.llama4.modeling_llama4 import Llama4TextRMSNorm
 from transformers.feature_extraction_utils import BatchFeature
 
-from ..utils.module import (
+from module import (
     append_str_prefix,
     get_op_name,
     get_op_by_name, 
@@ -20,7 +20,7 @@ from ..utils.module import (
     set_op_by_name,
     exclude_layers_to_not_quantize,
 )
-from ..modules.linear import (
+from modules.linear import (
     WQLinear_GEMM,
     WQLinear_GEMV,
     WQLinear_IPEX,
@@ -35,50 +35,6 @@ from ..modules.linear import (
 )
 
 class Llama4AwqQuantizer(AwqQuantizer):
-    def __init__(
-        self,
-        awq_model,
-        model,
-        tokenizer,
-        w_bit,
-        group_size,
-        zero_point,
-        version,
-        calib_data,
-        split,
-        text_column,
-        duo_scaling,
-        modules_to_not_convert=None,
-        export_compatible=False,
-        apply_clip=True,
-        n_parallel_calib_samples=None,
-        max_calib_samples=128,
-        max_calib_seq_len=512,
-        max_chunk_memory=1024 * 1024 * 1024,
-    ) -> None:
-        self.awq_model = awq_model
-        self.model = model
-        self.tokenizer = tokenizer
-        self.w_bit = w_bit
-        self.group_size = group_size
-        self.zero_point = zero_point
-        self.version = version
-        self.calib_data = calib_data
-        self.split = split
-        self.text_column = text_column
-        self.duo_scaling = duo_scaling
-        self.export_compatible = export_compatible
-        self.apply_clip = apply_clip
-        self.n_parallel_calib_samples = n_parallel_calib_samples
-        self.max_calib_samples = max_calib_samples
-        self.max_calib_seq_len = max_calib_seq_len
-        self.max_chunk_memory = max_chunk_memory
-        self.modules_to_not_convert = (
-            modules_to_not_convert if modules_to_not_convert is not None else []
-        )
-        self.modules, self.module_kwargs_dict, self.inps_dict = self.init_quant(
-            n_samples=self.max_calib_samples, max_seq_len=self.max_calib_seq_len
-        )
         
     @torch.no_grad()
     def init_quant(self, n_samples=128, max_seq_len=512):

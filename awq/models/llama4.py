@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional
+import gc
+from tqdm import tqdm
 
 import torch
 from torch import nn
@@ -8,6 +10,7 @@ from transformers.models.llama4.modeling_llama4 import (
     Llama4TextDecoderLayer as OldLlama4TextDecoderLayer,
     Llama4TextMLP as OldLlama4TextMLP,
     Llama4TextMoe as OldLlama4TextMoe,
+    Llama4TextMLP,
 )
 from transformers import AutoProcessor, AutoConfig
 
@@ -29,25 +32,25 @@ class Llama4TextMoe(nn.Module):
         self.shared_expert = Llama4TextMLP(config).to(config.torch_dtype)
 
     @classmethod
-    def replace(cls, original_inst: OldLlama4TextMoe):
-        param = next(l.parameters())
+    def replace(cls, original_moe_block: OldLlama4TextMoe):
+        param = next(original_moe_block.parameters())
         device = param.device
         
-        config = original_inst.shared_expert.config
+        config = original_moe_block.shared_expert.config
         moe = cls(config)
-        moe.router = original_inst.router
-        moe.shared_expert = original_inst.shared_expert
+        moe.router = original_moe_block.router
+        moe.shared_expert = original_moe_block.shared_expert
 
-        _gate_up_proj = original_inst.experts.state_dict()['gate_up_proj']
-        down_param = original_inst.experts.state_dict()['down_proj']
+        _gate_up_proj = original_moe_block.experts.state_dict()['gate_up_proj']
+        down_param = original_moe_block.experts.state_dict()['down_proj']
         gate_param, up_param = _gate_up_proj.chunk(2, dim=-1)
 
         for i in range(moe.num_experts):
             moe.experts[i].gate_proj.weight.data = gate_param[i].T
             moe.experts[i].up_proj.weight.data = up_param[i].T
             moe.experts[i].down_proj.weight.data = down_param[i].T
-        original_inst = original_inst.to('cpu')
-        del original_inst
+        original_moe_block = original_moe_block.to('cpu')
+        del original_moe_block
         return moe.to(device)
 
     def forward(self, hidden_states):
@@ -77,9 +80,8 @@ class Llama4TextMoe(nn.Module):
         ).to(hidden_states.device)
         routed_in = routed_in * router_scores.reshape(-1, 1)
         out = self.shared_expert(hidden_states)
+        
         for i in range(self.num_experts):
-            if (routed_in[i:i+1,:]==0.0).sum()==0:
-                continue
             out += self.experts[i](routed_in[i:i+1,:])
 
         return out, router_scores
@@ -228,6 +230,14 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
             low_cpu_mem_usage = low_cpu_mem_usage,
             **model_init_kwargs,
         )
+
+        layers = self.get_model_layers(model.model)
+
+        for layer in tqdm(layers, desc="Replacing MoE Block..."):
+            if isinstance(layer.feed_forward, OldLlama4TextMoe):
+                layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
+            gc.collect()
+            
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
 
@@ -240,10 +250,9 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         ), "Exllama kernels only support GEMM version."
         
         # Get blocks of model
-        layers = self.get_model_layers(model)
+        layers = self.get_model_layers(model.model)
 
-        for i in tqdm(range(len(layers)), desc="Replacing MoE Block..."):
-            layer = layers[i]
+        for layer in tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 with init_empty_weights():
                     layer.feed_forward = Llama4TextMoe.from_config(model.config.text_config)
