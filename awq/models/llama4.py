@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 import gc
-from tqdm import tqdm
+from tqdm import auto as tqdm_lib
 
 import torch
 from torch import nn
@@ -210,6 +210,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         use_cache = False,
         **model_init_kwargs,
     ):
+        
         if "config" not in model_init_kwargs.keys():
             model_init_kwargs["config"] = AutoConfig.from_pretrained(model_path)
             model_init_kwargs["config"].text_config.use_cache = use_cache
@@ -218,7 +219,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         model_init_kwargs["config"].torch_dtype = torch_dtype
         model_init_kwargs["config"].vision_config.torch_dtype = torch_dtype
         model_init_kwargs["config"].text_config.torch_dtype = torch_dtype
-        
+
         model = super().from_pretrained(
             model_path,
             model_type,
@@ -233,7 +234,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
 
         layers = self.get_model_layers(model.model)
 
-        for layer in tqdm(layers, desc="Replacing MoE Block..."):
+        for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
             gc.collect()
@@ -252,7 +253,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         # Get blocks of model
         layers = self.get_model_layers(model.model)
 
-        for layer in tqdm(layers, desc="Replacing MoE Block..."):
+        for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 with init_empty_weights():
                     layer.feed_forward = Llama4TextMoe.from_config(model.config.text_config)
