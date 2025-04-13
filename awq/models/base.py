@@ -5,7 +5,7 @@ import torch
 import transformers
 import torch.nn as nn
 
-from tqdm import auto as tqdm_lib
+from tqdm import tqdm
 from typing import List, Union, Dict
 from typing_extensions import Doc, Annotated
 from huggingface_hub import snapshot_download, save_torch_state_dict
@@ -641,7 +641,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Get blocks of model
         layers = self.get_model_layers(model)
 
-        for i in tqdm_lib.tqdm(range(len(layers)), desc="Replacing layers..."):
+        for i in tqdm(range(len(layers)), desc="Replacing layers..."):
             layer = layers[i]
 
             # Get every linear layer in a block

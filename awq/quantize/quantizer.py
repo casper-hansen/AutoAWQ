@@ -4,7 +4,7 @@ import inspect
 import logging
 import functools
 import torch.nn as nn
-from tqdm import auto as tqdm_lib
+from tqdm import tqdm
 from typing import Dict, List, Optional
 from collections import defaultdict
 from awq.utils.calib_data import get_calib_dataset
@@ -125,7 +125,7 @@ class AwqQuantizer:
         return w
 
     def quantize(self):
-        for i in tqdm_lib.tqdm(range(len(self.modules)), desc="AWQ"):
+        for i in tqdm(range(len(self.modules)), desc="AWQ"):
             # Move module and inputs to correct device
             common_device = next(self.modules[i].parameters()).device
             if common_device is None or str(common_device) == "cpu":
@@ -212,7 +212,7 @@ class AwqQuantizer:
             clear_memory()
 
     def pack(self):
-        for i in tqdm_lib.tqdm(range(len(self.modules)), desc="Packing"):
+        for i in tqdm(range(len(self.modules)), desc="Packing"):
             named_linears = get_named_linears(self.modules[i])
             named_linears = exclude_layers_to_not_quantize(
                 named_linears, self.modules_to_not_convert
