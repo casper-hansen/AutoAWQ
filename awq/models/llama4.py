@@ -13,11 +13,8 @@ from transformers.models.llama4.modeling_llama4 import (
 )
 from transformers import AutoProcessor, AutoConfig, PreTrainedModel
 
-from accelerate.big_modeling import init_empty_weights
-
 from .base import BaseAWQForCausalLM
 from awq.modules.act import ScaledActivation
-#from awq.utils.module import get_named_linears, set_op_by_name
 from awq.utils.module import set_op_by_name
 
 class Llama4TextMoe(nn.Module):
@@ -56,10 +53,13 @@ class Llama4TextMoe(nn.Module):
         return moe.to(device)
 
     def forward(self, hidden_states):
-        batch, seq_len, hidden_dim = hidden_states.shape
+        if len(hidden_states.shape)==3:
+            batch, seq_len, hidden_dim = hidden_states.shape
+            tokens_per_expert = batch*seq_len
+        elif len(hidden_states.shape)==2:
+            tokens_per_expert, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, self.hidden_dim)
         router_logits = self.router(hidden_states).transpose(0, 1)
-        tokens_per_expert = batch * seq_len
 
         router_top_value, router_indices = torch.topk(router_logits.transpose(0, 1), self.top_k, dim=1)
         router_scores = (
@@ -149,22 +149,23 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         layers = []
     
         assert isinstance(module, OldLlama4TextDecoderLayer)
-        if "self_attn.q_proj" in input_feat.keys():
-            layers.append(
-                dict(
-                    prev_op=module.input_layernorm,
-                    layers=[
-                        module.self_attn.q_proj,
-                        module.self_attn.k_proj,
-                        module.self_attn.v_proj,
-                    ],
-                    inp=input_feat["self_attn.q_proj"],
-                    module2inspect=module.self_attn,
-                    kwargs=module_kwargs,
-                )
-            )
         
-        if "self_attn.o_proj" in input_feat.keys() and module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+        # Attention Block
+        layers.append(
+            dict(
+                prev_op=module.input_layernorm,
+                layers=[
+                    module.self_attn.q_proj,
+                    module.self_attn.k_proj,
+                    module.self_attn.v_proj,
+                ],
+                inp=input_feat["self_attn.q_proj"],
+                module2inspect=module.self_attn,
+                kwargs=module_kwargs,
+            )
+        )
+        # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+        if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
             layers.append(
                 dict(
                     prev_op=module.self_attn.v_proj,
@@ -172,8 +173,11 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["self_attn.o_proj"],
                 )
             )
-
-        if isinstance(module.feed_forward, OldLlama4TextMoe):
+        
+        # replaced MoE Block
+        
+        if isinstance(module.feed_forward, Llama4TextMoe):
+            
             tmp_layers = [module.feed_forward.shared_expert.gate_proj,
                           module.feed_forward.shared_expert.up_proj,
                          ]
@@ -188,6 +192,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     module2inspect=module.feed_forward,
                 )
             )
+            
             layers.append(
                 dict(
                     prev_op=module.feed_forward.shared_expert.activation_fn,
@@ -195,7 +200,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["feed_forward.shared_expert.down_proj"],
                 )
             )
-            for i in len(module.feed_forward.experts):
+            for i in range(len(module.feed_forward.experts)):
                 layers.append(
                     dict(
                         prev_op=module.feed_forward.experts[i].activation_fn,
@@ -222,7 +227,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["feed_forward.down_proj"],
                 )
             )
-    
+        
         return layers
 
     @classmethod
@@ -262,7 +267,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         )
 
         layers = self.get_model_layers(model.model)
-
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
