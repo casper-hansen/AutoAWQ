@@ -5,7 +5,7 @@ import torch
 import transformers
 import torch.nn as nn
 
-from tqdm import tqdm
+from tqdm import auto as tqdm_lib
 from typing import List, Union, Dict
 from typing_extensions import Doc, Annotated
 from huggingface_hub import snapshot_download, save_torch_state_dict
@@ -47,7 +47,6 @@ from accelerate.big_modeling import (
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.quantize.quantizer import AwqQuantizer
-from awq.utils.module import get_named_linears, set_op_by_name
 
 
 # Since we support different `AutoModelForxxx` from transformers
@@ -55,6 +54,7 @@ from awq.utils.module import get_named_linears, set_op_by_name
 TRANSFORMERS_AUTO_MAPPING_DICT = {
     "mpt": "AutoModelForCausalLM",
     "llama": "AutoModelForCausalLM",
+    "llama4": "AutoModelForImageTextToText",
     "opt": "AutoModelForCausalLM",
     "RefinedWeb": "AutoModelForCausalLM",
     "RefinedWebModel": "AutoModelForCausalLM",
@@ -380,7 +380,7 @@ class BaseAWQForCausalLM(nn.Module):
 
         if model_init_kwargs.get("low_cpu_mem_usage") is None:
             model_init_kwargs["low_cpu_mem_usage"] = low_cpu_mem_usage
-        if model_init_kwargs.get("use_cache") is None and target_cls_name != "AutoModelForVision2Seq":
+        if model_init_kwargs.get("use_cache") is None and target_cls_name not in ["AutoModelForVision2Seq", "AutoModelForImageTextToText"]:
             model_init_kwargs["use_cache"] = use_cache
 
         # If not quantized, must load with AutoModelForCausalLM
@@ -531,6 +531,7 @@ class BaseAWQForCausalLM(nn.Module):
             offload_folder=offload_folder,
             dtype=torch_dtype,
         )
+        
 
         # Dispath to devices
         awq_ext, msg = try_import("awq_ext")
@@ -640,7 +641,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Get blocks of model
         layers = self.get_model_layers(model)
 
-        for i in tqdm(range(len(layers)), desc="Replacing layers..."):
+        for i in tqdm_lib.tqdm(range(len(layers)), desc="Replacing layers..."):
             layer = layers[i]
 
             # Get every linear layer in a block

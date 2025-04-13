@@ -6,14 +6,16 @@ from awq.modules.act import ScaledActivation
 from awq.utils.module import get_op_by_name, set_op_by_name
 from transformers.models.bloom.modeling_bloom import BloomGelu
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+from transformers.models.llama4.modeling_llama4 import Llama4TextRMSNorm
 from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
 from transformers.models.gemma2.modeling_gemma2 import Gemma2RMSNorm
 from transformers.models.cohere.modeling_cohere import CohereLayerNorm
 from transformers.activations import NewGELUActivation, PytorchGELUTanh, GELUActivation
 
-allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, Gemma2RMSNorm, CohereLayerNorm]
+allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, Gemma2RMSNorm, CohereLayerNorm, Llama4TextRMSNorm]
 allowed_act_fns = [
     nn.GELU,
+    nn.SiLU,
     BloomGelu,
     NewGELUActivation,
     PytorchGELUTanh,

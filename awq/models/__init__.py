@@ -1,5 +1,6 @@
 from .mpt import MptAWQForCausalLM
 from .llama import LlamaAWQForCausalLM
+from .llama4 import Llama4AWQForConditionalGeneration
 from .opt import OptAWQForCausalLM
 from .falcon import FalconAWQForCausalLM
 from .exaone import ExaoneAWQForCausalLM

@@ -9,6 +9,7 @@ from awq.models.base import BaseAWQForCausalLM
 AWQ_CAUSAL_LM_MODEL_MAP = {
     "mpt": MptAWQForCausalLM,
     "llama": LlamaAWQForCausalLM,
+    "llama4": Llama4AWQForConditionalGeneration,
     "opt": OptAWQForCausalLM,
     "RefinedWeb": FalconAWQForCausalLM,
     "RefinedWebModel": FalconAWQForCausalLM,
