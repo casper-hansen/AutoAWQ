@@ -47,7 +47,6 @@ from accelerate.big_modeling import (
 from awq.models._config import AwqConfig
 from awq.modules.act import ScaledActivation
 from awq.quantize.quantizer import AwqQuantizer
-from awq.utils.module import get_named_linears, set_op_by_name
 
 
 # Since we support different `AutoModelForxxx` from transformers
@@ -532,6 +531,7 @@ class BaseAWQForCausalLM(nn.Module):
             offload_folder=offload_folder,
             dtype=torch_dtype,
         )
+        
 
         # Dispath to devices
         awq_ext, msg = try_import("awq_ext")
@@ -641,7 +641,7 @@ class BaseAWQForCausalLM(nn.Module):
         # Get blocks of model
         layers = self.get_model_layers(model)
 
-        for i in tqfm_lib.tqdm(range(len(layers)), desc="Replacing layers..."):
+        for i in tqdm_lib.tqdm(range(len(layers)), desc="Replacing layers..."):
             layer = layers[i]
 
             # Get every linear layer in a block
