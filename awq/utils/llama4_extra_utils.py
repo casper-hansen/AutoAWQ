@@ -1,12 +1,12 @@
 import functools
 from collections import defaultdict
-from tqdm import tqdm
+from tqdm import auto as tqdm_lib
 
-from ..quantize.quantizer import AwqQuantizer
-from ..quantize.scale import apply_clip
-from utils import clear_memory, get_best_device
-from calib_data import get_calib_dataset
-from ..modules.act import ScaledActivation
+from awq.quantize.quantizer import AwqQuantizer
+from awq.quantize.scale import apply_clip
+from awq.utils import clear_memory, get_best_device
+from awq.utils.calib_data import get_calib_dataset
+from awq.modules.act import ScaledActivation
 from transformers.activations import ACT2FN
 
 from transformers.models.llama4.modeling_llama4 import Llama4TextRMSNorm
@@ -19,19 +19,6 @@ from module import (
     get_named_linears,
     set_op_by_name,
     exclude_layers_to_not_quantize,
-)
-from modules.linear import (
-    WQLinear_GEMM,
-    WQLinear_GEMV,
-    WQLinear_IPEX,
-    WQLinear_Marlin,
-    WQLinear_Exllama,
-    WQLinear_ExllamaV2,
-    WQLinear_GEMVFast,
-    marlin_post_init,
-    exllama_post_init,
-    exllamav2_post_init,
-    ipex_post_init,
 )
 
 class Llama4AwqQuantizer(AwqQuantizer):
@@ -143,7 +130,7 @@ class Llama4AwqQuantizer(AwqQuantizer):
     
     def quantize(self):
         self._preprocess()
-        for i in tqdm(range(len(self.modules)), desc="AWQ"):
+        for i in tqdm_lib.tqdm(range(len(self.modules)), desc="AWQ"):
             self._preprocess_layer_iter(i)
             
             # [STEP 1]: Get layer, extract linear modules, extract input features
