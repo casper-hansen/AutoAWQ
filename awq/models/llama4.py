@@ -16,6 +16,9 @@ from transformers import AutoProcessor, AutoConfig, PreTrainedModel
 from accelerate.big_modeling import init_empty_weights
 
 from .base import BaseAWQForCausalLM
+from awq.modules.act import ScaledActivation
+#from awq.utils.module import get_named_linears, set_op_by_name
+from awq.utils.module import set_op_by_name
 
 class Llama4TextMoe(nn.Module):
     def __init__(self, config):
@@ -99,7 +102,34 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
 
     @staticmethod
     def get_act_for_scaling(module: OldLlama4TextDecoderLayer):
-        raise NotImplementedError()
+        scales = []
+        if isinstance(module.feed_forward, Llama4TextMoe):
+            scales.append(
+                dict(
+                    scale_name="feed_forward.shared_expert.activation_fn",
+                    scale_layer=module.feed_forward.shared_expert.activation_fn,
+                    scale_shape=module.feed_forward.shared_expert.gate_proj.out_features
+                )
+            )
+            for i in range(len(module.feed_forward.experts)):
+                scales.append(
+                    dict(
+                        scale_name=f"feed_forward.experts.{i}.activation_fn",
+                        scale_layer=module.feed_forward.experts[i].activation_fn,
+                        scale_shape=module.feed_forward.experts[i].gate_proj.out_features
+                    )
+                )
+            
+        elif isinstance(module.feed_forward, OldLlama4TextMLP):
+            scales.append(
+                dict(
+                    scale_name="feed_forward.activation_fn",
+                    scale_layer=module.feed_forward.activation_fn,
+                    scale_shape=module.feed_forward.gate_proj.out_features
+                )
+            )
+        
+        return dict(is_scalable=True, scales = scales)
                 
     @staticmethod
     def move_embed(model: OldLlama4ForConditionalGeneration, device: str):
@@ -168,7 +198,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
             for i in len(module.feed_forward.experts):
                 layers.append(
                     dict(
-                        prev_op=module.feed_forward.experts[i].act_fn,
+                        prev_op=module.feed_forward.experts[i].activation_fn,
                         layers=[module.feed_forward.experts[i].down_proj],
                         inp=input_feat[f"feed_forward.experts.{i}.down_proj"],
                     )
@@ -250,13 +280,35 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         ), "Exllama kernels only support GEMM version."
         
         # Get blocks of model
-        layers = self.get_model_layers(model.model)
+        layers = self.get_model_layers(model)
 
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
-                with init_empty_weights():
-                    layer.feed_forward = Llama4TextMoe.from_config(model.config.text_config)
+                moe_block = Llama4TextMoe(model.config.text_config)
+                moe_block = moe_block.to_empty(device=layer.feed_forward.router.weight.device)
+                layer.feed_forward = moe_block
             gc.collect()
+        model.tie_weights()
         super()._load_quantized_modules(
-            model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
+            self, model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
         )
+
+    @staticmethod
+    def _scale_activations(self, layer):
+        scale_dict = self.get_act_for_scaling(layer)
+        scales = scale_dict.get('scales')
+        if scale_dict["is_scalable"] and scales is None:
+            scales = [scale_dict]
+        if scale_dict["is_scalable"]:
+            for scale in scales:
+                if not isinstance(scale["scale_layer"], ScaledActivation):
+                    param = next(layer.parameters())
+    
+                    # get activation scale
+                    scale_like = torch.ones(
+                        scale["scale_shape"], dtype=param.dtype, device=param.device
+                    )
+    
+                    # scale activation
+                    scaled_act = ScaledActivation(scale["scale_layer"], scale_like)
+                    set_op_by_name(layer, scale["scale_name"], scaled_act)
