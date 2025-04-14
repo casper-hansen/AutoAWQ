@@ -275,6 +275,9 @@ class AwqQuantizer:
             # but only n_parallel_calib_samples at a time
             module_output = []
             partitioned_inputs = torch.split(x, self.n_parallel_calib_samples)
+            if 'position_embeddings' in module_kwargs:
+                module_kwargs['position_embeddings'] = (module_kwargs['position_embeddings'][0][:, :self.n_parallel_calib_samples],
+                                                         module_kwargs['position_embeddings'][1][:, :self.n_parallel_calib_samples])
             for x_partial in partitioned_inputs:
                 partial_output = module(x_partial, **module_kwargs)
 
