@@ -26,9 +26,9 @@ class Llama4TextExperts(nn.Module):
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
         self.dummy_fn = nn.Identity()
-        self.up_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim)
-        self.gate_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim)
-        self.down_proj = nn.Linear(self.expert_dim, self.hidden_size*self.num_experts)
+        self.up_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
+        self.gate_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
+        self.down_proj = nn.Linear(self.expert_dim, self.hidden_size*self.num_experts, dtype=torch.float16)
         self.act_fn = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
