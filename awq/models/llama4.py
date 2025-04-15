@@ -94,8 +94,8 @@ class Llama4TextMoe(OldLlama4TextMoe):
         super().__init__(config)
 
     def forward(self, hidden_states):
-        # llama4の実装の関係でAutoAWQで処理しようとすると、2回目のforward呼び出しでエラーが出る。
-        # そのための対処を実装。
+        # Due to the implementation of llama4, when trying to process with AutoAWQ, an error occurs on the second forward call.
+        # Implementing a workaround for this issue.
         if not self._quantization_mode:
             self._seq_len = hidden_states.shape[1]
             self._quantization_mode = True
@@ -108,7 +108,6 @@ class Llama4TextMoe(OldLlama4TextMoe):
 
     @classmethod
     def replace(cls, llama4_text_moe: OldLlama4TextMoe):
-        # configオブジェクトを作成
         class Config:
             def __init__(self, hidden_size, num_local_experts, num_experts_per_tok):
                 self.hidden_size = hidden_size
@@ -320,14 +319,10 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         )
 
         layers = self.get_model_layers(model.model)
-        n=0
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
             gc.collect()
-            n+=1
-            if n==2:
-                break
             
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
@@ -345,12 +340,8 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
                 layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
-                #experts_block = Llama4TextExperts(model.config.text_config)
-                #experts_block = experts_block.to_empty(device=layer.feed_forward.router.weight.device)
-                #layer.feed_forward.experts = experts_block
             gc.collect()
         model.tie_weights()
-        # 既存のメソッドを呼び出し
         super()._load_quantized_modules(
             model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
         )
