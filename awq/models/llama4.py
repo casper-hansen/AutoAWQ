@@ -33,14 +33,14 @@ class Llama4TextExperts(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = hidden_states.view(self.num_experts, -1, self.hidden_size)
-        hidden_states = hidden_states.permute(1, 2, 0).view(-1, 1, self.hidden_size*self.num_experts)
+        hidden_states = hidden_states.permute(1, 2, 0).reshape(-1, 1, self.hidden_size*self.num_experts)
         hidden_states = self.dummy_fn(hidden_states)
         hidden_states = hidden_states.view(-1, self.hidden_size*self.num_experts)
         down_proj = self.act_fn(self.gate_proj(hidden_states)) * self.up_proj(hidden_states)
         next_states = self.down_proj(down_proj)
         next_states = next_states.view(-1, self.hidden_size, self.num_experts)
         next_states = next_states.permute(2, 0, 1)
-        return next_states.view(-1, self.hidden_size)
+        return next_states.reshape(-1, self.hidden_size)
 
     @classmethod
     def replace(cls, llama4_text_experts: OldLlama4TextExperts):
