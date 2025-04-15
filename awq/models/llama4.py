@@ -30,6 +30,8 @@ class Llama4TextExperts(nn.Module):
         self.gate_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
         self.down_proj = nn.Linear(self.expert_dim, self.hidden_size*self.num_experts, dtype=torch.float16)
         self.act_fn = None
+        self._quantization = False
+        self._calib_data_seq_len = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = hidden_states.view(self.num_experts, -1, self.hidden_size)
@@ -79,10 +81,62 @@ class Llama4TextExperts(nn.Module):
 
         experts.act_fn = llama4_text_experts.act_fn
         
-        llama4_text_experts = llama4_text_experts.to('cpu')
+        llama4_text_experts = llama4_text_experts.to('cpu', torch.float16)
         del llama4_text_experts
+        gc.collect()
         
         return experts
+
+class Llama4TextMoe(OldLlama4TextMoe):
+    def __init__(self, config):
+        self._quantization_mode = False
+        self._seq_len = None
+        super().__init__(config)
+
+    def forward(self, hidden_states):
+        # llama4の実装の関係でAutoAWQで処理しようとすると、2回目のforward呼び出しでエラーが出る。
+        # そのための対処を実装。
+        if not self._quantization_mode:
+            self._seq_len = hidden_states.shape[1]
+            self._quantization_mode = True
+        elif len(hidden_states.shape)==2:
+            hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
+        else:
+            hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
+        out, router_scores = super().forward(hidden_states)
+        return out, router_scores
+
+    @classmethod
+    def replace(cls, llama4_text_moe: OldLlama4TextMoe):
+        # configオブジェクトを作成
+        class Config:
+            def __init__(self, hidden_size, num_local_experts, num_experts_per_tok):
+                self.hidden_size = hidden_size
+                self.num_local_experts = num_local_experts
+                self.num_experts_per_tok = num_experts_per_tok
+                self.intermediate_size = llama4_text_moe.shared_expert.up_proj.out_features
+                self.hidden_act = "silu"
+        
+        config = Config(
+            hidden_size=llama4_text_moe.hidden_dim,
+            num_local_experts=llama4_text_moe.num_experts,
+            num_experts_per_tok=llama4_text_moe.top_k
+        )
+        
+        moe = cls(config)
+        
+        moe.router = llama4_text_moe.router
+        moe.shared_expert = llama4_text_moe.shared_expert
+        
+        old_experts = llama4_text_moe.experts
+        
+        llama4_text_moe = llama4_text_moe.to('cpu')
+        del llama4_text_moe
+        gc.collect()
+        
+        moe.experts = Llama4TextExperts.replace(old_experts)
+        
+        return moe.to(torch.float16)
 
 class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     layer_type = "Llama4TextDecoderLayer"
@@ -95,11 +149,10 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     @staticmethod
     def get_model_layers(model: OldLlama4ForConditionalGeneration):
         return model.language_model.model.layers
-
     @staticmethod
     def get_act_for_scaling(module: OldLlama4TextDecoderLayer):
         scales = []
-        if isinstance(module.feed_forward, Llama4TextMoe):
+        if isinstance(module.feed_forward, OldLlama4TextMoe):
             scales.append(
                 dict(
                     scale_name="feed_forward.shared_expert.activation_fn",
@@ -175,16 +228,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["self_attn.o_proj"],
                 )
             )
-        
-        # replaced MoE Block
-        
         if isinstance(module.feed_forward, Llama4TextMoe):
-            
-
-            for l in module.feed_forward.experts:
-                tmp_layers.append(l.up_proj)
-                tmp_layers.append(l.gate_proj)
-                
             layers.append(
                 dict(
                     prev_op=module.post_attention_layernorm,
@@ -194,16 +238,16 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     module2inspect=module.feed_forward,
                 )
             )
+            
             layers.append(
                 dict(
                     prev_op=module.feed_forward.experts.dummy_fn,
                     layers=[module.feed_forward.experts.gate_proj, 
                             module.feed_forward.experts.up_proj],
                     inp=input_feat["feed_forward.experts.gate_proj"],
-                    module2inspect=module.feed_forward,
+                    module2inspect=module.feed_forward.experts,
                 )
             )
-            
             layers.append(
                 dict(
                     prev_op=module.feed_forward.shared_expert.activation_fn,
@@ -218,7 +262,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["feed_forward.experts.down_proj"],
                 )
             )
-            
         elif isinstance(module.feed_forward, OldLlama4TextMLP):
             layers.append(
                 dict(
@@ -277,10 +320,14 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         )
 
         layers = self.get_model_layers(model.model)
+        n=0
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
-                layer.feed_forward.experts = Llama4TextExperts.replace(layer.feed_forward.experts)
+                layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
             gc.collect()
+            n+=1
+            if n==2:
+                break
             
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
@@ -288,7 +335,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     def _load_quantized_modules(
         self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
     ):
-        # Real quantization of weights
         assert not (
             version == "gemv" and (use_exllama or use_exllama_v2 or use_ipex)
         ), "Exllama kernels only support GEMM version."
@@ -298,13 +344,15 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
 
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
-                experts_block = Llama4TextExperts(model.config.text_config)
-                experts_block = experts_block.to_empty(device=layer.feed_forward.router.weight.device)
-                layer.feed_forward.experts = experts_block
+                layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
+                #experts_block = Llama4TextExperts(model.config.text_config)
+                #experts_block = experts_block.to_empty(device=layer.feed_forward.router.weight.device)
+                #layer.feed_forward.experts = experts_block
             gc.collect()
         model.tie_weights()
+        # 既存のメソッドを呼び出し
         super()._load_quantized_modules(
-            self, model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
+            model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
         )
 
     @staticmethod
