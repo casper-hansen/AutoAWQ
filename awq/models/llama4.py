@@ -64,24 +64,24 @@ class Llama4TextExperts(nn.Module):
         
         gate_up_proj = llama4_text_experts.gate_up_proj
         down_proj = llama4_text_experts.down_proj
-        
-        gate_part = gate_up_proj[:, :, :llama4_text_experts.expert_dim]
-        up_part = gate_up_proj[:, :, llama4_text_experts.expert_dim:]
-        
-        gate_weight = gate_part.permute(2, 1, 0)
-        gate_weight = gate_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
-        up_weight = up_part.permute(2, 1, 0)
-        up_weight = up_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
-        down_weight = down_proj.permute(1, 2, 0)
-        down_weight = down_weight.reshape(llama4_text_experts.hidden_size * llama4_text_experts.num_experts, llama4_text_experts.expert_dim)
-        
-        experts.gate_proj.weight.data.copy_(gate_weight)
-        experts.up_proj.weight.data.copy_(up_weight)
-        experts.down_proj.weight.data.copy_(down_weight)
-
+        is_meta = hasattr(gate_up_proj, 'device') and gate_up_proj.device.type == 'meta'
         experts.act_fn = llama4_text_experts.act_fn
+        if not is_meta:
+            gate_part = gate_up_proj[:, :, :llama4_text_experts.expert_dim]
+            up_part = gate_up_proj[:, :, llama4_text_experts.expert_dim:]
+            
+            gate_weight = gate_part.permute(2, 1, 0)
+            gate_weight = gate_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
+            up_weight = up_part.permute(2, 1, 0)
+            up_weight = up_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
+            down_weight = down_proj.permute(1, 2, 0)
+            down_weight = down_weight.reshape(llama4_text_experts.hidden_size * llama4_text_experts.num_experts, llama4_text_experts.expert_dim)
+            
+            experts.gate_proj.weight.data.copy_(gate_weight)
+            experts.up_proj.weight.data.copy_(up_weight)
+            experts.down_proj.weight.data.copy_(down_weight)
+            llama4_text_experts = llama4_text_experts.to('cpu', torch.float16)
         
-        llama4_text_experts = llama4_text_experts.to('cpu', torch.float16)
         del llama4_text_experts
         gc.collect()
         
@@ -128,8 +128,15 @@ class Llama4TextMoe(OldLlama4TextMoe):
         moe.shared_expert = llama4_text_moe.shared_expert
         
         old_experts = llama4_text_moe.experts
+        is_meta = False
+        if hasattr(llama4_text_moe, 'hidden_dim'):
+            tensor = next(llama4_text_moe.parameters(), None)
+            if tensor is not None:
+                is_meta = tensor.device.type == 'meta'
         
-        llama4_text_moe = llama4_text_moe.to('cpu')
+        # Don't try to move meta tensors to CPU
+        if not is_meta:
+            llama4_text_moe = llama4_text_moe.to('cpu')
         del llama4_text_moe
         gc.collect()
         
@@ -343,7 +350,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
             gc.collect()
         model.tie_weights()
         super()._load_quantized_modules(
-            model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
+            self, model=model, quant_config=quant_config, version=version, use_exllama=use_exllama, use_exllama_v2=use_exllama_v2, use_ipex=use_ipex
         )
 
     @staticmethod
