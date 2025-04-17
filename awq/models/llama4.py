@@ -104,6 +104,7 @@ class Llama4TextMoe(OldLlama4TextMoe):
         else:
             hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
         out, router_scores = super().forward(hidden_states)
+        #return out.view(self.num_experts, -1, self.hidden_dim), router_scores.view(self.num_experts, -1, self.hidden_dim)
         return out, router_scores
 
     @classmethod
