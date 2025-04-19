@@ -30,8 +30,6 @@ class Llama4TextExperts(nn.Module):
         self.gate_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
         self.down_proj = nn.Linear(self.expert_dim, self.hidden_size*self.num_experts, dtype=torch.float16)
         self.act_fn = None
-        self._quantization = False
-        self._calib_data_seq_len = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = hidden_states.view(self.num_experts, -1, self.hidden_size)
@@ -101,10 +99,38 @@ class Llama4TextMoe(OldLlama4TextMoe):
             self._quantization_mode = True
         elif len(hidden_states.shape)==2:
             hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
-        else:
-            hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
-        out, router_scores = super().forward(hidden_states)
-        #return out.view(self.num_experts, -1, self.hidden_dim), router_scores.view(self.num_experts, -1, self.hidden_dim)
+        #else:
+        #    hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
+        #https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama4/modeling_llama4.py#L149
+        batch, seq_len, hidden_dim = hidden_states.shape
+        hidden_states = hidden_states.view(-1, self.hidden_dim)
+        router_logits = self.router(hidden_states)
+        tokens_per_expert = batch * seq_len
+
+        router_top_value, router_indices = torch.topk(router_logits, self.top_k, dim=1)
+        router_scores = (
+            torch.full_like(router_logits, float("-inf")).scatter_(1, router_indices, router_top_value).transpose(0, 1)
+        )
+        # We do this to make sure we have -inf for non topK tokens before going through the !
+        # Here we are just creating a tensor to index each and every single one of the hidden states. Let s maybe register a buffer for this!
+        router_indices = (
+            torch.arange(tokens_per_expert, device=hidden_states.device).view(1, -1).expand(router_scores.size(0), -1)
+        )
+        router_scores = torch.sigmoid(router_scores.float()).to(hidden_states.dtype)
+
+        router_indices = router_indices.reshape(-1, 1).expand(-1, hidden_dim)
+        routed_in = torch.gather(
+            input=hidden_states,
+            dim=0,
+            index=router_indices,
+        ).to(hidden_states.device)
+        # we gather inputs corresponding to each expert based on the router indices
+        routed_in = routed_in * router_scores.reshape(-1, 1)
+        routed_out = self.experts(routed_in)
+        out = self.shared_expert(hidden_states)
+        if out.dim() == 3:                 # AWQ が 3‑D を返した場合だけ潰す
+            out = out.view(-1, self.hidden_dim) # (tokens, H)
+        out.scatter_add_(dim=0, index=router_indices, src=routed_out.view(-1, self.hidden_dim))
         return out, router_scores
 
     @classmethod
@@ -159,7 +185,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     @staticmethod
     def get_act_for_scaling(module: OldLlama4TextDecoderLayer):
         scales = []
-        if isinstance(module.feed_forward, OldLlama4TextMoe):
+        if isinstance(module.feed_forward, Llama4TextMoe):
             scales.append(
                 dict(
                     scale_name="feed_forward.shared_expert.activation_fn",
@@ -242,7 +268,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     layers=[module.feed_forward.shared_expert.gate_proj, 
                             module.feed_forward.shared_expert.up_proj],
                     inp=input_feat["feed_forward.shared_expert.gate_proj"],
-                    module2inspect=module.feed_forward,
+                    module2inspect=module.feed_forward.shared_expert,
                 )
             )
             
