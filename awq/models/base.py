@@ -531,7 +531,6 @@ class BaseAWQForCausalLM(nn.Module):
             offload_folder=offload_folder,
             dtype=torch_dtype,
         )
-        
 
         # Dispath to devices
         awq_ext, msg = try_import("awq_ext")
