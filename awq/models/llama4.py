@@ -34,8 +34,9 @@ class Llama4TextMoe(nn.Module):
         self.top_k = config.num_experts_per_tok
         self.hidden_dim = config.hidden_size
         self.num_experts = config.num_local_experts
+
         self.experts = nn.ModuleList([Llama4TextMLP(config) for _ in range(self.num_experts)])
-        self.router = nn.Linear(config.hidden_size, config.num_local_experts, bias=False)
+        self.router = nn.Linear(config.hidden_size, config.num_local_experts, bias=False, dtype=torch.float16)
         self.shared_expert = Llama4TextMLP(config)
 
     def forward(self, hidden_states):
@@ -63,7 +64,6 @@ class Llama4TextMoe(nn.Module):
             dim=0,
             index=router_indices,
         ).to(hidden_states.device)
-        # we gather inputs corresponding to each expert based on the router indices
         routed_in = routed_in * router_scores.reshape(-1, 1)
         out = self.shared_expert(hidden_states)
         routed_in = routed_in.view(self.num_experts, -1, self.hidden_dim)
@@ -73,7 +73,6 @@ class Llama4TextMoe(nn.Module):
 
     @classmethod
     def replace(cls, llama4_text_moe: OldLlama4TextMoe):
-        # --- ① 新しい Config を組み立て，新モデルを空で用意 ---
         class Config:
             def __init__(self, hidden_size, num_local_experts, num_experts_per_tok):
                 self.hidden_size = hidden_size
@@ -89,7 +88,6 @@ class Llama4TextMoe(nn.Module):
         )
         moe = cls(config)
 
-        # 旧モデル由来でそのまま流用できる層
         moe.router        = llama4_text_moe.router
         moe.shared_expert = llama4_text_moe.shared_expert
 
@@ -97,36 +95,24 @@ class Llama4TextMoe(nn.Module):
         is_meta = any(p.device.type == "meta" for p in llama4_text_moe.parameters())
         if not is_meta:
             llama4_text_moe = llama4_text_moe.to("cpu")
-        old_experts = llama4_text_moe.experts        # = Llama4TextExperts
+            
+        old_experts = llama4_text_moe.experts
         hidden, inter = config.hidden_size, config.intermediate_size
 
-        # --- ② 旧 Experts → 新 ModuleList へ変換 ---
-        new_experts = nn.ModuleList()
         with torch.no_grad():
             for exp_id in range(config.num_local_experts):
-                mlp = Llama4TextMLP(config)
+                mlp = Llama4TextMLP(config).to(torch.float16)
     
-                # 旧 weight 取り出し
-                # gate_up_proj[exp_id] : (hidden , 2*inter)
-                old_gate_up = old_experts.gate_up_proj[exp_id]          # (H , 2I)
-                # down_proj[exp_id]    : (inter  , hidden)
-                old_down    = old_experts.down_proj[exp_id]             # (I , H)
-    
-                # 新 Linear 重みへコピー（nn.Linear は (out, in) 形状）
-                mlp.gate_proj.weight.copy_(old_gate_up[:, :inter].T.contiguous())
-                mlp.up_proj.weight.copy_(old_gate_up[:, inter:].T.contiguous())
-                mlp.down_proj.weight.copy_(old_down.T.contiguous())
-    
-                new_experts.append(mlp)
+                old_gate_up = old_experts.gate_up_proj[exp_id]
+                old_down    = old_experts.down_proj[exp_id]
+                mlp.gate_proj.weight = nn.Parameter(old_gate_up[:, :inter].T.contiguous())
+                mlp.up_proj.weight = nn.Parameter(old_gate_up[:, inter:].T.contiguous())
+                mlp.down_proj.weight = nn.Parameter(old_down.T.contiguous())
+                moe.experts[exp_id] = mlp
 
-        # --- ③ ModuleList を置き換え ---
-        moe.experts = new_experts
-
-        # 不要になった旧モデルを解放
-        del llama4_text_moe, old_experts
+        del llama4_text_moe
         gc.collect()
 
-        # fp16 に統一して返却
         return moe.to(torch.float16)
 
 class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
