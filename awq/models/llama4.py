@@ -1,5 +1,6 @@
 import gc
 from tqdm import auto as tqdm_lib
+import warnings
 
 import torch
 from torch import nn
@@ -91,7 +92,6 @@ class Llama4TextMoe(nn.Module):
         moe.router        = llama4_text_moe.router
         moe.shared_expert = llama4_text_moe.shared_expert
 
-        # meta デバイスのときはコピー不可なので退避なし
         is_meta = any(p.device.type == "meta" for p in llama4_text_moe.parameters())
         if not is_meta:
             llama4_text_moe = llama4_text_moe.to("cpu")
@@ -307,6 +307,12 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
 
+    @classmethod
+    def from_quantized(cls, *args, **kwargs):
+        warnings.warn("Multimodal input has not been implemented in Llama4AWQForConditionalGeneration yet.", UserWarning)
+
+        return super().from_quantized(*args, **kwargs)
+    
     def _load_quantized_modules(
         self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
     ):
