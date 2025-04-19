@@ -18,98 +18,37 @@ from .base import BaseAWQForCausalLM
 from awq.modules.act import ScaledActivation
 from awq.utils.module import set_op_by_name
 
-class Llama4TextExperts(nn.Module):
+
+class Llama4TextMLP(OldLlama4TextMLP):
+    def __init__(self, config, intermediate_size=None):
+        super().__init__(config, intermediate_size)
+        self.dummy_fn = nn.Identity()
+
+    def forward(self, x):
+        x = self.dummy_fn(x)
+        return super().forward(x)
+
+class Llama4TextMoe(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.top_k = config.num_experts_per_tok
+        self.hidden_dim = config.hidden_size
         self.num_experts = config.num_local_experts
-        self.intermediate_size = config.intermediate_size
-        self.hidden_size = config.hidden_size
-        self.expert_dim = self.intermediate_size
-        self.dummy_fn = nn.Identity()
-        self.up_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
-        self.gate_proj = nn.Linear(self.hidden_size*self.num_experts, self.expert_dim, dtype=torch.float16)
-        self.down_proj = nn.Linear(self.expert_dim, self.hidden_size*self.num_experts, dtype=torch.float16)
-        self.act_fn = None
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        hidden_states = hidden_states.view(self.num_experts, -1, self.hidden_size)
-        hidden_states = hidden_states.permute(1, 2, 0).reshape(-1, 1, self.hidden_size*self.num_experts)
-        hidden_states = self.dummy_fn(hidden_states)
-        hidden_states = hidden_states.view(-1, self.hidden_size*self.num_experts)
-        down_proj = self.act_fn(self.gate_proj(hidden_states)) * self.up_proj(hidden_states)
-        next_states = self.down_proj(down_proj)
-        next_states = next_states.view(-1, self.hidden_size, self.num_experts)
-        next_states = next_states.permute(2, 0, 1)
-        return next_states.reshape(-1, self.hidden_size)
-
-    @classmethod
-    def replace(cls, llama4_text_experts: OldLlama4TextExperts):
-        class Config:
-            def __init__(self, num_local_experts, intermediate_size, hidden_size, hidden_act):
-                self.num_local_experts = num_local_experts
-                self.intermediate_size = intermediate_size
-                self.hidden_size = hidden_size
-                self.hidden_act = hidden_act
-        
-        config = Config(
-            llama4_text_experts.num_experts,
-            llama4_text_experts.intermediate_size,
-            llama4_text_experts.hidden_size,
-            'silu'
-        )
-        
-        experts = cls(config)
-        
-        gate_up_proj = llama4_text_experts.gate_up_proj
-        down_proj = llama4_text_experts.down_proj
-        is_meta = hasattr(gate_up_proj, 'device') and gate_up_proj.device.type == 'meta'
-        experts.act_fn = llama4_text_experts.act_fn
-        if not is_meta:
-            gate_part = gate_up_proj[:, :, :llama4_text_experts.expert_dim]
-            up_part = gate_up_proj[:, :, llama4_text_experts.expert_dim:]
-            
-            gate_weight = gate_part.permute(2, 1, 0)
-            gate_weight = gate_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
-            up_weight = up_part.permute(2, 1, 0)
-            up_weight = up_weight.reshape(llama4_text_experts.expert_dim, llama4_text_experts.hidden_size * llama4_text_experts.num_experts)
-            down_weight = down_proj.permute(1, 2, 0)
-            down_weight = down_weight.reshape(llama4_text_experts.hidden_size * llama4_text_experts.num_experts, llama4_text_experts.expert_dim)
-            
-            experts.gate_proj.weight.data.copy_(gate_weight)
-            experts.up_proj.weight.data.copy_(up_weight)
-            experts.down_proj.weight.data.copy_(down_weight)
-            llama4_text_experts = llama4_text_experts.to('cpu', torch.float16)
-        
-        del llama4_text_experts
-        gc.collect()
-        
-        return experts
-
-class Llama4TextMoe(OldLlama4TextMoe):
-    def __init__(self, config):
-        self._quantization_mode = False
-        self._seq_len = None
-        super().__init__(config)
+        self.experts = nn.ModuleList([Llama4TextMLP(config) for _ in range(self.num_experts)])
+        self.router = nn.Linear(config.hidden_size, config.num_local_experts, bias=False)
+        self.shared_expert = Llama4TextMLP(config)
 
     def forward(self, hidden_states):
-        # Due to the implementation of llama4, when trying to process with AutoAWQ, an error occurs on the second forward call.
-        # Implementing a workaround for this issue.
-        if not self._quantization_mode:
-            self._seq_len = hidden_states.shape[1]
-            self._quantization_mode = True
-        elif len(hidden_states.shape)==2:
-            hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
-        #else:
-        #    hidden_states = hidden_states.view(-1, self._seq_len, self.hidden_dim)
-        #https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama4/modeling_llama4.py#L149
         batch, seq_len, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, self.hidden_dim)
-        router_logits = self.router(hidden_states)
+        router_logits = self.router(hidden_states).transpose(0, 1)
         tokens_per_expert = batch * seq_len
 
-        router_top_value, router_indices = torch.topk(router_logits, self.top_k, dim=1)
+        router_top_value, router_indices = torch.topk(router_logits.transpose(0, 1), self.top_k, dim=1)
         router_scores = (
-            torch.full_like(router_logits, float("-inf")).scatter_(1, router_indices, router_top_value).transpose(0, 1)
+            torch.full_like(router_logits.transpose(0, 1), float("-inf"))
+            .scatter_(1, router_indices, router_top_value)
+            .transpose(0, 1)
         )
         # We do this to make sure we have -inf for non topK tokens before going through the !
         # Here we are just creating a tensor to index each and every single one of the hidden states. Let s maybe register a buffer for this!
@@ -126,15 +65,15 @@ class Llama4TextMoe(OldLlama4TextMoe):
         ).to(hidden_states.device)
         # we gather inputs corresponding to each expert based on the router indices
         routed_in = routed_in * router_scores.reshape(-1, 1)
-        routed_out = self.experts(routed_in)
         out = self.shared_expert(hidden_states)
-        if out.dim() == 3:                 # AWQ が 3‑D を返した場合だけ潰す
-            out = out.view(-1, self.hidden_dim) # (tokens, H)
-        out.scatter_add_(dim=0, index=router_indices, src=routed_out.view(-1, self.hidden_dim))
+        routed_in = routed_in.view(self.num_experts, -1, self.hidden_dim)
+        for i in range(self.num_experts):
+            out += self.experts[i](routed_in[i])
         return out, router_scores
 
     @classmethod
     def replace(cls, llama4_text_moe: OldLlama4TextMoe):
+        # --- ① 新しい Config を組み立て，新モデルを空で用意 ---
         class Config:
             def __init__(self, hidden_size, num_local_experts, num_experts_per_tok):
                 self.hidden_size = hidden_size
@@ -142,33 +81,52 @@ class Llama4TextMoe(OldLlama4TextMoe):
                 self.num_experts_per_tok = num_experts_per_tok
                 self.intermediate_size = llama4_text_moe.shared_expert.up_proj.out_features
                 self.hidden_act = "silu"
-        
+
         config = Config(
-            hidden_size=llama4_text_moe.hidden_dim,
-            num_local_experts=llama4_text_moe.num_experts,
-            num_experts_per_tok=llama4_text_moe.top_k
+            hidden_size        = llama4_text_moe.hidden_dim,
+            num_local_experts  = llama4_text_moe.num_experts,
+            num_experts_per_tok= llama4_text_moe.top_k,
         )
-        
         moe = cls(config)
-        
-        moe.router = llama4_text_moe.router
+
+        # 旧モデル由来でそのまま流用できる層
+        moe.router        = llama4_text_moe.router
         moe.shared_expert = llama4_text_moe.shared_expert
-        
-        old_experts = llama4_text_moe.experts
-        is_meta = False
-        if hasattr(llama4_text_moe, 'hidden_dim'):
-            tensor = next(llama4_text_moe.parameters(), None)
-            if tensor is not None:
-                is_meta = tensor.device.type == 'meta'
-        
-        # Don't try to move meta tensors to CPU
+
+        # meta デバイスのときはコピー不可なので退避なし
+        is_meta = any(p.device.type == "meta" for p in llama4_text_moe.parameters())
         if not is_meta:
-            llama4_text_moe = llama4_text_moe.to('cpu')
-        del llama4_text_moe
+            llama4_text_moe = llama4_text_moe.to("cpu")
+        old_experts = llama4_text_moe.experts        # = Llama4TextExperts
+        hidden, inter = config.hidden_size, config.intermediate_size
+
+        # --- ② 旧 Experts → 新 ModuleList へ変換 ---
+        new_experts = nn.ModuleList()
+        with torch.no_grad():
+            for exp_id in range(config.num_local_experts):
+                mlp = Llama4TextMLP(config)
+    
+                # 旧 weight 取り出し
+                # gate_up_proj[exp_id] : (hidden , 2*inter)
+                old_gate_up = old_experts.gate_up_proj[exp_id]          # (H , 2I)
+                # down_proj[exp_id]    : (inter  , hidden)
+                old_down    = old_experts.down_proj[exp_id]             # (I , H)
+    
+                # 新 Linear 重みへコピー（nn.Linear は (out, in) 形状）
+                mlp.gate_proj.weight.copy_(old_gate_up[:, :inter].T.contiguous())
+                mlp.up_proj.weight.copy_(old_gate_up[:, inter:].T.contiguous())
+                mlp.down_proj.weight.copy_(old_down.T.contiguous())
+    
+                new_experts.append(mlp)
+
+        # --- ③ ModuleList を置き換え ---
+        moe.experts = new_experts
+
+        # 不要になった旧モデルを解放
+        del llama4_text_moe, old_experts
         gc.collect()
-        
-        moe.experts = Llama4TextExperts.replace(old_experts)
-        
+
+        # fp16 に統一して返却
         return moe.to(torch.float16)
 
 class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
@@ -193,22 +151,23 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     scale_shape=module.feed_forward.shared_expert.gate_proj.out_features
                 )
             )
-            scales.append(
-                dict(
-                    scale_name=f"feed_forward.experts.act_fn",
-                    scale_layer=module.feed_forward.experts.act_fn,
-                    scale_shape=module.feed_forward.experts.gate_proj.out_features
+            for i in range(module.feed_forward.num_experts):
+                scales.append(
+                    dict(
+                        scale_name=f"feed_forward.experts.{i}.activation_fn",
+                        scale_layer=module.feed_forward.experts[i].activation_fn,
+                        scale_shape=module.feed_forward.experts[i].gate_proj.out_features
+                    )
                 )
-            )
-            scales.append(
-                dict(
-                    scale_name=f"feed_forward.experts.dummy_fn",
-                    scale_layer=module.feed_forward.experts.dummy_fn,
-                    scale_shape=module.feed_forward.experts.gate_proj.in_features
+                scales.append(
+                    dict(
+                        scale_name=f"feed_forward.experts.{i}.dummy_fn",
+                        scale_layer=module.feed_forward.experts[i].dummy_fn,
+                        scale_shape=module.feed_forward.experts[i].gate_proj.in_features
+                    )
                 )
-            )
             
-        elif isinstance(module.feed_forward, OldLlama4TextMLP):
+        elif isinstance(module.feed_forward, Llama4TextMLP):
             scales.append(
                 dict(
                     scale_name="feed_forward.activation_fn",
@@ -271,16 +230,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     module2inspect=module.feed_forward.shared_expert,
                 )
             )
-            
-            layers.append(
-                dict(
-                    prev_op=module.feed_forward.experts.dummy_fn,
-                    layers=[module.feed_forward.experts.gate_proj, 
-                            module.feed_forward.experts.up_proj],
-                    inp=input_feat["feed_forward.experts.gate_proj"],
-                    module2inspect=module.feed_forward.experts,
-                )
-            )
             layers.append(
                 dict(
                     prev_op=module.feed_forward.shared_expert.activation_fn,
@@ -288,14 +237,25 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["feed_forward.shared_expert.down_proj"],
                 )
             )
-            layers.append(
-                dict(
-                    prev_op=module.feed_forward.experts.act_fn,
-                    layers=[module.feed_forward.experts.down_proj],
-                    inp=input_feat["feed_forward.experts.down_proj"],
+            
+            for i in range(module.feed_forward.num_experts):
+                layers.append(
+                    dict(
+                        prev_op=module.feed_forward.experts[i].dummy_fn,
+                        layers=[module.feed_forward.experts[i].gate_proj, 
+                                module.feed_forward.experts[i].up_proj],
+                        inp=input_feat[f"feed_forward.experts.{i}.gate_proj"],
+                        module2inspect=module.feed_forward.experts[i],
+                    )
                 )
-            )
-        elif isinstance(module.feed_forward, OldLlama4TextMLP):
+                layers.append(
+                    dict(
+                        prev_op=module.feed_forward.experts[i].activation_fn,
+                        layers=[module.feed_forward.experts[i].down_proj],
+                        inp=input_feat[f"feed_forward.experts.{i}.down_proj"],
+                    )
+                )
+        elif isinstance(module.feed_forward, Llama4TextMLP):
             layers.append(
                 dict(
                     prev_op=module.post_attention_layernorm,
