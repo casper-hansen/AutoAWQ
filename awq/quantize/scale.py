@@ -16,6 +16,7 @@ allowed_norms = [nn.LayerNorm, LlamaRMSNorm, GemmaRMSNorm, Gemma2RMSNorm, Cohere
 allowed_act_fns = [
     nn.GELU,
     nn.SiLU,
+    nn.Identity,
     BloomGelu,
     NewGELUActivation,
     PytorchGELUTanh,

@@ -1,5 +1,6 @@
 import gc
 from tqdm import auto as tqdm_lib
+import warnings
 
 import torch
 from torch import nn
@@ -9,6 +10,7 @@ from transformers.models.llama4.modeling_llama4 import (
     Llama4TextDecoderLayer as OldLlama4TextDecoderLayer,
     Llama4TextMLP as OldLlama4TextMLP,
     Llama4TextMoe as OldLlama4TextMoe,
+    Llama4TextExperts as OldLlama4TextExperts,
     Llama4TextMLP,
 )
 from transformers import AutoProcessor, AutoConfig, PreTrainedModel
@@ -17,49 +19,32 @@ from .base import BaseAWQForCausalLM
 from awq.modules.act import ScaledActivation
 from awq.utils.module import set_op_by_name
 
+
+class Llama4TextMLP(OldLlama4TextMLP):
+    def __init__(self, config, intermediate_size=None):
+        super().__init__(config, intermediate_size)
+        self.dummy_fn = nn.Identity()
+
+    def forward(self, x):
+        x = self.dummy_fn(x)
+        return super().forward(x)
+
 class Llama4TextMoe(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.top_k = config.num_experts_per_tok
         self.hidden_dim = config.hidden_size
         self.num_experts = config.num_local_experts
-        models = []
-        for i in range(self.num_experts):
-            models.append(Llama4TextMLP(config).to(config.torch_dtype))
-        self.experts = nn.ModuleList(models)
-        self.router = nn.Linear(config.hidden_size, config.num_local_experts, bias=False, dtype=config.torch_dtype)
-        self.shared_expert = Llama4TextMLP(config).to(config.torch_dtype)
 
-    @classmethod
-    def replace(cls, original_moe_block: OldLlama4TextMoe):
-        param = next(original_moe_block.parameters())
-        device = param.device
-        
-        config = original_moe_block.shared_expert.config
-        moe = cls(config)
-        moe.router = original_moe_block.router
-        moe.shared_expert = original_moe_block.shared_expert
-
-        _gate_up_proj = original_moe_block.experts.state_dict()['gate_up_proj']
-        down_param = original_moe_block.experts.state_dict()['down_proj']
-        gate_param, up_param = _gate_up_proj.chunk(2, dim=-1)
-
-        for i in range(moe.num_experts):
-            moe.experts[i].gate_proj.weight.data = gate_param[i].T
-            moe.experts[i].up_proj.weight.data = up_param[i].T
-            moe.experts[i].down_proj.weight.data = down_param[i].T
-        original_moe_block = original_moe_block.to('cpu')
-        del original_moe_block
-        return moe.to(device)
+        self.experts = nn.ModuleList([Llama4TextMLP(config) for _ in range(self.num_experts)])
+        self.router = nn.Linear(config.hidden_size, config.num_local_experts, bias=False, dtype=torch.float16)
+        self.shared_expert = Llama4TextMLP(config)
 
     def forward(self, hidden_states):
-        if len(hidden_states.shape)==3:
-            batch, seq_len, hidden_dim = hidden_states.shape
-            tokens_per_expert = batch*seq_len
-        elif len(hidden_states.shape)==2:
-            tokens_per_expert, hidden_dim = hidden_states.shape
+        batch, seq_len, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, self.hidden_dim)
         router_logits = self.router(hidden_states).transpose(0, 1)
+        tokens_per_expert = batch * seq_len
 
         router_top_value, router_indices = torch.topk(router_logits.transpose(0, 1), self.top_k, dim=1)
         router_scores = (
@@ -67,14 +52,14 @@ class Llama4TextMoe(nn.Module):
             .scatter_(1, router_indices, router_top_value)
             .transpose(0, 1)
         )
-
+        # We do this to make sure we have -inf for non topK tokens before going through the !
+        # Here we are just creating a tensor to index each and every single one of the hidden states. Let s maybe register a buffer for this!
         router_indices = (
             torch.arange(tokens_per_expert, device=hidden_states.device).view(1, -1).expand(router_scores.size(0), -1)
         )
         router_scores = torch.sigmoid(router_scores.float()).to(hidden_states.dtype)
 
         router_indices = router_indices.reshape(-1, 1).expand(-1, hidden_dim)
-        
         routed_in = torch.gather(
             input=hidden_states,
             dim=0,
@@ -82,11 +67,53 @@ class Llama4TextMoe(nn.Module):
         ).to(hidden_states.device)
         routed_in = routed_in * router_scores.reshape(-1, 1)
         out = self.shared_expert(hidden_states)
-        
+        routed_in = routed_in.view(self.num_experts, -1, self.hidden_dim)
         for i in range(self.num_experts):
-            out += self.experts[i](routed_in[i:i+1,:])
-
+            out += self.experts[i](routed_in[i])
         return out, router_scores
+
+    @classmethod
+    def replace(cls, llama4_text_moe: OldLlama4TextMoe):
+        class Config:
+            def __init__(self, hidden_size, num_local_experts, num_experts_per_tok):
+                self.hidden_size = hidden_size
+                self.num_local_experts = num_local_experts
+                self.num_experts_per_tok = num_experts_per_tok
+                self.intermediate_size = llama4_text_moe.shared_expert.up_proj.out_features
+                self.hidden_act = "silu"
+
+        config = Config(
+            hidden_size        = llama4_text_moe.hidden_dim,
+            num_local_experts  = llama4_text_moe.num_experts,
+            num_experts_per_tok= llama4_text_moe.top_k,
+        )
+        moe = cls(config)
+
+        moe.router        = llama4_text_moe.router
+        moe.shared_expert = llama4_text_moe.shared_expert
+
+        is_meta = any(p.device.type == "meta" for p in llama4_text_moe.parameters())
+        if not is_meta:
+            llama4_text_moe = llama4_text_moe.to("cpu")
+            
+        old_experts = llama4_text_moe.experts
+        hidden, inter = config.hidden_size, config.intermediate_size
+
+        with torch.no_grad():
+            for exp_id in range(config.num_local_experts):
+                mlp = Llama4TextMLP(config).to(torch.float16)
+    
+                old_gate_up = old_experts.gate_up_proj[exp_id]
+                old_down    = old_experts.down_proj[exp_id]
+                mlp.gate_proj.weight = nn.Parameter(old_gate_up[:, :inter].T.contiguous())
+                mlp.up_proj.weight = nn.Parameter(old_gate_up[:, inter:].T.contiguous())
+                mlp.down_proj.weight = nn.Parameter(old_down.T.contiguous())
+                moe.experts[exp_id] = mlp
+
+        del llama4_text_moe
+        gc.collect()
+
+        return moe.to(torch.float16)
 
 class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     layer_type = "Llama4TextDecoderLayer"
@@ -99,7 +126,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
     @staticmethod
     def get_model_layers(model: OldLlama4ForConditionalGeneration):
         return model.language_model.model.layers
-
     @staticmethod
     def get_act_for_scaling(module: OldLlama4TextDecoderLayer):
         scales = []
@@ -111,7 +137,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     scale_shape=module.feed_forward.shared_expert.gate_proj.out_features
                 )
             )
-            for i in range(len(module.feed_forward.experts)):
+            for i in range(module.feed_forward.num_experts):
                 scales.append(
                     dict(
                         scale_name=f"feed_forward.experts.{i}.activation_fn",
@@ -119,8 +145,15 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                         scale_shape=module.feed_forward.experts[i].gate_proj.out_features
                     )
                 )
+                scales.append(
+                    dict(
+                        scale_name=f"feed_forward.experts.{i}.dummy_fn",
+                        scale_layer=module.feed_forward.experts[i].dummy_fn,
+                        scale_shape=module.feed_forward.experts[i].gate_proj.in_features
+                    )
+                )
             
-        elif isinstance(module.feed_forward, OldLlama4TextMLP):
+        elif isinstance(module.feed_forward, Llama4TextMLP):
             scales.append(
                 dict(
                     scale_name="feed_forward.activation_fn",
@@ -173,26 +206,16 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["self_attn.o_proj"],
                 )
             )
-        
-        # replaced MoE Block
-        
         if isinstance(module.feed_forward, Llama4TextMoe):
-            
-            tmp_layers = [module.feed_forward.shared_expert.gate_proj,
-                          module.feed_forward.shared_expert.up_proj,
-                         ]
-            for l in module.feed_forward.experts:
-                tmp_layers.append(l.up_proj)
-                tmp_layers.append(l.gate_proj)
             layers.append(
                 dict(
                     prev_op=module.post_attention_layernorm,
-                    layers=tmp_layers,
+                    layers=[module.feed_forward.shared_expert.gate_proj, 
+                            module.feed_forward.shared_expert.up_proj],
                     inp=input_feat["feed_forward.shared_expert.gate_proj"],
-                    module2inspect=module.feed_forward,
+                    module2inspect=module.feed_forward.shared_expert,
                 )
             )
-            
             layers.append(
                 dict(
                     prev_op=module.feed_forward.shared_expert.activation_fn,
@@ -200,7 +223,17 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                     inp=input_feat["feed_forward.shared_expert.down_proj"],
                 )
             )
-            for i in range(len(module.feed_forward.experts)):
+            
+            for i in range(module.feed_forward.num_experts):
+                layers.append(
+                    dict(
+                        prev_op=module.feed_forward.experts[i].dummy_fn,
+                        layers=[module.feed_forward.experts[i].gate_proj, 
+                                module.feed_forward.experts[i].up_proj],
+                        inp=input_feat[f"feed_forward.experts.{i}.gate_proj"],
+                        module2inspect=module.feed_forward.experts[i],
+                    )
+                )
                 layers.append(
                     dict(
                         prev_op=module.feed_forward.experts[i].activation_fn,
@@ -208,8 +241,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
                         inp=input_feat[f"feed_forward.experts.{i}.down_proj"],
                     )
                 )
-            
-        elif isinstance(module.feed_forward, OldLlama4TextMLP):
+        elif isinstance(module.feed_forward, Llama4TextMLP):
             layers.append(
                 dict(
                     prev_op=module.post_attention_layernorm,
@@ -275,10 +307,15 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
 
+    @classmethod
+    def from_quantized(cls, *args, **kwargs):
+        warnings.warn("Multimodal input has not been implemented in Llama4AWQForConditionalGeneration yet.", UserWarning)
+
+        return super().from_quantized(*args, **kwargs)
+    
     def _load_quantized_modules(
         self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
     ):
-        # Real quantization of weights
         assert not (
             version == "gemv" and (use_exllama or use_exllama_v2 or use_ipex)
         ), "Exllama kernels only support GEMM version."
@@ -288,9 +325,7 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
 
         for layer in tqdm_lib.tqdm(layers, desc="Replacing MoE Block..."):
             if isinstance(layer.feed_forward, OldLlama4TextMoe):
-                moe_block = Llama4TextMoe(model.config.text_config)
-                moe_block = moe_block.to_empty(device=layer.feed_forward.router.weight.device)
-                layer.feed_forward = moe_block
+                layer.feed_forward = Llama4TextMoe.replace(layer.feed_forward)
             gc.collect()
         model.tie_weights()
         super()._load_quantized_modules(
