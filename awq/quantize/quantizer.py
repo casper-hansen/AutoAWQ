@@ -209,8 +209,6 @@ class AwqQuantizer:
             if not self.export_compatible:
                 self._apply_quant(self.modules[i], named_linears)
 
-            self.modules[i].to('cpu')
-
             clear_memory()
 
     def pack(self):
