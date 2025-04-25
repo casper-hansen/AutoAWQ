@@ -640,6 +640,12 @@ class AwqQuantizer:
                 **named_linears,
                 "mlp": layer.mlp,
             }
+        
+        if self.awq_model.model_type == "qwen3_moe":
+            named_linears = {
+                **named_linears,
+                "mlp": layer.mlp,
+            }
 
         for name in named_linears:
             handles.append(
