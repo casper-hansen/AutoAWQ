@@ -615,6 +615,8 @@ class AwqQuantizer:
             layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to(
                 best_device
             )
+        elif "qwen3" in self.awq_model.model_type:
+            layer_kwargs["attention_mask"] = None
 
         return modules, layer_kwargs, inps
 
