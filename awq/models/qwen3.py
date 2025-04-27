@@ -5,11 +5,20 @@ from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3DecoderLayer as OldQwen3DecoderLayer,
     Qwen3ForCausalLM as OldQwen3ForCausalLM,
 )
+from awq.utils.fused_utils import fuse_qkv
+from awq.modules.fused.block import QwenBlock
+from awq.modules.fused.model import LlamaLikeModel
+from awq.modules.fused.norm import FasterTransformerRMSNorm
 
 
 class Qwen3AWQForCausalLM(BaseAWQForCausalLM):
     layer_type = "Qwen3DecoderLayer"
     max_seq_len_key = "max_position_embeddings"
+
+    @staticmethod
+    def fuse_layers(model: OldQwen3ForCausalLM):
+        fuser = Qwen3Fuser(model)
+        fuser.fuse_transformer()
 
     @staticmethod
     def get_model_layers(model: OldQwen3ForCausalLM):
@@ -74,3 +83,60 @@ class Qwen3AWQForCausalLM(BaseAWQForCausalLM):
         )
 
         return layers
+
+class Qwen3Fuser:
+    def __init__(self, model: OldQwen3ForCausalLM):
+        self.model = model
+
+        self.qwen3_blocks: List[Tuple[str, OldQwen3DecoderLayer]] = [
+            (name, module)
+            for name, module in self.model.named_modules()
+            if "Qwen3DecoderLayer".lower() in module.__class__.__name__.lower()
+        ]
+        
+    def fuse_transformer(self):
+        blocks = []
+
+        module: OldQwen3DecoderLayer
+        for module in tqdm.tqdm(self.model.model.layers, desc="Fusing layers..."):
+            device = next(iter(module.state_dict().values())).device
+            qkv = fuse_qkv(
+                module,
+                module.self_attn.q_proj,
+                module.self_attn.k_proj,
+                module.self_attn.v_proj,
+            )
+            norm_1 = FasterTransformerRMSNorm(
+                module.input_layernorm.weight, module.input_layernorm.variance_epsilon
+            )
+            norm_2 = FasterTransformerRMSNorm(
+                module.post_attention_layernorm.weight,
+                module.post_attention_layernorm.variance_epsilon,
+            )
+            blocks.append(
+                QwenBlock(
+                    hidden_size=self.model.config.hidden_size,
+                    n_heads=self.model.config.num_attention_heads,
+                    n_kv_heads=self.model.config.num_key_value_heads,
+                    qkv_layer=qkv,
+                    o_proj=module.self_attn.o_proj,
+                    mlp=module.mlp,
+                    norm_1=norm_1,
+                    norm_2=norm_2,
+                    dev=device,
+                    max_seq_len=self.model.config.max_seq_len,
+                    rope_theta=self.model.config.rope_theta,
+                    q_norm=module.self_attn.q_norm,
+                    k_norm=module.self_attn.k_norm,
+                    head_dim=self.model.config.head_dim,
+                )
+            )
+
+        self.model.model = LlamaLikeModel(
+            self.model.config.vocab_size,
+            blocks,
+            self.model.model.embed_tokens,
+            self.model.model.norm,
+        )
+        setattr(self.model.model, "blocks", self.model.model.blocks)
+
