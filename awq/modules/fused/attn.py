@@ -140,6 +140,8 @@ class QuantAttentionFused(nn.Module):
         partial_rotary_factor=1.0,
         head_dim=None,
         attn_logit_softcapping=0.0,
+        q_norm=None,
+        k_norm=None,
         **kwargs
     ):
         super().__init__()
@@ -154,6 +156,8 @@ class QuantAttentionFused(nn.Module):
 
         self.qkv_proj = qkv_layer
         self.o_proj = o_proj
+        self.q_norm = q_norm
+        self.k_norm = k_norm
         self.start_pos = 0
         self.use_alibi = use_alibi
         self.cache_batch_size = int(os.getenv("AWQ_BATCH_SIZE", "1"))
@@ -242,6 +246,11 @@ class QuantAttentionFused(nn.Module):
         xq = self.attention_shapes["xq_slice"](xqkv)
         xk = self.attention_shapes["xk_slice"](xqkv)
         xv = self.attention_shapes["xv_slice"](xqkv)
+
+        if self.q_norm is not None:
+            xq = self.q_norm(xq)
+        if self.k_norm is not None:
+            xk = self.k_norm(xk)
 
         if not self.use_alibi:
             xq, xk = self.rope.forward(

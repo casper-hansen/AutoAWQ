@@ -615,6 +615,8 @@ class AwqQuantizer:
             layer_kwargs["attention_mask"] = layer_kwargs["attention_mask"].to(
                 best_device
             )
+        elif "qwen" in self.awq_model.model_type:
+            layer_kwargs["attention_mask"] = None
 
         return modules, layer_kwargs, inps
 
@@ -636,6 +638,12 @@ class AwqQuantizer:
             }
 
         if self.awq_model.model_type == "deepseek_v2" or self.awq_model.model_type == "deepseek_v3":
+            named_linears = {
+                **named_linears,
+                "mlp": layer.mlp,
+            }
+        
+        if self.awq_model.model_type == "qwen3_moe":
             named_linears = {
                 **named_linears,
                 "mlp": layer.mlp,

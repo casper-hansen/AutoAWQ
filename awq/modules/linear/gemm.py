@@ -41,6 +41,8 @@ class WQLinearMMFunction(Function):
 
         out_shape = x.shape[:-1] + (out_features,)
         x = x.to(torch.float16)
+        if x.shape[0] == 0:
+            return torch.zeros(out_shape, dtype=x.dtype, device=x.device)
 
         if awq_ext is not None:
             FP16_MATMUL_HEURISTIC_CONDITION = x.shape[0] * x.shape[1] >= 1024
