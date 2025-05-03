@@ -306,12 +306,6 @@ class Llama4AWQForConditionalGeneration(BaseAWQForCausalLM):
             
         model.processor = AutoProcessor.from_pretrained(model_path)
         return model
-
-    @classmethod
-    def from_quantized(cls, *args, **kwargs):
-        warnings.warn("Multimodal input has not been implemented in Llama4AWQForConditionalGeneration yet.", UserWarning)
-
-        return super().from_quantized(*args, **kwargs)
     
     def _load_quantized_modules(
         self, model, quant_config, version, use_exllama, use_exllama_v2, use_ipex=False
