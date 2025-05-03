@@ -16,6 +16,8 @@ from .baichuan import BaichuanAWQForCausalLM
 from .llava import LlavaAWQForCausalLM
 from .mixtral import MixtralAWQForCausalLM
 from .qwen2 import Qwen2AWQForCausalLM
+from .qwen3 import Qwen3AWQForCausalLM
+from .qwen3_moe import Qwen3MoeAWQForCausalLM
 from .gemma import GemmaAWQForCausalLM
 from .gemma2 import Gemma2AWQForCausalLM
 from .stablelm import StableLmAWQForCausalLM

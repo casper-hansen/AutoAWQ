@@ -18,6 +18,10 @@ def main():
     # Model config arguments
     parser.add_argument("--device_map", type=str, default=None, help="Device map for loading the pretrained model")
 
+    # Quantize parameters
+    parser.add_argument("--max_calib_samples", type=int, default=128, help="Number of calibration samples.")
+    parser.add_argument("--max_calib_seq_len", type=int, default=512, help="Calibration sample sequence length.")
+
     args = parser.parse_args()
 
     quant_config = {
@@ -35,7 +39,12 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model_path, trust_remote_code=True)
 
     print(f"Quantizing model with config: {quant_config}")
-    model.quantize(tokenizer, quant_config=quant_config)
+    model.quantize(
+        tokenizer,
+        quant_config=quant_config,
+        max_calib_samples=args.max_calib_samples,
+        max_calib_seq_len=args.max_calib_seq_len,
+    )
 
     print(f"Saving quantized model to: {args.local_save_path}")
     model.save_quantized(args.local_save_path)
