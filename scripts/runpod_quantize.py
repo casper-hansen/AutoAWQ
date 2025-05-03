@@ -11,16 +11,18 @@ runpod.api_key = os.environ.get('RUNPOD_API_KEY')
 template_name = f"AutoAWQ Pod {int(time.time())}"
 docker_image = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
 gpu_ids = {
-    "MI300X": "AMD Instinct MI300X OAM", # 192 GB, $3.99/h
-    "H100": "NVIDIA H100 80GB HBM3", # 80 GB, $3.99/h
-    "A100": "NVIDIA A100-SXM4-80GB", # 80 GB, $1.94/h
-    "A6000": "NVIDIA RTX A6000", # 48 GB, $0.76/h
-    "4090": "NVIDIA GeForce RTX 4090", # 24 GB, $0.69/h
+    "MI300X": "AMD Instinct MI300X OAM",
+    "B200": "NVIDIA B200",
+    "H200": "NVIDIA H200",
+    "H100": "NVIDIA H100 80GB HBM3",
+    "A100": "NVIDIA A100-SXM4-80GB",
+    "A6000": "NVIDIA RTX A6000",
+    "4090": "NVIDIA GeForce RTX 4090",
 }
 env_variables = {
     "HF_TOKEN": HF_TOKEN,
 }
-gpu_id = gpu_ids["4090"]
+gpu_id = gpu_ids["H200"]
 num_gpus = 1
 system_memory_gb = 100
 system_storage_gb = 300 # fp16 model is downloaded here
