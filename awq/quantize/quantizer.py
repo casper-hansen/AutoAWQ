@@ -260,6 +260,7 @@ class AwqQuantizer:
             q_linear.to(next(module.parameters()).device)
             set_op_by_name(module, name, q_linear)
             clear_memory()
+        module.cpu()
 
     @torch.no_grad()
     def _module_forward(
