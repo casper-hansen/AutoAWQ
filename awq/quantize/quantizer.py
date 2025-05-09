@@ -163,6 +163,10 @@ class AwqQuantizer:
                     self.inps, self.module_kwargs["position_ids"]
                 )
 
+            if (transformers.__version__ >= "4.48.0"
+                and self.module_kwargs.get('attention_mask') is None):
+                self.module_kwargs['attention_mask'] = None
+
             for k, v in self.module_kwargs.items():
                 # position embeddings found in tuple
                 if isinstance(v, tuple):
