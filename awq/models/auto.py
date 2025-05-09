@@ -43,6 +43,7 @@ AWQ_CAUSAL_LM_MODEL_MAP = {
     "minicpm3": MiniCPM3AWQForCausalLM,
     "qwen2_vl": Qwen2VLAWQForCausalLM,
     "qwen2_5_vl": Qwen2_5_VLAWQForCausalLM,
+    "qwen2_5_omni": Qwen2_5_OmniAWQForConditionalGeneration
 }
 
 
@@ -79,7 +80,6 @@ class AutoAWQForCausalLM:
         model_type = check_and_get_model_type(
             model_path, trust_remote_code, **model_init_kwargs
         )
-
         return AWQ_CAUSAL_LM_MODEL_MAP[model_type].from_pretrained(
             model_path,
             model_type,
