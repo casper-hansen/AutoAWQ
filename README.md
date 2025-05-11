@@ -1,9 +1,19 @@
 # News: The vLLM project has fully adopted AutoAWQ
 
-AutoAWQ is being deprecated and archived because of this. It is no secret that maintaining a project such as AutoAWQ that has 2+ million downloads, 7000+ models on Huggingface, and 2.1k stars is hard for a solo developer who is doing this in their free time.
+It is no secret that maintaining a project such as AutoAWQ that has 2+ million downloads, 7000+ models on Huggingface, and 2.1k stars is hard for a solo developer who is doing this in their free time.
 
-- vLLM Compressor now supports AutoAWQ: https://github.com/vllm-project/llm-compressor
+Important Notice:
+- AutoAWQ is officially deprecated and will no longer be maintained.
+- The last tested configuration used Torch 2.6.0 and Transformers 4.51.3.
+- If future versions of Transformers break AutoAWQ compatibility, please report the issue to the Transformers project.
+
+Alternative:
+- AutoAWQ has been adopted by the vLLM Project: https://github.com/vllm-project/llm-compressor
 - MLX-LM now supports AWQ for Mac devices: http://github.com/ml-explore/mlx-lm
+
+For further inquiries, feel free to reach out:
+- X: https://x.com/casper_hansen_
+- LinkedIn: https://www.linkedin.com/in/casper-hansen-804005170/
 
 # AutoAWQ
 
